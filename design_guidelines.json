@@ -1,0 +1,134 @@
+{
+  "project_name": "Pixel Padel OS",
+  "app_type": "hybrid_fullstack",
+  "platform": "React Native (Expo)",
+  "theme_and_archetype": {
+    "domain": "Sports, Athletics, Padel",
+    "theme": "DARK",
+    "archetype": "2 (Performance Pro)",
+    "reasoning": "Padel is a fast-paced sport. The user requested a premium dark aesthetic with neon green accents. This maps perfectly to 'Performance Pro' which emphasizes elite athleticism, precision, high contrast, and dynamic energy."
+  },
+  "color_system": {
+    "background": {
+      "app": "#0A0A0A",
+      "card": "#151515",
+      "modal_overlay": "rgba(0, 0, 0, 0.8)",
+      "bottom_sheet": "#1A1A1A"
+    },
+    "primary": {
+      "brand": "#A3E635",
+      "brand_muted": "rgba(163, 230, 53, 0.15)",
+      "brand_border": "rgba(163, 230, 53, 0.4)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#52525B",
+      "inverse": "#000000"
+    },
+    "status_traffic_light": {
+      "available_green": "#22C55E",
+      "filling_yellow": "#EAB308",
+      "full_red": "#EF4444"
+    },
+    "borders": {
+      "default": "#27272A",
+      "focus": "#A3E635"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "@expo-google-fonts/barlow-condensed (or system bold/heavy sans-serif if custom fonts fail)",
+      "body": "@expo-google-fonts/dm-sans (or system readable sans-serif)"
+    },
+    "hierarchy": {
+      "h1": { "fontSize": 32, "fontWeight": "900", "letterSpacing": -1, "textTransform": "uppercase" },
+      "h2": { "fontSize": 24, "fontWeight": "800", "letterSpacing": -0.5 },
+      "h3": { "fontSize": 20, "fontWeight": "700" },
+      "body": { "fontSize": 16, "fontWeight": "400", "letterSpacing": 0 },
+      "label": { "fontSize": 12, "fontWeight": "600", "letterSpacing": 1, "textTransform": "uppercase" }
+    },
+    "styling_rules": "Headings must feel heavy and athletic. Labels should be uppercase with wide tracking."
+  },
+  "layout_and_spacing": {
+    "spacing_scale": [4, 8, 12, 16, 24, 32, 48, 64],
+    "container_padding": 24,
+    "card_radius": 12,
+    "button_radius": 8,
+    "rules": "Tactical Minimalism. Use 1px solid borders for definition rather than soft drop shadows, which look muddy in dark mode on mobile. Provide generous breathing room around text elements."
+  },
+  "components": {
+    "reta_card": {
+      "description": "The main component showing tournament info. Uses a tight bento grid internally for stats (cost, courts, modality).",
+      "styling": "Background #151515, border 1px solid #27272A. Club logo on top left.",
+      "observaciones_box": "Max 140 chars. MUST have stylized borders: borderWidth 1, borderColor rgba(163, 230, 53, 0.4), backgroundColor rgba(163, 230, 53, 0.05), borderStyle dashed or solid, borderRadius 8."
+    },
+    "traffic_light_indicator": {
+      "description": "Visual 'Semáforo' of participation on public detail view and cards.",
+      "styling": "A horizontal pill or set of 3 dots. Green active if <50%, Yellow if 50-99%, Red if 100% (waitlist). When active, add a neon glow (shadowColor: status_color, shadowOpacity: 0.6, shadowRadius: 8)."
+    },
+    "action_buttons": {
+      "primary": "Background #A3E635, Text #000000. Bold uppercase text. Used for 'Pagar' or 'Generar Rol'.",
+      "secondary": "Background transparent, Border 1px solid #A3E635, Text #A3E635.",
+      "waitlist": "Background #EF4444, Text #FFFFFF."
+    },
+    "admin_dashboard": {
+      "layout": "Command-center feel. High density list of Retas. Forms should use clean inputs with #27272A borders, focusing to #A3E635."
+    }
+  },
+  "motion_and_interactions": {
+    "press_state": "Use activeOpacity={0.7} on all TouchableOpacities to provide tactile feedback.",
+    "transitions": "Use React Native LayoutAnimation or Reanimated for smooth mount/unmount of the Waitlist/Pay buttons based on the traffic light state."
+  },
+  "icons_and_assets": {
+    "library": "lucide-react-native or @expo/vector-icons (Feather/Ionicons)",
+    "rules": "DO NOT USE EMOJIS. Icons must be sharp, un-filled (stroke only) to match the performance archetype."
+  },
+  "image_urls": {
+    "onboarding_splash": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/71701c90-42ba-43cd-ab40-4a417e938eb7/images/761e6a313c97e19fd9283be9930a475c7ed6f46606a8ea8a353f1568f495d7f7.png",
+      "description": "Cinematic padel court in darkness with neon glow. Use as background for login/welcome screen with a dark overlay.",
+      "category": "hero_background"
+    },
+    "club_logos": [
+      {
+        "url": "https://images.unsplash.com/photo-1764116679127-dc9d2c1138a7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwyfHxzcG9ydHMlMjBjbHViJTIwbG9nb3xlbnwwfHx8fDE3Nzk4MzgzMjR8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Mockup sports club logo for Reta cards.",
+        "category": "logo"
+      },
+      {
+        "url": "https://images.pexels.com/photos/10095903/pexels-photo-10095903.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Alternative club logo / texture.",
+        "category": "logo"
+      }
+    ],
+    "player_avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1549505415-e16dbd446231?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwzfHxhdGhsZXRlJTIwcG9ydHJhaXQlMjBkYXJrbmVzc3xlbnwwfHx8fDE3Nzk4MzgzMjV8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Grayscale athletic portrait for user profiles.",
+        "category": "avatar"
+      },
+      {
+        "url": "https://images.pexels.com/photos/2216611/pexels-photo-2216611.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Dark athletic portrait.",
+        "category": "avatar"
+      }
+    ],
+    "padel_courts": [
+      {
+         "url": "https://images.pexels.com/photos/32897040/pexels-photo-32897040.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+         "description": "Indoor padel court, can be used for placeholders.",
+         "category": "background"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "You are building an Expo React Native app. Do not use React web DOM components like div, span, or Shadcn UI. Use View, Text, ScrollView, etc.",
+    "The app must heavily feature the dark theme (#0A0A0A) with the neon padel green accent (#A3E635).",
+    "Ensure 'observaciones' in the Reta detail/card has the specific stylized border (neon green transparent border).",
+    "Implement the Semáforo (Traffic Light) UI logic strictly based on participation percentages (<50% Green, 50-99% Yellow, 100% Red).",
+    "Every interactive element MUST include a data-testid attribute per the critical rules (e.g. data-testid=\"pay-button\").",
+    "Use the provided image_urls for backgrounds, club logos on the Reta cards, and user avatars in the Mi Perfil view. DO NOT USE placeholder services like via.placeholder.com.",
+    "When creating the PDF for the Round Robin role, keep the styling minimal but on-brand (high contrast, readable)."
+  ]
+}
