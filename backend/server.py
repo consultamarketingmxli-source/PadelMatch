@@ -279,7 +279,10 @@ async def radar(
     out = []
     async for r in cursor:
         _strip_mongo(r)
-        if lat is not None and lng is not None and r.get("latitud") and r.get("longitud"):
+        if lat is not None and lng is not None:
+            if not r.get("latitud") or not r.get("longitud"):
+                # Sin geo data, no incluir cuando se pide filtro espacial.
+                continue
             dist = obtener_distancia_km(lat, lng, r["latitud"], r["longitud"])
             if dist > radio_km:
                 continue
@@ -358,10 +361,12 @@ async def webhook_payment(body: PaymentWebhook):
     """
     Endpoint mock para confirmar/cancelar pagos (Stripe/MercadoPago compatible).
     Cuerpo: { inscripcion_id, status: "approved"|"failed" }
+    Idempotente: si la inscripción ya no existe (caso failed repetido), retorna ok.
     """
     insc = await db.inscripciones.find_one({"id": body.inscripcion_id})
     if not insc:
-        raise HTTPException(404, "Inscripción no encontrada")
+        # Idempotencia: webhook duplicado tras cancelación previa.
+        return {"ok": True, "status": "already_processed"}
 
     if body.status == "approved":
         await db.inscripciones.update_one(

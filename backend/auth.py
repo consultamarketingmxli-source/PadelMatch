@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "pixel-padel-os-secret-dev")
+JWT_SECRET = os.environ.get("JWT_SECRET", "pixel-padel-os-secret-dev-key-min-32bytes-please-rotate-in-prod")
 JWT_ALG = "HS256"
 ACCESS_TOKEN_EXP_MIN = 60 * 24  # 24h
 
