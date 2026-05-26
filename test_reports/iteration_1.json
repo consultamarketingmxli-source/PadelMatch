@@ -1,0 +1,46 @@
+{
+  "summary": "Backend testing for Pixel Padel OS — all 24 pytest cases PASSED (14 API + 10 logic units). Verified: JWT admin login, /auth/me, retas CRUD with slug+max_jugadores=8*canchas, semaforo VERDE/AMARILLO/ROJO transitions, Haversine radar (includes near ~10km, excludes far ~1000km), public slug detail (padel-tournament-hub-9 style), checkout creates Pendiente with ~5min lock, payment webhook approved/failed, ROJO 100% blocks new checkout with 409, waitlist positions [1,2,3] correct, atomic waitlist promotion to Pendiente on webhook=failed, PDF A4 generation (valid %PDF- header, application/pdf, >1KB binary), player stats (defaults + 14 partidos calc), Round Robin invariants via _validar_rotacion (no repeated partners, each rival pair exactly 2x, 7 apariciones/jugador), 5/6/7 rondas generation, and tz-aware fecha_evento with -06:00 offset.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/public/retas/radar", "issue": "When lat/lng provided, retas con latitud/longitud=None se incluyen siempre (no se filtran). Considerar excluirlas o marcarlas con distancia_km=null para que el cliente decida."},
+      {"endpoint": "POST /api/auth/login", "issue": "JWT firmado con HMAC key de 25 bytes (<32). passlib/bcrypt emiten warning de versión. No bloquea funcionalidad pero conviene usar secret >=32 bytes y actualizar bcrypt/passlib."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_api_pixel_padel.py",
+    "/app/backend/tests/test_logic_modules.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Opcional) Filtrar retas sin coordenadas en /api/public/retas/radar cuando lat/lng se proveen, o devolverlas en bucket separado.",
+    "(Opcional) Rotar JWT_SECRET a >=32 bytes para evitar InsecureKeyLengthWarning.",
+    "(Opcional) Pinear pasilib/bcrypt o usar passlib>=1.7.5 con bcrypt 4.x compatible para eliminar el warning de __about__.",
+    "Considerar idempotencia en webhook: actualmente DELETE en failed; si llega el mismo webhook 2 veces el segundo retorna 404."
+  ],
+  "critical_code_review_comments": [
+    "server.py = 605 líneas — al borde del límite. Considerar extraer cronjobs y handlers públicos a routers separados (routers/retas.py, routers/public.py, services/waitlist.py) para mejorar mantenibilidad.",
+    "Models.py: Inscripcion no incluye estado 'Cancelado' (se borra directo). Si se requiere auditoría histórica, mejor marcar como Cancelado en vez de delete_one().",
+    "_promover_lista_espera ejecuta send_whatsapp inline; si Twilio se cae bloquea el webhook. Considerar background task.",
+    "TZ default = -360 (CDMX) hardcoded en RetaCreate — OK para MX-only, documentar si se internacionaliza.",
+    "Excluir _id usando proyección {'_id': 0} ya está bien implementado en la mayoría; en list_retas_admin se usa _strip_mongo después del find sin proyección — consistencia OK pero menos eficiente."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (nuevo)",
+    "/app/backend/tests/test_api_pixel_padel.py (nuevo)",
+    "/app/backend/tests/test_logic_modules.py (nuevo)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "not_tested"},
+  "seed_data_creation": "Cada test crea sus propias retas/inscripciones con prefijo TEST_ y limpia con DELETE /api/retas/{id} (cascade borra inscripciones+waitlist). No se modifica data sembrada.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Tests pytest en /app/backend/tests/. Usa fixtures admin_token + auth_headers. BASE_URL desde EXPO_PUBLIC_BACKEND_URL. Mongo: test_database (db). Limpieza: DELETE /api/retas/{id} hace cascade. Webhook=failed dispara _promover_lista_espera síncronamente — útil para tests deterministas sin esperar al cronjob de 30s. logica_torneo._validar_rotacion() prueba invariantes Round Robin (no parejas repetidas, cada par rival exactamente 2x, 7 apariciones por jugador).",
+  "rca_of_issue": "N/A — no bugs encontrados. Suite completa 24/24 PASS en 4.84s."
+}
