@@ -221,7 +221,7 @@ export function CourtWatermark({
   );
 }
 
-// =========== Logo / Isotipo Pixel Padel OS (Squircle) ===========
+// =========== Logo / Isotipo PadelappRetas OS (Squircle) ===========
 export function PixelPadelLogo({ size = 48 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">

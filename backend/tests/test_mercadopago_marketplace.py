@@ -1,4 +1,4 @@
-"""Mercado Pago Marketplace integration tests for PadelReta.
+"""Mercado Pago Marketplace integration tests for PadelappRetas.
 
 Covers:
 - POST /api/admin/mercadopago/connect (valid + invalid token)
@@ -342,7 +342,7 @@ class TestRegressionNoMpBreakage:
     def test_auth_login_works(self, api_client):
         r = api_client.post(
             f"{BASE_URL}/api/auth/login",
-            json={"username": "admin@pixelpadel.com", "password": "admin123"},
+            json={"username": "admin@padelappretas.com", "password": "admin123"},
             timeout=15,
         )
         assert r.status_code == 200

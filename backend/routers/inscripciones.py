@@ -23,7 +23,7 @@ from models import (
     WaitlistEntry,
 )
 
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["inscripciones"])
 
 

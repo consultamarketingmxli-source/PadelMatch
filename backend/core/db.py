@@ -15,7 +15,7 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-ADMIN_EMAIL_DEFAULT = "admin@pixelpadel.com"
+ADMIN_EMAIL_DEFAULT = "admin@padelappretas.com"
 ADMIN_PASSWORD_DEFAULT = "admin123"
 
 

@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for Pixel Padel OS backend tests."""
+"""Shared pytest fixtures for PadelappRetas OS backend tests."""
 import os
 import sys
 from pathlib import Path
@@ -20,7 +20,7 @@ BASE_URL = os.environ.get(
     "https://padel-tournament-hub-9.preview.emergentagent.com",
 ).rstrip("/")
 
-ADMIN_EMAIL = "admin@pixelpadel.com"
+ADMIN_EMAIL = "admin@padelappretas.com"
 ADMIN_PASSWORD = "admin123"
 
 

@@ -1,4 +1,4 @@
-"""Pydantic models for Pixel Padel OS."""
+"""Pydantic models for PadelappRetas OS."""
 from datetime import datetime
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, constr

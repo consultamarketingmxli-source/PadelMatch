@@ -29,7 +29,7 @@ from auth import get_current_admin
 from core.db import db, ADMIN_EMAIL_DEFAULT
 from core.helpers import crear_inscripcion_pendiente, promover_lista_espera
 
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["mercadopago"])
 
 

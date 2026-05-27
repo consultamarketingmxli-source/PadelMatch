@@ -90,7 +90,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.brand} testID="app-brand">PIXEL PADEL</Text>
+          <Text style={styles.brand} testID="app-brand">PADELAPPRETAS</Text>
           <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -98,7 +98,7 @@ export default function HomeScreen() {
             testID="nav-mi-cuenta-btn"
             onPress={async () => {
               const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-              const tok = await AsyncStorage.getItem("padelreta.player.token");
+              const tok = await AsyncStorage.getItem("padelappretas.player.token");
               router.push(tok ? ("/mi-cuenta" as any) : ("/login" as any));
             }}
             style={styles.iconBtn}

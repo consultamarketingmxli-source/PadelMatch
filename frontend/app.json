@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Pixel Padel",
-    "slug": "pixel-padel",
+    "name": "PadelappRetas",
+    "slug": "padelappretas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "pixelpadel",
+    "scheme": "padelappretas",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -17,7 +17,7 @@
         "backgroundColor": "#059669"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.pixelpadel.app"
+      "package": "com.padelappretas.app"
     },
     "web": {
       "bundler": "metro",

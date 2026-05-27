@@ -18,7 +18,7 @@ from notifications import (
     send_whatsapp,
 )
 
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 
 
 def strip_mongo(doc: dict) -> dict:

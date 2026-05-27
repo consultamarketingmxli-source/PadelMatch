@@ -232,7 +232,7 @@ def generar_pdf_rol(
     )
     story.append(Spacer(1, 6 * mm))
     story.append(Paragraph(
-        "Generado con Pixel Padel OS · Round Robin Individual perfecto · Ningún jugador repite pareja.",
+        "Generado con PadelappRetas OS · Round Robin Individual perfecto · Ningún jugador repite pareja.",
         footer_style,
     ))
 

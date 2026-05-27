@@ -19,7 +19,7 @@ import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function AdminLogin() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@pixelpadel.com");
+  const [email, setEmail] = useState("admin@padelappretas.com");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
 
@@ -52,7 +52,7 @@ export default function AdminLogin() {
           <View style={styles.iconWrap}>
             <ShieldCheck size={28} color={colors.brand.primary} />
           </View>
-          <Text style={styles.title}>PIXEL PADEL · ADMIN</Text>
+          <Text style={styles.title}>PADELAPPRETAS · ADMIN</Text>
           <Text style={styles.subtitle}>
             Acceso para organizadores de clubes de pádel.
           </Text>
@@ -82,7 +82,7 @@ export default function AdminLogin() {
           </View>
 
           <Text style={styles.hint}>
-            Credenciales demo: admin@pixelpadel.com / admin123
+            Credenciales demo: admin@padelappretas.com / admin123
           </Text>
         </View>
       </KeyboardAvoidingView>

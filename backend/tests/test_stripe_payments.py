@@ -1,4 +1,4 @@
-"""Stripe Checkout integration tests for PadelReta — covers checkout-stripe,
+"""Stripe Checkout integration tests for PadelappRetas — covers checkout-stripe,
 webhook idempotency, payment-status polling, admin manual expire, waitlist_count
 semantics (notificado:false), and mock webhook retrocompatibility."""
 import json

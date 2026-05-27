@@ -1,5 +1,5 @@
 /**
- * Pixel Padel OS — Design Tokens
+ * PadelappRetas OS — Design Tokens
  * "Club Pro Clean" — luminoso, corporativo, alto rendimiento.
  *
  * Paleta:

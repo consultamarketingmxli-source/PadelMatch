@@ -1,5 +1,5 @@
 """
-Integración Stripe Checkout para PadelReta usando emergentintegrations.
+Integración Stripe Checkout para PadelappRetas usando emergentintegrations.
 
 Flujo:
 1. Frontend llama POST /api/public/retas/{id}/checkout-stripe → crea Inscripción Pendiente y

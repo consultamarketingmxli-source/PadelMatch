@@ -1,4 +1,4 @@
-/** API client for Pixel Padel OS — handles auth token + /api prefix. */
+/** API client for PadelappRetas OS — handles auth token + /api prefix. */
 import { storage } from "@/src/utils/storage";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";

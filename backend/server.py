@@ -1,5 +1,5 @@
 """
-PadelReta — API principal FastAPI.
+PadelappRetas — API principal FastAPI.
 
 Entry point: configura app, middleware, startup/shutdown, e incluye routers.
 Toda la lógica vive en /app/backend/routers/ y /app/backend/core/.
@@ -30,9 +30,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 
-app = FastAPI(title="PadelReta API")
+app = FastAPI(title="PadelappRetas API")
 api = APIRouter(prefix="/api")
 
 # Incluir todos los routers bajo /api
@@ -50,7 +50,7 @@ api.include_router(pdf_router)
 
 @api.get("/")
 async def health():
-    return {"status": "ok", "app": "Pixel Padel OS API"}
+    return {"status": "ok", "app": "PadelappRetas OS API"}
 
 
 app.include_router(api)
@@ -62,7 +62,7 @@ async def startup():
     await setup_indexes()
     seeded = await seed_admin_if_needed(hash_password)
     if seeded:
-        logger.info("Admin seedeado (admin@pixelpadel.com / admin123)")
+        logger.info("Admin seedeado (admin@padelappretas.com / admin123)")
     asyncio.create_task(cronjob_recordatorios())
     asyncio.create_task(cronjob_expirar_bloqueos())
 

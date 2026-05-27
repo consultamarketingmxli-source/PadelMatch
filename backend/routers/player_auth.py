@@ -26,7 +26,7 @@ try:
 except Exception:
     jwt = None  # type: ignore
 
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 router = APIRouter(prefix="/players", tags=["players"])
 
 OTP_TTL_SECONDS = 5 * 60
@@ -126,7 +126,7 @@ async def request_otp(body: OtpRequest):
     twilio_listo = is_twilio_configured()
     # En todos los casos intentamos enviar (notifications.send_whatsapp es mock por defecto)
     msg = (
-        f"Hola {body.nombre} 👋 Tu código PadelReta es: {codigo}\n"
+        f"Hola {body.nombre} 👋 Tu código PadelappRetas es: {codigo}\n"
         f"Vence en 5 minutos. No lo compartas con nadie."
     )
     await send_whatsapp(body.telefono, msg)

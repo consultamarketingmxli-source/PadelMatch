@@ -1,5 +1,5 @@
 """
-Motor lógico y algoritmo Round Robin para Pixel Padel OS.
+Motor lógico y algoritmo Round Robin para PadelappRetas OS.
 Funciones puras, sin dependencias externas más allá de stdlib.
 """
 from datetime import datetime, timedelta, timezone

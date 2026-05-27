@@ -21,8 +21,8 @@ import { Input } from "@/src/components/Input";
 import { api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
-const PLAYER_TOKEN_KEY = "padelreta.player.token";
-const PLAYER_INFO_KEY = "padelreta.player.info";
+const PLAYER_TOKEN_KEY = "padelappretas.player.token";
+const PLAYER_INFO_KEY = "padelappretas.player.info";
 
 export default function PlayerLogin() {
   const router = useRouter();
@@ -70,7 +70,7 @@ export default function PlayerLogin() {
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="login-back">
             <ArrowLeft size={18} color={colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Entrar a Pixel Padel</Text>
+          <Text style={styles.title}>Entrar a PadelappRetas</Text>
           <View style={{ width: 40 }} />
         </View>
 

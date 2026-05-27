@@ -18,8 +18,8 @@ import { LogOut, Trophy, Calendar, CheckCircle2, Clock, XCircle, ChevronRight } 
 import { PlayerInscripcion, PlayerStats, api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
-const PLAYER_TOKEN_KEY = "padelreta.player.token";
-const PLAYER_INFO_KEY = "padelreta.player.info";
+const PLAYER_TOKEN_KEY = "padelappretas.player.token";
+const PLAYER_INFO_KEY = "padelappretas.player.info";
 
 export default function MiCuenta() {
   const router = useRouter();

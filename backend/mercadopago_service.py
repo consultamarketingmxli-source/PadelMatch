@@ -21,7 +21,7 @@ import mercadopago
 from dotenv import load_dotenv
 
 load_dotenv()
-logger = logging.getLogger("pixel-padel-os")
+logger = logging.getLogger("padelappretas-os")
 
 MP_API_BASE = "https://api.mercadopago.com"
 PLATFORM_FEE_PERCENT = float(os.getenv("MP_PLATFORM_FEE_PERCENT", "10"))
@@ -82,7 +82,7 @@ async def crear_preferencia(
         },
         "auto_return": "approved",
         "notification_url": notification_url,
-        "statement_descriptor": "PadelReta",
+        "statement_descriptor": "PadelappRetas",
     }
     if payer_email:
         pref["payer"] = {"email": payer_email}

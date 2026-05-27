@@ -1,4 +1,4 @@
-"""API integration tests for Pixel Padel OS — covers auth, retas, radar,
+"""API integration tests for PadelappRetas OS — covers auth, retas, radar,
 checkout, waitlist promotion, semaforo states, PDF, and player stats."""
 import time
 
@@ -13,7 +13,7 @@ class TestAuth:
     def test_login_success(self, api_client):
         r = api_client.post(
             f"{BASE_URL}/api/auth/login",
-            json={"username": "admin@pixelpadel.com", "password": "admin123"},
+            json={"username": "admin@padelappretas.com", "password": "admin123"},
         )
         assert r.status_code == 200
         data = r.json()
@@ -22,7 +22,7 @@ class TestAuth:
     def test_login_bad_password(self, api_client):
         r = api_client.post(
             f"{BASE_URL}/api/auth/login",
-            json={"username": "admin@pixelpadel.com", "password": "wrong"},
+            json={"username": "admin@padelappretas.com", "password": "wrong"},
         )
         assert r.status_code == 401
 
@@ -30,7 +30,7 @@ class TestAuth:
         r = api_client.get(f"{BASE_URL}/api/auth/me", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
-        assert data["email"] == "admin@pixelpadel.com"
+        assert data["email"] == "admin@padelappretas.com"
         assert data["role"] == "admin"
 
     def test_me_requires_token(self, api_client):
