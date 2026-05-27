@@ -262,6 +262,24 @@ export const api = {
     const qs = lat !== undefined && lng !== undefined ? `?lat=${lat}&lng=${lng}&radio_km=${radioKm}` : "";
     return request<Reta[]>(`/public/retas/radar${qs}`);
   },
+  /**
+   * Motor de búsqueda híbrido — 3 vías combinables:
+   *  A) GPS (lat/lng + radioKm)
+   *  B) Texto (q, trim+lowercase aplicado en server)
+   *  C) Fallback: sin params → todas ordenadas por fecha_evento ASC.
+   */
+  buscarRetas: (params: { q?: string; lat?: number; lng?: number; radioKm?: number }) => {
+    const sp = new URLSearchParams();
+    const q = (params.q ?? "").trim().toLowerCase();
+    if (q) sp.set("q", q);
+    if (params.lat !== undefined && params.lng !== undefined) {
+      sp.set("lat", String(params.lat));
+      sp.set("lng", String(params.lng));
+      sp.set("radio_km", String(params.radioKm ?? 30));
+    }
+    const qs = sp.toString() ? `?${sp.toString()}` : "";
+    return request<Reta[]>(`/public/retas/buscar${qs}`);
+  },
   getRetaBySlug: (slug: string) => request<Reta>(`/public/retas/${slug}`),
 
   // ===== inscripciones =====

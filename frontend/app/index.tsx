@@ -1,5 +1,19 @@
-/** Landing público: radar GPS de retas en 30km. */
-import React, { useCallback, useEffect, useState } from "react";
+/**
+ * Pantalla principal del jugador — Motor de búsqueda HÍBRIDO.
+ *
+ * Tres vías paralelas y combinables:
+ *  A) GPS: botón con icono LocateFixed; si el usuario lo activa y acepta
+ *     permisos, el backend filtra por radio Haversine (30km).
+ *  B) Texto libre: input "Buscar por reta o club…" (debounce 350ms).
+ *  C) Fallback automático: sin texto y sin GPS, lista TODAS las retas
+ *     ordenadas por fecha_evento ASC.
+ *
+ * Blindaje de errores:
+ *  - PERMISSION_DENIED / timeout 6s: toast informativo + fallback C.
+ *  - Espacios vacíos en input: ignorados (no consulta backend).
+ *  - Reta sin lat/lng: omitida del filtro geo en backend (no rompe la lista).
+ */
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,14 +26,17 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
-import { MapPin, Radar, User, ShieldCheck } from "lucide-react-native";
+import { ShieldCheck, User } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
-import { Button } from "@/src/components/Button";
 import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
+import { SearchBar } from "@/src/components/SearchBar";
+import { Toast } from "@/src/components/Toast";
 import { colors, radii, spacing, typography } from "@/src/theme";
+
+type GpsState = "idle" | "active" | "loading" | "denied";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -27,30 +44,57 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [retas, setRetas] = useState<Reta[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [locStatus, setLocStatus] = useState<"unknown" | "granted" | "denied" | "timeout">("unknown");
-  const [radius, setRadius] = useState(30);
+  const [gpsState, setGpsState] = useState<GpsState>("idle");
   const [query, setQuery] = useState("");
+  const [radius] = useState(30);
+  const [toast, setToast] = useState<{ msg: string; tone: "info" | "warn" | "error" } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchRetas = useCallback(
-    async (lat?: number, lng?: number, rk = 30) => {
+  /** Llama al motor híbrido con los params actuales. */
+  const fetchHybrid = useCallback(
+    async (q: string, useCoords: { lat: number; lng: number } | null) => {
       try {
-        const data = await api.radar(lat, lng, rk);
-        // Orden de fallback: fecha más próxima primero (cuando no hay GPS).
-        const ordered = lat == null
-          ? [...data].sort((a, b) => (a.fecha_evento || "").localeCompare(b.fecha_evento || ""))
-          : data;
-        setRetas(ordered);
+        const data = await api.buscarRetas({
+          q,
+          lat: useCoords?.lat,
+          lng: useCoords?.lng,
+          radioKm: radius,
+        });
+        setRetas(data);
       } catch (e) {
-        console.warn("Error radar:", e);
+        console.warn("buscar error:", e);
         setRetas([]);
       }
     },
-    [],
+    [radius],
   );
 
-  // Helper con timeout duro para getCurrentPositionAsync.
-  // expo-location rara vez se cuelga, pero en navegadores con GPS lento o en
-  // dispositivos con permisos parcialmente revocados puede quedar pendiente.
+  // Debounced text search. Ignora cadenas vacías / solo espacios.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const cleaned = query.trim();
+    debounceRef.current = setTimeout(() => {
+      fetchHybrid(cleaned, coords);
+    }, 350);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query, coords, fetchHybrid]);
+
+  // Carga inicial (fallback C).
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        await fetchHybrid("", null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Promesa con timeout duro para evitar congelar la UI si el GPS se cuelga. */
   const getPositionWithTimeout = async (timeoutMs: number) => {
     return Promise.race<Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>>([
       Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
@@ -60,66 +104,55 @@ export default function HomeScreen() {
     ]);
   };
 
-  const requestGPS = useCallback(async () => {
+  const toggleGps = useCallback(async () => {
+    // Si ya está activo → apagar y volver a fallback.
+    if (gpsState === "active") {
+      setCoords(null);
+      setGpsState("idle");
+      setToast({ msg: "Radar desactivado. Mostrando todas las retas por fecha.", tone: "info" });
+      return;
+    }
+    setGpsState("loading");
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== "granted") {
-        setLocStatus("denied");
-        // Fallback: lista completa por fecha más próxima.
-        await fetchRetas();
+        // PERMISSION_DENIED
+        setGpsState("denied");
+        setCoords(null);
+        setToast({
+          msg: "Ubicación desactivada. Mostrando todos los resultados por fecha.",
+          tone: "warn",
+        });
         return;
       }
-      setLocStatus("granted");
-      try {
-        const pos = await getPositionWithTimeout(6000);
-        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCoords(c);
-        await fetchRetas(c.lat, c.lng, radius);
-      } catch (geoErr) {
-        // Timeout o error de hardware: degradamos a lista completa sin congelar la app.
-        console.warn("GPS timeout/err, fallback a lista completa:", geoErr);
-        setLocStatus("timeout");
-        await fetchRetas();
-      }
-    } catch (e) {
-      console.warn("GPS denied/error, falling back to all retas:", e);
-      setLocStatus("denied");
-      await fetchRetas();
+      const pos = await getPositionWithTimeout(6000);
+      const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setCoords(c);
+      setGpsState("active");
+      setToast({ msg: `Radar activo · retas en ${radius}km a la redonda.`, tone: "info" });
+    } catch (e: any) {
+      const msg = e?.message === "GPS_TIMEOUT"
+        ? "Tu GPS tardó demasiado. Mostrando todos los resultados por fecha."
+        : "No pudimos obtener tu ubicación. Mostrando todos los resultados por fecha.";
+      setGpsState("denied");
+      setCoords(null);
+      setToast({ msg, tone: "warn" });
     }
-  }, [fetchRetas, radius]);
-
-  useEffect(() => {
-    (async () => {
-      console.log("[Home] fetch start");
-      setLoading(true);
-      try {
-        await fetchRetas();
-        console.log("[Home] fetch ok");
-      } catch (e) {
-        console.error("[Home] fetch err", e);
-      } finally {
-        setLoading(false);
-        console.log("[Home] loading off");
-      }
-    })();
-  }, [fetchRetas]);
+  }, [gpsState, radius]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    if (coords) await fetchRetas(coords.lat, coords.lng, radius);
-    else await fetchRetas();
+    await fetchHybrid(query.trim(), coords);
     setRefreshing(false);
   };
 
-  // Filtro de búsqueda en cliente — siempre funciona aunque el GPS falle.
-  const filteredRetas = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return retas;
-    return retas.filter((r) =>
-      (r.nombre || "").toLowerCase().includes(q) ||
-      (r.club || "").toLowerCase().includes(q),
-    );
-  }, [retas, query]);
+  // Subtítulo contextual.
+  const subtitle = (() => {
+    if (gpsState === "active") return `Radar activo · ${radius} km`;
+    if (gpsState === "loading") return "Detectando ubicación…";
+    if (gpsState === "denied") return "Sin GPS · ordenado por fecha";
+    return "Todas las retas · ordenado por fecha";
+  })();
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -150,47 +183,14 @@ export default function HomeScreen() {
           </>
         }
       />
-      <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
 
-      <View style={styles.searchBar}>
-        <Search size={14} color={colors.text.tertiary} />
-        <TextInput
-          testID="search-input"
-          style={styles.searchInput}
-          placeholder="Buscar club, ciudad o nombre de reta"
-          placeholderTextColor={colors.text.tertiary}
-          value={query}
-          onChangeText={setQuery}
-          autoCorrect={false}
-          maxLength={60}
-          returnKeyType="search"
-        />
-      </View>
-
-      <View style={styles.radarBar}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-          <Radar size={16} color={colors.brand.primary} />
-          <Text style={styles.radarLabel}>
-            {locStatus === "granted"
-              ? `Radar activo · ${radius}km`
-              : locStatus === "timeout"
-              ? "GPS lento · mostrando todas"
-              : locStatus === "denied"
-              ? "Sin GPS · mostrando todas"
-              : "Detectando ubicación…"}
-          </Text>
-        </View>
-        {locStatus !== "granted" ? (
-          <TouchableOpacity
-            testID="enable-gps-btn"
-            onPress={requestGPS}
-            style={styles.gpsCta}
-          >
-            <MapPin size={12} color={colors.text.inverse} />
-            <Text style={styles.gpsCtaText}>Activar GPS</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <SearchBar
+        value={query}
+        onChangeText={setQuery}
+        gpsState={gpsState}
+        onTogglePress={toggleGps}
+      />
+      <Text style={styles.contextLine}>{subtitle}</Text>
 
       {loading ? (
         <View style={styles.center}>
@@ -199,7 +199,7 @@ export default function HomeScreen() {
       ) : (
         <FlatList
           testID="retas-list"
-          data={filteredRetas}
+          data={retas}
           keyExtractor={(r) => r.id}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -219,50 +219,42 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <EmptyState
               testID="empty-radar"
-              title={query ? "Sin resultados" : "Sin retas en el radar"}
+              title={
+                query.trim()
+                  ? "Sin resultados"
+                  : gpsState === "active"
+                  ? "Sin retas en el radar"
+                  : "No hay retas activas"
+              }
               subtitle={
-                query
-                  ? `No encontramos retas que coincidan con "${query}".`
-                  : locStatus === "granted"
-                  ? `Ningún torneo de pádel en ${radius}km a la redonda. Vuelve más tarde o pide a tu club que cree una reta.`
-                  : "No hay retas activas en este momento. Vuelve más tarde o explora otros clubes."
+                query.trim()
+                  ? `No encontramos retas que coincidan con "${query.trim()}".`
+                  : gpsState === "active"
+                  ? `Ningún torneo de pádel en ${radius} km a la redonda.`
+                  : "Vuelve más tarde o pide a tu club que cree una reta."
               }
             />
           }
         />
       )}
+
+      <Toast
+        visible={!!toast}
+        message={toast?.msg ?? ""}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
-  tagline: {
-    ...typography.bodySm,
+  contextLine: {
+    ...typography.label,
     color: colors.text.secondary,
-    paddingHorizontal: spacing.base,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.bg.card,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: typography.body.fontFamily as string,
-    fontSize: 14,
-    color: colors.text.primary,
-    paddingVertical: 0,
   },
   iconBtn: {
     width: 40,
@@ -274,29 +266,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  radarBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginVertical: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.bg.card,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-  },
-  radarLabel: { ...typography.label, color: colors.text.primary },
-  gpsCta: {
-    backgroundColor: colors.brand.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radii.sm,
-  },
-  gpsCtaText: { ...typography.button, color: colors.text.inverse, fontSize: 11 },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,

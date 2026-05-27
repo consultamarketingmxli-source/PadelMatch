@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ASCENDING
+from pymongo import ASCENDING, TEXT
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
@@ -37,6 +37,24 @@ async def setup_indexes() -> None:
     # OTPs de jugadores con auto-expiración por TTL (Mongo limpia automáticamente)
     await db.player_otps.create_index("expires_at_dt", expireAfterSeconds=0)
     await db.player_otps.create_index("telefono", unique=True)
+
+    # === Motor de búsqueda híbrido ===
+    # Índice de texto sobre nombre + club para búsqueda por coincidencia parcial.
+    # MongoDB usa stemming + tokenización ($text). Para sub-cadenas usamos $regex
+    # con índice B-Tree adicional sobre el campo crudo.
+    try:
+        await db.retas.create_index(
+            [("nombre", TEXT), ("club", TEXT)],
+            name="retas_text_idx",
+            default_language="spanish",
+        )
+    except Exception:
+        # Si ya existe con otra definición lo dejamos pasar (idempotente).
+        pass
+    # B-Tree de soporte para sort por fecha_evento (orden por defecto del feed).
+    await db.retas.create_index([("fecha_evento", ASCENDING)])
+    # 2dsphere para futuras consultas geo nativas (compatible con docs sin lat/lng).
+    await db.retas.create_index([("latitud", ASCENDING), ("longitud", ASCENDING)], sparse=True)
 
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:

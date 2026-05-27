@@ -1,4 +1,5 @@
-"""Endpoints públicos (sin auth): radar, detalle por slug, stats de jugador."""
+"""Endpoints públicos (sin auth): radar, búsqueda híbrida, detalle por slug, stats de jugador."""
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -17,15 +18,58 @@ async def radar(
     lng: Optional[float] = Query(None),
     radio_km: float = Query(30.0, gt=0, le=200),
 ):
-    """Si lat/lng se proveen, filtra por radio. Si no, retorna todas las retas futuras."""
-    cursor = db.retas.find().sort("fecha_evento", 1).limit(500)
-    out = []
+    """Compatibilidad legacy. Equivalente a /retas/buscar sin `q`."""
+    return await buscar(q=None, lat=lat, lng=lng, radio_km=radio_km)
+
+
+@router.get("/retas/buscar", response_model=List[RetaPublic])
+async def buscar(
+    q: Optional[str] = Query(None, max_length=120),
+    lat: Optional[float] = Query(None, ge=-90, le=90),
+    lng: Optional[float] = Query(None, ge=-180, le=180),
+    radio_km: float = Query(30.0, gt=0, le=200),
+):
+    """Motor de búsqueda híbrido (tres vías paralelas y combinables):
+
+    - Opción A (GPS): si `lat`/`lng` se proveen, filtra por radio Haversine.
+      Retas SIN lat/lng son omitidas del filtro (no producen 500).
+    - Opción B (Texto): si `q` se provee tras `trim().lower()`, busca coincidencia
+      parcial case-insensitive en `nombre` y `club` (regex sobre índice texto).
+    - Opción C (Fallback): si no hay `q` ni coords útiles, devuelve TODAS las
+      retas activas y públicas ordenadas por `fecha_evento ASC`.
+    - A+B son combinables: GPS filtra geo y `q` filtra texto sobre ese subconjunto.
+    """
+    # Sanitización defensiva (también pasamos por aquí cuando viene de /radar).
+    q_norm: Optional[str] = None
+    if q is not None:
+        q_norm = q.strip().lower()
+        if not q_norm:
+            q_norm = None  # texto vacío o solo espacios → ignorar
+
+    # Filtro Mongo base.
+    mongo_filter: dict = {}
+    if q_norm:
+        # Escapamos metacaracteres regex para no romper si el usuario escribe "(" o ".".
+        safe = re.escape(q_norm)
+        mongo_filter["$or"] = [
+            {"nombre": {"$regex": safe, "$options": "i"}},
+            {"club":   {"$regex": safe, "$options": "i"}},
+        ]
+
+    cursor = db.retas.find(mongo_filter).sort("fecha_evento", 1).limit(500)
+    out: list = []
     async for r in cursor:
         strip_mongo(r)
+        # Filtro geo: solo aplica si el usuario activó GPS.
         if lat is not None and lng is not None:
-            if not r.get("latitud") or not r.get("longitud"):
+            # Defensa: una reta sin lat/lng se omite (no se cuenta como match geo).
+            if r.get("latitud") is None or r.get("longitud") is None:
                 continue
-            dist = obtener_distancia_km(lat, lng, r["latitud"], r["longitud"])
+            try:
+                dist = obtener_distancia_km(lat, lng, r["latitud"], r["longitud"])
+            except Exception:
+                # Coords corruptas (tipo string, NaN, etc.) → omitir, no romper.
+                continue
             if dist > radio_km:
                 continue
             r["distancia_km"] = round(dist, 2)
