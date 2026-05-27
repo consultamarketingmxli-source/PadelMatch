@@ -273,6 +273,8 @@ async def delete_reta(reta_id: str, current=Depends(get_current_admin)):
         raise HTTPException(404, "Reta no encontrada")
     await db.inscripciones.delete_many({"reta_id": reta_id})
     await db.lista_espera.delete_many({"reta_id": reta_id})
+    await db.resultados.delete_many({"reta_id": reta_id})
+    await db.stripe_transactions.delete_many({"reta_id": reta_id})
     return {"ok": True}
 
 
