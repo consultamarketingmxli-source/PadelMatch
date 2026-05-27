@@ -1,12 +1,20 @@
 """JWT auth + password hashing helpers."""
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import jwt
+from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
+
+# Cargar .env antes de leer JWT_SECRET — auth.py es importado tempranamente
+# desde server.py (antes que core/db.py que también hace load_dotenv).
+# Sin esto, JWT_SECRET cae al default hardcodeado y las claves rotadas
+# del .env se ignoran (vulnerabilidad descubierta por el testing_agent).
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod")
 JWT_ALG = "HS256"

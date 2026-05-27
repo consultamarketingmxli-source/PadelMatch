@@ -46,12 +46,15 @@ API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "admin@padelappretas.com"
 ADMIN_PASSWORD = "admin123"
-# BUG NOTA: auth.py se importa ANTES que core/db.py (que llama load_dotenv()),
-# por lo que el JWT_SECRET real usado por el servidor es el default de auth.py,
-# NO el de /app/backend/.env. Reportado en iteration report.
-# NOTA: conftest.py llama load_dotenv() y agrega JWT_SECRET a os.environ, así
-# que NO podemos usar os.environ aquí — hard-codeamos el default real del server.
-JWT_SECRET = "padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod"
+# Post-fix de auth.py: JWT_SECRET ahora se carga del .env antes de leerse,
+# así que el secreto del servidor es el del .env. Lo replicamos.
+from dotenv import dotenv_values  # noqa: E402
+
+_env = dotenv_values("/app/backend/.env")
+JWT_SECRET = _env.get(
+    "JWT_SECRET",
+    "padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod",
+)
 
 
 # ---------- Fixtures ----------
