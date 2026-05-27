@@ -11,6 +11,11 @@ from typing import Optional
 from fastapi import HTTPException
 
 from core.db import db
+from core.circuit import safe_run
+from core.concurrency import (
+    liberar_lugar,
+    reservar_lugar_atomico,
+)
 from models import Inscripcion, Usuario
 from notifications import (
     construir_mensaje_recordatorio,
@@ -29,7 +34,15 @@ def strip_mongo(doc: dict) -> dict:
 
 
 async def compute_public(r: dict) -> dict:
-    """Adjunta inscritos_count, waitlist_count, capacidad_pct y semáforo a una reta."""
+    """Adjunta inscritos_count, waitlist_count, capacidad_pct y semáforo a una reta.
+
+    También ejecuta limpieza pasiva: cualquier inscripción Pendiente con
+    `bloqueado_hasta` vencido se marca como Expirada y libera el cupo atómico.
+    Esto garantiza que el cliente nunca vea cupos fantasma si el cronjob se atrasa.
+    """
+    # Limpieza pasiva primero (libera cupos vencidos).
+    await expirar_pendientes_vencidas(r["id"])
+
     now_iso = datetime.now(timezone.utc).isoformat()
     pendientes_activos = await db.inscripciones.count_documents({
         "reta_id": r["id"],
@@ -71,79 +84,140 @@ async def upsert_jugador(nombre: str, telefono: str) -> str:
     return nuevo.id
 
 
-async def expirar_pendientes_vencidas(reta_id: str) -> None:
-    """Marca como Expiradas las Pendientes con `bloqueado_hasta` vencido (de una reta)."""
+async def expirar_pendientes_vencidas(reta_id: str) -> int:
+    """Marca como Expiradas las Pendientes con `bloqueado_hasta` vencido (de una reta).
+    Devuelve cuántas se expiraron. Libera los cupos en `inscritos_lock` de forma atómica.
+    """
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Primero contamos las que se van a expirar para liberar cupos.
+    a_expirar = await db.inscripciones.count_documents({
+        "reta_id": reta_id, "estatus_pago": "Pendiente",
+        "bloqueado_hasta": {"$lt": now_iso},
+    })
+    if a_expirar == 0:
+        return 0
     await db.inscripciones.update_many(
         {"reta_id": reta_id, "estatus_pago": "Pendiente",
          "bloqueado_hasta": {"$lt": now_iso}},
         {"$set": {"estatus_pago": "Expirado"}},
     )
+    # Liberamos cupos en el contador atómico.
+    for _ in range(a_expirar):
+        await liberar_lugar(reta_id, 1)
+    return a_expirar
 
 
 async def crear_inscripcion_pendiente(
     reta: dict, nombre: str, telefono: str, minutos_bloqueo: int = 5,
 ) -> Inscripcion:
-    """Crea una inscripción Pendiente con bloqueo. Valida cupo. Lanza HTTPException 409 si lleno."""
+    """Crea una inscripción Pendiente con bloqueo y reserva ATÓMICA de cupo.
+
+    Garantías:
+    - Dos usuarios concurrentes para el último cupo: solo uno gana, el otro recibe 409.
+    - Si el insert de la inscripción falla, se libera el cupo automáticamente.
+    - Antes de intentar reservar, se expiran las pendientes vencidas (limpieza pasiva).
+    """
     reta_id = reta["id"]
+    # 1) Limpieza pasiva: libera cupos que ya vencieron.
     await expirar_pendientes_vencidas(reta_id)
 
-    ocupados = await db.inscripciones.count_documents({
-        "reta_id": reta_id,
-        "estatus_pago": {"$in": ["Aprobado", "Pendiente"]},
-    })
-    if ocupados >= reta["max_jugadores"]:
+    # 2) Reserva atómica del cupo.
+    reta_actual = await reservar_lugar_atomico(reta_id)
+    if reta_actual is None:
         raise HTTPException(409, "Reta llena. Únete a la lista de espera.")
 
-    jugador_id = await upsert_jugador(nombre, telefono)
-    bloqueado_hasta = (datetime.now(timezone.utc) + timedelta(minutes=minutos_bloqueo)).isoformat()
-    insc = Inscripcion(
-        reta_id=reta_id, jugador_id=jugador_id, nombre=nombre, telefono=telefono,
-        estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
-    )
-    doc = insc.model_dump()
-    doc["creado_en"] = doc["creado_en"].isoformat()
-    await db.inscripciones.insert_one(doc)
-    return insc
+    # 3) Crear inscripción. Si falla, hacemos rollback del contador.
+    try:
+        jugador_id = await upsert_jugador(nombre, telefono)
+        bloqueado_hasta = (
+            datetime.now(timezone.utc) + timedelta(minutes=minutos_bloqueo)
+        ).isoformat()
+        insc = Inscripcion(
+            reta_id=reta_id, jugador_id=jugador_id, nombre=nombre, telefono=telefono,
+            estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
+        )
+        doc = insc.model_dump()
+        doc["creado_en"] = doc["creado_en"].isoformat()
+        await db.inscripciones.insert_one(doc)
+        return insc
+    except Exception:
+        # Rollback del cupo reservado.
+        await liberar_lugar(reta_id, 1)
+        raise
 
 
 async def promover_lista_espera(reta_id: str) -> Optional[Inscripcion]:
-    """Toma al jugador en posición 1 no notificado, lo promueve a inscripción Pendiente
-    con 5 min de bloqueo, y envía WhatsApp."""
-    next_in_line = await db.lista_espera.find_one(
-        {"reta_id": reta_id, "notificado": False},
-        sort=[("posicion_fila", 1)],
-    )
-    if not next_in_line:
-        return None
+    """Promueve a la siguiente persona de la lista de espera.
 
-    bloqueado_hasta = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
-    insc = Inscripcion(
-        reta_id=reta_id,
-        jugador_id=next_in_line["jugador_id"],
-        nombre=next_in_line["nombre"],
-        telefono=next_in_line["telefono"],
-        estatus_pago="Pendiente",
-        bloqueado_hasta=bloqueado_hasta,
-    )
-    doc = insc.model_dump()
-    doc["creado_en"] = doc["creado_en"].isoformat()
-    await db.inscripciones.insert_one(doc)
+    Resiliencia: si Twilio falla notificando al jugador, NO bloqueamos el flujo.
+    Se registra en logs y se salta al siguiente (con un máximo de 5 intentos
+    para evitar promover toda la fila si todos los teléfonos están caídos).
+    """
+    max_intentos = 5
+    for _ in range(max_intentos):
+        next_in_line = await db.lista_espera.find_one(
+            {"reta_id": reta_id, "notificado": False},
+            sort=[("posicion_fila", 1)],
+        )
+        if not next_in_line:
+            return None
 
-    await db.lista_espera.update_one(
-        {"id": next_in_line["id"]},
-        {"$set": {"notificado": True}},
-    )
-    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
-    link = f"/retas/{reta['url_slug']}?inscripcion={insc.id}"
-    msg = construir_mensaje_waitlist_promovido(insc.nombre, reta["nombre"], link)
-    await send_whatsapp(insc.telefono, msg)
-    return insc
+        # Reserva atómica del cupo recién liberado.
+        reta_actual = await reservar_lugar_atomico(reta_id)
+        if reta_actual is None:
+            # Otra inscripción tomó el cupo simultáneamente, nada que promover.
+            return None
+
+        bloqueado_hasta = (
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat()
+        insc = Inscripcion(
+            reta_id=reta_id,
+            jugador_id=next_in_line["jugador_id"],
+            nombre=next_in_line["nombre"],
+            telefono=next_in_line["telefono"],
+            estatus_pago="Pendiente",
+            bloqueado_hasta=bloqueado_hasta,
+        )
+        doc = insc.model_dump()
+        doc["creado_en"] = doc["creado_en"].isoformat()
+        try:
+            await db.inscripciones.insert_one(doc)
+        except Exception:
+            await liberar_lugar(reta_id, 1)
+            raise
+
+        await db.lista_espera.update_one(
+            {"id": next_in_line["id"]},
+            {"$set": {"notificado": True}},
+        )
+
+        reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+        link = f"/retas/{reta['url_slug']}?inscripcion={insc.id}"
+        msg = construir_mensaje_waitlist_promovido(insc.nombre, reta["nombre"], link)
+
+        # Circuit breaker: si Twilio falla 2 intentos, lo dejamos pasar.
+        # El cronjob de expiración eventualmente recuperará el cupo y promoverá al siguiente.
+        ok, _ = await safe_run(
+            lambda: send_whatsapp(insc.telefono, msg),
+            label=f"whatsapp:promover:{insc.telefono}",
+            timeout_s=8.0,
+            retries=1,
+        )
+        if not ok:
+            logger.warning(
+                "Twilio descartado para %s tras reintentos. La inscripción Pendiente "
+                "sigue válida 5 min; si no confirma, el cronjob promoverá al siguiente.",
+                insc.telefono,
+            )
+        return insc
+
+    return None
 
 
 async def expirar_bloqueos_pass(force_reta_id: Optional[str] = None) -> dict:
     """Una pasada de expiración. Si force_reta_id se da, expira TODAS las pendientes
-    de esa reta. Retorna conteos."""
+    de esa reta. Libera cupos en el contador atómico antes de borrar, y promueve waitlist."""
     now_iso = datetime.now(timezone.utc).isoformat()
     query: dict = {"estatus_pago": "Pendiente"}
     if force_reta_id:
@@ -152,21 +226,29 @@ async def expirar_bloqueos_pass(force_reta_id: Optional[str] = None) -> dict:
         query["bloqueado_hasta"] = {"$lt": now_iso}
 
     expiradas = db.inscripciones.find(query).limit(500)
-    retas_afectadas: set[str] = set()
-    eliminadas = 0
+    retas_afectadas: dict[str, int] = {}
     async for ins in expiradas:
         await db.inscripciones.delete_one({"id": ins["id"]})
-        retas_afectadas.add(ins["reta_id"])
-        eliminadas += 1
+        retas_afectadas[ins["reta_id"]] = retas_afectadas.get(ins["reta_id"], 0) + 1
+
+    # Liberar cupos atómicos por reta afectada.
+    for rid, n in retas_afectadas.items():
+        for _ in range(n):
+            await liberar_lugar(rid, 1)
+
     promovidos = 0
     for reta_id in retas_afectadas:
-        nuevo = await promover_lista_espera(reta_id)
-        if nuevo is not None:
-            promovidos += 1
+        try:
+            nuevo = await promover_lista_espera(reta_id)
+            if nuevo is not None:
+                promovidos += 1
+        except Exception as e:  # noqa: BLE001
+            # No queremos que un fallo en promover bloquee todo el cron.
+            logger.exception("Error promoviendo waitlist en reta %s: %s", reta_id, e)
     return {
-        "eliminadas": eliminadas,
+        "eliminadas": sum(retas_afectadas.values()),
         "promovidos": promovidos,
-        "retas_afectadas": list(retas_afectadas),
+        "retas_afectadas": list(retas_afectadas.keys()),
     }
 
 

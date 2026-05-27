@@ -51,11 +51,16 @@ def _format_to(to: str) -> str:
 
 
 def _send_sync(sid: str, token: str, frm: str, to: str, body: str) -> dict:
-    """Llamada sincrónica al SDK de Twilio. Se ejecuta en threadpool desde async."""
+    """Llamada sincrónica al SDK de Twilio. Se ejecuta en threadpool desde async.
+    Timeout interno HTTP de 8s para no congelar el event loop si Twilio responde lento.
+    """
     from twilio.base.exceptions import TwilioRestException
+    from twilio.http.http_client import TwilioHttpClient
     from twilio.rest import Client
     try:
-        client = Client(sid, token)
+        # TwilioHttpClient acepta `timeout` para todas las llamadas HTTP del SDK.
+        http_client = TwilioHttpClient(timeout=8)
+        client = Client(sid, token, http_client=http_client)
         msg = client.messages.create(from_=frm, to=to, body=body)
         return {"status": "sent", "sid": msg.sid}
     except TwilioRestException as exc:
@@ -71,7 +76,13 @@ def _send_sync(sid: str, token: str, frm: str, to: str, body: str) -> dict:
 
 
 async def send_whatsapp(to: str, body: str) -> dict:
-    """Envía mensaje WhatsApp. Si Twilio no está configurado, fallback a mock."""
+    """Envía mensaje WhatsApp con timeout duro y retry.
+
+    - Si Twilio no está configurado, fallback a mock.
+    - Timeout total: 8s por intento (vía wait_for desde el caller cuando se usa
+      `safe_run`); aquí ejecutamos el SDK síncrono con HTTP timeout=8s para
+      cortar cuelgues a nivel de red.
+    """
     sid, token, frm, _ = _get_creds()
     if not (sid and token and frm):
         logger.info("[MOCK-WHATSAPP] To=%s | Body=%s", to, body)
@@ -79,7 +90,15 @@ async def send_whatsapp(to: str, body: str) -> dict:
 
     to_fmt = _format_to(to)
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _send_sync, sid, token, frm, to_fmt, body)
+    try:
+        # Wait_for protege contra cuelgues del threadpool por encima del HTTP timeout.
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, _send_sync, sid, token, frm, to_fmt, body),
+            timeout=9.0,  # 1s más que el HTTP timeout interno
+        )
+    except asyncio.TimeoutError:
+        logger.error("[WHATSAPP] timeout duro 9s para %s", to_fmt)
+        return {"status": "error", "detail": "timeout"}
 
     if result["status"] == "sent":
         logger.info("[WHATSAPP] sent sid=%s to=%s", result["sid"], to_fmt)

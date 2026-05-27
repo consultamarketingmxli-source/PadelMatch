@@ -1,14 +1,16 @@
 """Pydantic models for PadelappRetas OS."""
 from datetime import datetime
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, Field
 import uuid
+
+from core.validators import NombreStr, ObservacionesStr, PhoneStr
 
 
 # ============= Usuarios =============
 class UsuarioCreate(BaseModel):
-    nombre: str
-    telefono: str
+    nombre: NombreStr
+    telefono: PhoneStr
     nivel: Literal["Primera", "Segunda", "Tercera", "Cuarta", "Quinta", "Iniciación"] = "Iniciación"
     perfil_publico: bool = True
 
@@ -28,19 +30,19 @@ class PlayerStats(BaseModel):
 
 # ============= Retas =============
 class RetaCreate(BaseModel):
-    nombre: str
-    club: str
+    nombre: str = Field(min_length=2, max_length=80)
+    club: str = Field(min_length=2, max_length=80)
     fecha_str: str  # YYYY-MM-DD
     hora_str: str   # HH:mm
     tz_offset_minutes: int = -360  # default CDMX
     canchas_disponibles: int = Field(ge=1, le=8)
-    costo_inscripcion: float = 0.0
+    costo_inscripcion: float = Field(default=0.0, ge=0, le=100000)
     modalidad_juego: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
     num_rondas: Literal[5, 6, 7] = 7
     organizador_logo_url: Optional[str] = None
-    observaciones_publicas: constr(max_length=140) = ""  # type: ignore
-    latitud: Optional[float] = None
-    longitud: Optional[float] = None
+    observaciones_publicas: ObservacionesStr = ""
+    latitud: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitud: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class Reta(BaseModel):
@@ -73,8 +75,8 @@ class RetaPublic(Reta):
 # ============= Inscripciones =============
 class InscripcionCreate(BaseModel):
     reta_id: str
-    nombre: str
-    telefono: str
+    nombre: NombreStr
+    telefono: PhoneStr
 
 
 class Inscripcion(BaseModel):
@@ -91,8 +93,8 @@ class Inscripcion(BaseModel):
 # ============= Lista de espera =============
 class WaitlistCreate(BaseModel):
     reta_id: str
-    nombre: str
-    telefono: str
+    nombre: NombreStr
+    telefono: PhoneStr
 
 
 class WaitlistEntry(BaseModel):
@@ -164,8 +166,8 @@ class TablaPosicionEntry(BaseModel):
 
 # ============= Stripe Payments =============
 class StripeCheckoutCreate(BaseModel):
-    nombre: str = Field(min_length=2, max_length=80)
-    telefono: str = Field(min_length=6, max_length=20)
+    nombre: NombreStr
+    telefono: PhoneStr
     success_url: Optional[str] = None  # URL absoluta a la que volver tras pago OK
     cancel_url: Optional[str] = None
 

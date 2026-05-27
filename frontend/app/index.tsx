@@ -27,14 +27,19 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [retas, setRetas] = useState<Reta[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [locStatus, setLocStatus] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [locStatus, setLocStatus] = useState<"unknown" | "granted" | "denied" | "timeout">("unknown");
   const [radius, setRadius] = useState(30);
+  const [query, setQuery] = useState("");
 
   const fetchRetas = useCallback(
     async (lat?: number, lng?: number, rk = 30) => {
       try {
         const data = await api.radar(lat, lng, rk);
-        setRetas(data);
+        // Orden de fallback: fecha más próxima primero (cuando no hay GPS).
+        const ordered = lat == null
+          ? [...data].sort((a, b) => (a.fecha_evento || "").localeCompare(b.fecha_evento || ""))
+          : data;
+        setRetas(ordered);
       } catch (e) {
         console.warn("Error radar:", e);
         setRetas([]);
@@ -43,23 +48,41 @@ export default function HomeScreen() {
     [],
   );
 
+  // Helper con timeout duro para getCurrentPositionAsync.
+  // expo-location rara vez se cuelga, pero en navegadores con GPS lento o en
+  // dispositivos con permisos parcialmente revocados puede quedar pendiente.
+  const getPositionWithTimeout = async (timeoutMs: number) => {
+    return Promise.race<Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>>([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("GPS_TIMEOUT")), timeoutMs),
+      ) as Promise<never>,
+    ]);
+  };
+
   const requestGPS = useCallback(async () => {
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== "granted") {
         setLocStatus("denied");
+        // Fallback: lista completa por fecha más próxima.
         await fetchRetas();
         return;
       }
       setLocStatus("granted");
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      setCoords(c);
-      await fetchRetas(c.lat, c.lng, radius);
+      try {
+        const pos = await getPositionWithTimeout(6000);
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setCoords(c);
+        await fetchRetas(c.lat, c.lng, radius);
+      } catch (geoErr) {
+        // Timeout o error de hardware: degradamos a lista completa sin congelar la app.
+        console.warn("GPS timeout/err, fallback a lista completa:", geoErr);
+        setLocStatus("timeout");
+        await fetchRetas();
+      }
     } catch (e) {
-      console.warn("GPS error, falling back to all retas:", e);
+      console.warn("GPS denied/error, falling back to all retas:", e);
       setLocStatus("denied");
       await fetchRetas();
     }
@@ -87,6 +110,16 @@ export default function HomeScreen() {
     else await fetchRetas();
     setRefreshing(false);
   };
+
+  // Filtro de búsqueda en cliente — siempre funciona aunque el GPS falle.
+  const filteredRetas = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return retas;
+    return retas.filter((r) =>
+      (r.nombre || "").toLowerCase().includes(q) ||
+      (r.club || "").toLowerCase().includes(q),
+    );
+  }, [retas, query]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -119,13 +152,32 @@ export default function HomeScreen() {
       />
       <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
 
+      <View style={styles.searchBar}>
+        <Search size={14} color={colors.text.tertiary} />
+        <TextInput
+          testID="search-input"
+          style={styles.searchInput}
+          placeholder="Buscar club, ciudad o nombre de reta"
+          placeholderTextColor={colors.text.tertiary}
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          maxLength={60}
+          returnKeyType="search"
+        />
+      </View>
+
       <View style={styles.radarBar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
           <Radar size={16} color={colors.brand.primary} />
           <Text style={styles.radarLabel}>
             {locStatus === "granted"
               ? `Radar activo · ${radius}km`
-              : "Sin GPS · mostrando todas"}
+              : locStatus === "timeout"
+              ? "GPS lento · mostrando todas"
+              : locStatus === "denied"
+              ? "Sin GPS · mostrando todas"
+              : "Detectando ubicación…"}
           </Text>
         </View>
         {locStatus !== "granted" ? (
@@ -147,7 +199,7 @@ export default function HomeScreen() {
       ) : (
         <FlatList
           testID="retas-list"
-          data={retas}
+          data={filteredRetas}
           keyExtractor={(r) => r.id}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -167,8 +219,14 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <EmptyState
               testID="empty-radar"
-              title="Sin retas en el radar"
-              subtitle={`Ningún torneo de pádel en ${radius}km a la redonda. Vuelve más tarde o pide a tu club que cree una reta.`}
+              title={query ? "Sin resultados" : "Sin retas en el radar"}
+              subtitle={
+                query
+                  ? `No encontramos retas que coincidan con "${query}".`
+                  : locStatus === "granted"
+                  ? `Ningún torneo de pádel en ${radius}km a la redonda. Vuelve más tarde o pide a tu club que cree una reta.`
+                  : "No hay retas activas en este momento. Vuelve más tarde o explora otros clubes."
+              }
             />
           }
         />
@@ -184,6 +242,27 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.sm,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.bg.card,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: typography.body.fontFamily as string,
+    fontSize: 14,
+    color: colors.text.primary,
+    paddingVertical: 0,
   },
   iconBtn: {
     width: 40,

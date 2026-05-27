@@ -26,8 +26,11 @@ from pydantic import BaseModel, Field
 
 import mercadopago_service as mps
 from auth import get_current_admin
+from core.circuit import with_timeout_and_retry
 from core.db import db, ADMIN_EMAIL_DEFAULT
 from core.helpers import crear_inscripcion_pendiente, promover_lista_espera
+from core.concurrency import liberar_lugar
+from core.validators import NombreStr, PhoneStr
 
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["mercadopago"])
@@ -54,11 +57,11 @@ class MpSettingsUpdate(BaseModel):
 
 
 class MpCheckoutCreate(BaseModel):
-    nombre: str = Field(min_length=2, max_length=80)
-    telefono: str = Field(min_length=6, max_length=20)
+    nombre: NombreStr
+    telefono: PhoneStr
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
-    payer_email: Optional[str] = None
+    payer_email: Optional[str] = Field(default=None, max_length=120)
 
 
 class MpCheckoutResponse(BaseModel):
@@ -211,21 +214,32 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
     notification = f"{base}/api/webhooks/mercadopago"
 
     try:
-        pref = await mps.crear_preferencia(
-            access_token=access_token,
-            nombre_reta=reta["nombre"],
-            costo_mxn=float(reta["costo_inscripcion"]),
-            success_url=success,
-            cancel_url=cancel,
-            notification_url=notification,
-            external_reference=insc.id,
-            payer_email=body.payer_email,
-            apply_fee=apply_fee,
+        pref = await with_timeout_and_retry(
+            lambda: mps.crear_preferencia(
+                access_token=access_token,
+                nombre_reta=reta["nombre"],
+                costo_mxn=float(reta["costo_inscripcion"]),
+                success_url=success,
+                cancel_url=cancel,
+                notification_url=notification,
+                external_reference=insc.id,
+                payer_email=body.payer_email,
+                apply_fee=apply_fee,
+            ),
+            label=f"mp:create_pref:{reta['id']}",
+            timeout_s=8.0,
+            retries=1,
         )
     except Exception as e:
-        logger.exception("MP preference error")
+        logger.exception("MP preference error tras reintentos")
+        # Rollback: borra inscripción y libera cupo atómico.
         await db.inscripciones.delete_one({"id": insc.id})
-        raise HTTPException(502, f"Error con Mercado Pago: {e}") from e
+        await liberar_lugar(reta_id, 1)
+        raise HTTPException(
+            502,
+            "Estamos experimentando intermitencias con Mercado Pago. Tu lugar fue liberado, "
+            "intenta de nuevo en unos segundos.",
+        ) from e
 
     # Persistimos tracking server-side
     tx_doc = {
@@ -291,6 +305,8 @@ async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_st
     if mp_status in ("rejected", "cancelled", "refunded", "charged_back"):
         if insc and insc["estatus_pago"] == "Pendiente":
             await db.inscripciones.delete_one({"id": inscripcion_id})
+            # Liberar cupo atómico ANTES de promover waitlist.
+            await liberar_lugar(tx["reta_id"], 1)
             await promover_lista_espera(tx["reta_id"])
         await db.mp_transactions.update_one(
             {"inscripcion_id": inscripcion_id},
