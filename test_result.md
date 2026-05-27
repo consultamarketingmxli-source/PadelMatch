@@ -101,3 +101,97 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Continuar con P0: completar la integración Frontend del Motor de Búsqueda Híbrido
+  (Texto + GPS opcional + Fallback por fecha). Backend ya tiene endpoint
+  /api/public/retas/buscar funcionando con índices texto y filtro Haversine.
+  Validar que: (a) lista carga sin GPS por defecto ordenada por fecha,
+  (b) texto en SearchBar filtra retas/clubs, (c) botón GPS denegado muestra Toast
+  amber y mantiene fallback, (d) sin crashes ni white-screens.
+
+backend:
+  - task: "Hybrid Search endpoint /api/public/retas/buscar"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/public.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Endpoint ya implementado y probado manualmente con script bash en la sesión anterior. Acepta q (texto), lat/lng/radio_km (Haversine), sin params → todas ordenadas por fecha_evento ASC. Índices de texto en `nombre` y `club` ya creados en db.py."
+
+frontend:
+  - task: "Hybrid Search UI integration in index.tsx"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Integración completa: SearchBar con debounce 350ms, toggle GPS con timeout duro 6s, Toast con tone warn para permisos denegados, subtítulo contextual que cambia entre 'Radar activo', 'Sin GPS', 'Todas las retas'. Screenshots manuales muestran los 3 estados funcionando."
+  - task: "SearchBar component with pulse animation"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/SearchBar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Componente con icono Search + TextInput + botón GPS con halo animado (pulse loop) cuando activo. Animación se detiene al cambiar a idle/denied."
+  - task: "Toast component cross-platform"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/Toast.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Toast minimalista con fade-in/translate, autodismiss a 2.5s, tres tonos: info/warn/error."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Hybrid Search endpoint /api/public/retas/buscar"
+    - "Hybrid Search UI integration in index.tsx"
+    - "SearchBar component with pulse animation"
+    - "Toast component cross-platform"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Hybrid Search Engine completo (backend + frontend). Validar:
+        BACKEND:
+        1. GET /api/public/retas/buscar (sin params) → lista todas las retas ordenadas por fecha_evento ASC.
+        2. GET /api/public/retas/buscar?q=club → busca usando text index Mongo (case-insensitive, trim aplicado en server).
+        3. GET /api/public/retas/buscar?lat=19.4326&lng=-99.1332&radio_km=30 → filtra por Haversine.
+        4. GET /api/public/retas/buscar?q=padel&lat=19.4326&lng=-99.1332 → combina texto + geo.
+        5. Edge cases: q vacío, lat sin lng (debe ignorar geo), radio_km gigante.
+        
+        FRONTEND:
+        1. Pantalla principal carga retas sin GPS por defecto. Subtítulo: "Todas las retas · ordenado por fecha".
+        2. SearchBar acepta texto → tras debounce 350ms filtra lista (probar "club", "demo", "MP").
+        3. Tap en botón GPS (testID gps-toggle-btn) → en preview web/headless dispara denied → Toast aparece con texto "Ubicación desactivada..." y subtítulo cambia a "Sin GPS · ordenado por fecha".
+        4. Vaciar input no debe disparar petición redundante.
+        5. Pull-to-refresh debe re-ejecutar fetch híbrido con params actuales.
+        6. No debe haber white-screens, crashes ni dependencias de GPS.
+        
+        Credenciales admin (no necesarias para esto): admin@padelappretas.com / admin123.
+        Datos seed: existen al menos "Reta Demo" (Padel Club CDMX) y "Reta MP Test" (Club Test).

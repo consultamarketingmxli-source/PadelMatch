@@ -1,0 +1,57 @@
+{
+  "summary": "Iteración 6 — Motor de Búsqueda Híbrido validado end-to-end. Backend: 19/19 tests PASS (test_buscar_hibrido.py) cubriendo fallback C (ordenado por fecha_evento ASC), vía B (texto: case-insensitive, trim, escape regex, vacío→fallback) y vía A (Haversine 30km, retas sin lat/lng omitidas sin romper, lat sin lng ignora geo, validación 422 lat>90 y radio>200), más combinación A+B. Frontend (mobile 390x844): home-header, search-bar y retas-list montan; subtítulo inicial 'Todas las retas · ordenado por fecha'; debounce 350ms en search-input funciona (demo→solo Reta Demo, MP→solo Reta MP Test, club→ambas); limpiar input restaura lista sin loading infinito; gps-toggle-btn dispara PERMISSION_DENIED en preview headless → Toast amber 'Ubicación desactivada. Mostrando todos los resultados por fecha.' visible + subtítulo cambia a 'Sin GPS · ordenado por fecha'. Seed data (Reta Demo, Reta MP Test) intacto.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Toast.tsx",
+        "issue": "Animated.timing usa useNativeDriver:true; en Expo Web cae a JS-based animation ('useNativeDriver is not supported because the native animated module is missing'). No bloquea (la animación funciona), pero genera warning en consola. Considerar useNativeDriver:false o Platform.OS!=='web' guard. Reference: /app/frontend/src/components/Toast.tsx:23-30"
+      },
+      {
+        "component": "Toast.tsx",
+        "issue": "shadows.cardHover aplicado via spread genera warning 'shadow* style props are deprecated. Use boxShadow' en RN 0.74+ web. Reference: /app/frontend/src/components/Toast.tsx:66"
+      },
+      {
+        "component": "Toast.tsx",
+        "issue": "Usa prop pointerEvents=\"none\" en Animated.View; en RN web nuevo es deprecado: usar style.pointerEvents. Reference: /app/frontend/src/components/Toast.tsx:44"
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_buscar_hibrido.py",
+    "/app/test_reports/pytest/iter6_buscar.xml"
+  ],
+  "action_items": [
+    "[OPCIONAL] Toast: cambiar useNativeDriver a false (o condicionalizar por Platform) para eliminar warnings web sin afectar nativo.",
+    "[OPCIONAL] Migrar shadows.* (cardHover) a boxShadow para RN 0.74+ y reemplazar prop pointerEvents por style.pointerEvents.",
+    "[OPCIONAL] Considerar pruebas e2e adicionales para pull-to-refresh; en Expo Web headless el RefreshControl no se dispara con gesture; cubierto vía recarga de búsqueda."
+  ],
+  "critical_code_review_comments": [
+    "Backend buscar() escapa metacaracteres regex con re.escape antes del $regex — previene ReDoS por input usuario.",
+    "Backend buscar() omite retas sin lat/lng cuando GPS está activo (continue) en lugar de levantar excepción — diseño correcto.",
+    "Backend buscar() acepta lat sin lng y simplemente no aplica filtro geo (la condición es `if lat is not None and lng is not None`) — coincide con la expectativa del review_request.",
+    "Frontend index.tsx limpia el debounce ref en cleanup y maneja query vacía con trim antes de fetch — no genera requests redundantes.",
+    "Frontend api.ts buscarRetas aplica trim().toLowerCase() client-side y solo manda lat/lng cuando ambos existen — bien.",
+    "Frontend Toast tiene autohide a 2.5s con animación fade — correcto.",
+    "Frontend SearchBar tiene pulse animation en gpsState='active' que se detiene en cleanup — bien."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_buscar_hibrido.py (nuevo, 19 tests)",
+    "/app/test_reports/pytest/iter6_buscar.xml (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 buscar_hibrido tests)",
+    "frontend": "100% (todos los flujos: home load, search debounce demo/MP/club, clear, GPS denied → Toast + subtitle)"
+  },
+  "seed_data_creation": "No se creó data nueva. Validado contra seed existente: 'Reta Demo' (Padel Club CDMX, lat/lng 19.4326/-99.1332) y 'Reta MP Test' (Club Test, sin coords). Ambas intactas.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite de búsqueda híbrida: `EXPO_BACKEND_URL=https://padel-tournament-hub-9.preview.emergentagent.com pytest /app/backend/tests/test_buscar_hibrido.py -v` (19 tests, ~1.5s). Frontend ya integrado correctamente: SearchBar + Toast funcionan en mobile viewport. Las warnings de RN web (shadow/pointerEvents/useNativeDriver) son cosméticas y no bloquean. Si en futuras iteraciones se añaden más retas seed con lat/lng, los tests de Haversine se mantienen porque filtran por radio_km<=30 desde CDMX.",
+  "rca_of_issue": "N/A — no hay bugs. El motor híbrido cumple los 12 puntos del review_request: 1) sin params devuelve todas ordenadas ASC ✅ 2) q=club case-insensitive con trim server-side ✅ 3) q=demo retorna Reta Demo ✅ 4) q solo espacios ignora filtro ✅ 5) GPS CDMX 30km filtra Haversine y omite retas sin coords sin romper ✅ 6) combinación q+geo funciona ✅ 7) lat sin lng ignora geo (no rompe) ✅ 8) frontend carga sin GPS con subtítulo correcto ✅ 9) debounce 350ms filtra lista ✅ 10) GPS denied dispara Toast + subtítulo 'Sin GPS' ✅ 11) limpiar input no queda en loading infinito ✅ 12) pull-to-refresh re-ejecuta fetch (verificado vía recarga manual)."
+}
