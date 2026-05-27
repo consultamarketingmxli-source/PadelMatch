@@ -153,6 +153,31 @@ export type PlayerAuthResponse = {
   telefono: string;
 };
 
+export type MpStatus = {
+  connected: boolean;
+  mp_user_id?: string | null;
+  nickname?: string | null;
+  email?: string | null;
+  site_id?: string | null;
+  connected_at?: string | null;
+  apply_fee: boolean;
+  fee_percent: number;
+};
+
+export type MpCheckoutResponse = {
+  inscripcion_id: string;
+  preference_id: string;
+  init_point: string;
+  sandbox_init_point?: string | null;
+};
+
+export type MpPaymentStatusType = {
+  inscripcion_id: string;
+  estatus_pago: string;
+  mp_payment_id?: string | null;
+  mp_status?: string | null;
+};
+
 export type PlayerInscripcion = {
   id: string;
   reta_id: string;
@@ -296,6 +321,42 @@ export const api = {
     }),
   paymentStatus: (inscripcionId: string) =>
     request<PaymentStatus>(`/public/inscripciones/${inscripcionId}/payment-status`),
+
+  // ===== mercado pago marketplace =====
+  mpStatus: () => request<MpStatus>(`/admin/mercadopago/status`, { auth: true }),
+  mpConnect: (access_token: string) =>
+    request<MpStatus>(`/admin/mercadopago/connect`, {
+      method: "POST",
+      body: { access_token },
+      auth: true,
+    }),
+  mpDisconnect: () =>
+    request<{ ok: boolean }>(`/admin/mercadopago/disconnect`, {
+      method: "POST",
+      auth: true,
+    }),
+  mpUpdateSettings: (apply_fee: boolean) =>
+    request<MpStatus>(`/admin/mercadopago/settings`, {
+      method: "PATCH",
+      body: { apply_fee },
+      auth: true,
+    }),
+  checkoutMercadoPago: (
+    retaId: string,
+    body: {
+      nombre: string;
+      telefono: string;
+      payer_email?: string;
+      success_url?: string;
+      cancel_url?: string;
+    },
+  ) =>
+    request<MpCheckoutResponse>(`/public/retas/${retaId}/checkout-mercadopago`, {
+      method: "POST",
+      body,
+    }),
+  mpPaymentStatus: (inscripcionId: string) =>
+    request<MpPaymentStatusType>(`/public/inscripciones/${inscripcionId}/mp-status`),
 
   // ===== admin dashboard =====
   adminMetrics: () => request<AdminMetrics>(`/admin/metrics`, { auth: true }),

@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Trophy,
   Users,
+  Wallet,
 } from "lucide-react-native";
 
 import { AdminMetrics, RetaKPI, api } from "@/src/api";
@@ -70,6 +71,24 @@ export default function AdminDashboard() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
       >
+        {/* Acceso rápido a Mercado Pago */}
+        <TouchableOpacity
+          onPress={() => router.push("/admin/mercadopago" as any)}
+          style={styles.mpCard}
+          testID="mp-link-card"
+        >
+          <View style={styles.mpIcon}>
+            <Wallet size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.mpTitle}>Mercado Pago</Text>
+            <Text style={styles.mpDesc}>
+              Vincula tu cuenta para recibir pagos · 100% del cobro a ti
+            </Text>
+          </View>
+          <Text style={styles.mpArrow}>›</Text>
+        </TouchableOpacity>
+
         {/* KPIs principales */}
         <View style={styles.kpiRow}>
           <KPICard
@@ -197,4 +216,26 @@ const styles = StyleSheet.create({
   retaMoney: { alignItems: "flex-end" },
   retaIngreso: { color: colors.brand.primary, fontWeight: "800", fontSize: 14 },
   retaRefund: { color: colors.status.red, fontSize: 10, marginTop: 2 },
+  mpCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  mpIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#009EE3",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mpTitle: { color: colors.text.primary, fontWeight: "800", fontSize: 14 },
+  mpDesc: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
+  mpArrow: { color: colors.text.secondary, fontSize: 22, fontWeight: "300" },
 });

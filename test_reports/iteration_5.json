@@ -1,0 +1,61 @@
+{
+  "summary": "Iteración 5 (backend only) — Mercado Pago Marketplace probado a fondo: connect (token válido + inválido), status, settings toggle apply_fee, disconnect + lockout, checkout-mercadopago (devuelve init_point HTTPS válido de mercadopago.com.mx/checkout/v1/redirect, persiste doc en mp_transactions), polling mp-status y webhook idempotente sin auth. Regresión completa: Stripe checkout, retas CRUD, auth login, dashboard metrics, radar. Suite total: 88/88 PASS (68 previos + 20 nuevos). Sin regresiones.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/mercadopago/connect",
+        "issue": "El campo `email` que devuelve MpStatus se llena con info MP pero comparte nombre con email del admin login; podría confundir consumidores. Considerar renombrar a `mp_email` en la respuesta (en BD ya está como mp_email). Reference: routers/mercadopago.py:45 + 128"
+      },
+      {
+        "endpoint": "POST /api/webhooks/mercadopago",
+        "issue": "Idempotencia: cuando el `event_id` viene autogenerado (`f\"{event_type}-{timestamp}\"`) contiene un `-` y el check `if seen and event_id and '-' not in str(event_id)` lo descarta a propósito. Para eventos sin id real esto desactiva la idempotencia y se inserta una fila por cada hit. En producción con MP real siempre habrá `id`, pero conviene documentar este comportamiento. Reference: routers/mercadopago.py:333-336"
+      },
+      {
+        "endpoint": "POST /api/public/retas/{id}/checkout-mercadopago",
+        "issue": "Cuando MP responde error de preference, hace `delete_one` de la inscripción creada pero no promueve waitlist ni revierte counters de cupos. En MVP basta porque la inscripción nunca quedó Aprobada, pero conviene loguear el rollback. Reference: routers/mercadopago.py:227"
+      },
+      {
+        "endpoint": "GET /api/public/inscripciones/{id}/mp-status",
+        "issue": "El polling proactivo llama a MP `/v1/payments/search` por external_reference sin caché ni rate-limit. Bajo polling agresivo desde el frontend puede consumir cuota MP rápidamente. Considerar throttling (ej. solo cada N seg) o backoff. Reference: routers/mercadopago.py:419-449"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mercadopago_marketplace.py",
+    "/app/test_reports/pytest/iter5_mp.xml",
+    "/app/test_reports/pytest/iter5_full.xml"
+  ],
+  "action_items": [
+    "[OPCIONAL] Documentar (o reforzar) la idempotencia del webhook MP cuando no llega `id` real: actualmente se inserta un mp_events por cada hit sin id. En producción MP siempre envía id, así que no bloquea.",
+    "[OPCIONAL] En `checkout-mercadopago`, si MP rechaza la preference, además de borrar la inscripción Pendiente, ejecutar `promover_lista_espera` para reciclar el slot si correspondía a un waitlist.",
+    "[OPCIONAL] Throttle/backoff en `GET /api/public/inscripciones/{id}/mp-status` para no martillar la MP API en cada poll del cliente.",
+    "[OPCIONAL] Renombrar el campo `email` en MpStatus a `mp_email` para no confundirlo con el email del admin (lo guardamos en BD como mp_email)."
+  ],
+  "critical_code_review_comments": [
+    "Buena práctica: el access_token del organizador se valida contra /users/me ANTES de guardarse (evita persistir tokens inválidos).",
+    "Buena práctica: el access_token del organizador es el que se usa en `sdk.preference().create(...)`, lo que garantiza que el dinero llega 100% a su cuenta (no marketplace_fee por defecto).",
+    "Buena práctica: si el admin no tiene access_token_pasarela, el checkout-mercadopago devuelve 400 con mensaje en español claro ('organizador aún no ha vinculado…') — coincide con la regla 3a del usuario.",
+    "Riesgo bajo: el webhook NO verifica firma (x-signature). Confía 100% en consultar MP API con el access_token del admin. Aceptable en MVP, pero para producción agregar verificación de `x-signature`/`x-request-id` evitaría hits maliciosos al webhook.",
+    "Observación: `_admin_with_mp_for_reta` ignora `reta.organizador_id` y siempre carga el admin único por email default. Cuando el sistema crezca a multi-organizador habrá que mapear reta→admin explícitamente."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_mercadopago_marketplace.py (nuevo, 20 test cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (88/88 tests pasan: 68 previos + 20 nuevos MP)",
+    "frontend": "no probado (testing_type=backend only)"
+  },
+  "seed_data_creation": "Los tests crean retas TEST_MPReta_* y las eliminan tras cada test. Se invoca /admin/mercadopago/connect con el token de prueba real (sigue válido contra MP API → HTTP 200 /users/me). Se invoca /disconnect y se re-conecta al final del módulo (fixture autouse) para dejar la BD en estado conectado, tal como pidió el contexto del main agent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite backend completa: `pytest /app/backend/tests/ -v` (88 tests, ~28s). El test de MP crea una preference REAL en sandbox MP (responde 200 con init_point=https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=...). Para validar pago completo se necesitaría un buyer test user interactivo (no automatizable). Token de prueba sigue válido en MP /users/me. Si en el futuro MP revoca el token, regenerar uno nuevo via https://www.mercadopago.com.mx/developers/panel/app/.../test-accounts y actualizar /app/memory/test_credentials.md.",
+  "rca_of_issue": "N/A — no hay bugs. La implementación MP cumple los 12 puntos del review_request: 1) connect 200 con mp_user_id+nickname ✅ 2) token inválido 400 ✅ 3) status refleja apply_fee+fee_percent ✅ 4) disconnect limpia ✅ 5) toggle apply_fee persiste ✅ 6) checkout sin MP 400 con mensaje 'vinculado' ✅ 7) checkout con MP devuelve {inscripcion_id, preference_id, init_point, sandbox_init_point} + inscripción Pendiente ✅ 8) init_point HTTPS mercadopago.com.mx/checkout/v1/redirect ✅ 9) mp_transactions persistido ✅ 10) mp-status polling responde ✅ 11) webhook responde 200 sin auth ✅ 12) sin regresiones ✅",
+  "test_credentials_used": "admin@pixelpadel.com / admin123 (vía conftest); MP test seller token de /app/memory/test_credentials.md (APP_USR-1598112764080275-...) — validado contra MP /users/me HTTP 200."
+}

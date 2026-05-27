@@ -18,6 +18,7 @@ from core.helpers import cronjob_expirar_bloqueos, cronjob_recordatorios
 from routers.admin_dashboard import router as admin_dashboard_router
 from routers.auth_router import router as auth_router
 from routers.inscripciones import router as inscripciones_router
+from routers.mercadopago import router as mercadopago_router
 from routers.payments_router import router as payments_router
 from routers.pdf_router import router as pdf_router
 from routers.player_auth import router as player_auth_router
@@ -42,6 +43,7 @@ api.include_router(admin_dashboard_router)
 api.include_router(public_router)
 api.include_router(inscripciones_router)
 api.include_router(payments_router)
+api.include_router(mercadopago_router)
 api.include_router(resultados_router)
 api.include_router(pdf_router)
 
