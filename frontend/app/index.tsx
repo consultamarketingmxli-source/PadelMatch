@@ -17,6 +17,8 @@ import { MapPin, Radar, User, ShieldCheck } from "lucide-react-native";
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
+import { BrandHeader } from "@/src/components/BrandHeader";
+import { EmptyState } from "@/src/components/EmptyState";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function HomeScreen() {
@@ -88,32 +90,34 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.brand} testID="app-brand">PADELAPPRETAS</Text>
-          <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <TouchableOpacity
-            testID="nav-mi-cuenta-btn"
-            onPress={async () => {
-              const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-              const tok = await AsyncStorage.getItem("padelappretas.player.token");
-              router.push(tok ? ("/mi-cuenta" as any) : ("/login" as any));
-            }}
-            style={styles.iconBtn}
-          >
-            <User size={18} color={colors.brand.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="nav-admin-btn"
-            onPress={() => router.push("/admin/login")}
-            style={styles.iconBtn}
-          >
-            <ShieldCheck size={18} color={colors.brand.primary} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <BrandHeader
+        testID="home-header"
+        wordmarkSize="md"
+        logoSize={32}
+        right={
+          <>
+            <TouchableOpacity
+              testID="nav-mi-cuenta-btn"
+              onPress={async () => {
+                const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+                const tok = await AsyncStorage.getItem("padelappretas.player.token");
+                router.push(tok ? ("/mi-cuenta" as any) : ("/login" as any));
+              }}
+              style={styles.iconBtn}
+            >
+              <User size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="nav-admin-btn"
+              onPress={() => router.push("/admin/login")}
+              style={styles.iconBtn}
+            >
+              <ShieldCheck size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+          </>
+        }
+      />
+      <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
 
       <View style={styles.radarBar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
@@ -161,19 +165,11 @@ export default function HomeScreen() {
             />
           )}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Sin retas en el radar</Text>
-              <Text style={styles.emptyText}>
-                Ningún torneo de pádel cerca por ahora. Vuelve más tarde o pide a tu club que cree
-                una reta.
-              </Text>
-              <Button
-                title="Soy organizador"
-                variant="secondary"
-                onPress={() => router.push("/admin/login")}
-                testID="empty-go-admin-btn"
-              />
-            </View>
+            <EmptyState
+              testID="empty-radar"
+              title="Sin retas en el radar"
+              subtitle={`Ningún torneo de pádel en ${radius}km a la redonda. Vuelve más tarde o pide a tu club que cree una reta.`}
+            />
           }
         />
       )}
@@ -183,24 +179,11 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  brand: {
-    color: colors.brand.primary,
-    fontWeight: "900",
-    fontSize: 16,
-    letterSpacing: 2,
-  },
   tagline: {
+    ...typography.bodySm,
     color: colors.text.secondary,
-    fontSize: 13,
-    marginTop: 2,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
   },
   iconBtn: {
     width: 40,
@@ -224,7 +207,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
   },
-  radarLabel: { ...typography.label, color: colors.text.primary, fontSize: 11 },
+  radarLabel: { ...typography.label, color: colors.text.primary },
   gpsCta: {
     backgroundColor: colors.brand.primary,
     flexDirection: "row",
@@ -234,27 +217,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radii.sm,
   },
-  gpsCtaText: { color: colors.text.inverse, fontWeight: "800", fontSize: 11 },
+  gpsCtaText: { ...typography.button, color: colors.text.inverse, fontSize: 11 },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
-  },
-  empty: {
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  emptyTitle: {
-    ...typography.h2,
-    color: colors.text.primary,
-    textAlign: "center",
-  },
-  emptyText: {
-    color: colors.text.secondary,
-    textAlign: "center",
-    lineHeight: 20,
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

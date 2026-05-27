@@ -7,14 +7,16 @@
  *  - bg-white (#FFFFFF) — tarjetas
  *  - border-slate-200 (#E2E8F0) — bordes sutiles
  *  - text-slate-900 (#0F172A) — títulos
+ *  - text-slate-700 (#334155) — lectura cómoda
  *  - text-slate-500 (#64748B) — texto secundario
  *  - bg-emerald-600 (#059669) — acento "Césped Pro" (CTAs, activos)
  *
- * Tipografía:
- *  - h1/h2/h3 con tracking-tight + font-black (900)
- *  - font-mono para datos variables: costos, distancias km, posiciones, timers
+ * Tipografía premium (Inter + JetBrains Mono):
+ *  - Display / Títulos: Inter_900Black con tracking-tighter (estética Nike)
+ *  - Body: Inter_400Regular con leading-relaxed sobre slate-700
+ *  - Mono (precios, KMs, timers, posiciones): JetBrainsMono_600SemiBold + tabular-nums
  */
-import { Platform } from "react-native";
+import { Platform, TextStyle } from "react-native";
 
 export const colors = {
   bg: {
@@ -34,38 +36,34 @@ export const colors = {
     onPrimary: "#FFFFFF",
   },
   text: {
-    primary: "#0F172A",        // slate-900
+    primary: "#0F172A",        // slate-900 — títulos
+    body: "#334155",           // slate-700 — lectura cómoda bajo el sol
     secondary: "#64748B",      // slate-500
     tertiary: "#94A3B8",       // slate-400
     muted: "#94A3B8",
     inverse: "#FFFFFF",
     onAccent: "#FFFFFF",
   },
-  // Semáforo "LED deportivo" — badges circulares de alta visibilidad
   status: {
-    // Verde — cupos libres <50%
-    green: "#059669",          // emerald-600 dot
-    greenBg: "#D1FAE5",        // emerald-100
-    greenText: "#065F46",      // emerald-800
-    greenBorder: "#A7F3D0",    // emerald-200
-    // Amarillo — alta demanda 50-99%
-    amber: "#D97706",          // amber-600 dot
-    amberBg: "#FEF3C7",        // amber-100
-    amberText: "#92400E",      // amber-800
-    amberBorder: "#FDE68A",    // amber-200
-    // Rojo — llena 100%
-    red: "#E11D48",            // rose-600 dot
-    redBg: "#FFE4E6",          // rose-100
-    redText: "#9F1239",        // rose-800
-    redBorder: "#FECDD3",      // rose-200
-    // Alias legacy (compatibilidad con código existente)
+    green: "#059669",
+    greenBg: "#D1FAE5",
+    greenText: "#065F46",
+    greenBorder: "#A7F3D0",
+    amber: "#D97706",
+    amberBg: "#FEF3C7",
+    amberText: "#92400E",
+    amberBorder: "#FDE68A",
+    red: "#E11D48",
+    redBg: "#FFE4E6",
+    redText: "#9F1239",
+    redBorder: "#FECDD3",
     yellow: "#D97706",
   },
   border: {
-    default: "#E2E8F0",        // slate-200
-    focus: "#059669",          // emerald-600
-    subtle: "#F1F5F9",         // slate-100
-    strong: "#CBD5E1",         // slate-300
+    default: "#E2E8F0",
+    focus: "#059669",
+    subtle: "#F1F5F9",
+    strong: "#CBD5E1",
   },
 } as const;
 
@@ -84,52 +82,160 @@ export const radii = {
   md: 10,
   lg: 14,
   xl: 20,
-  squircle: 22,                // App icon / hero CTAs
+  squircle: 22,
   pill: 999,
 } as const;
 
-// Fuente monoespaciada para datos variables (precios, km, posiciones, timers)
+// Familias de fuentes premium. Centralizadas para evitar typos en StyleSheet.
+export const fonts = {
+  sansRegular: "Inter_400Regular",
+  sansMedium: "Inter_500Medium",
+  sansSemiBold: "Inter_600SemiBold",
+  sansBold: "Inter_700Bold",
+  sansExtraBold: "Inter_800ExtraBold",
+  sansBlack: "Inter_900Black",
+  monoRegular: "JetBrainsMono_400Regular",
+  monoSemiBold: "JetBrainsMono_600SemiBold",
+  monoBold: "JetBrainsMono_700Bold",
+} as const;
+
+// Fallback mono histórico (cuando JetBrains Mono no carga aún).
 export const monoFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
   default: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
 }) as string;
 
-export const typography = {
-  // Títulos deportivos: tracking-tight + font-black
-  h1: { fontSize: 32, fontWeight: "900" as const, letterSpacing: -0.8 },
-  h2: { fontSize: 22, fontWeight: "900" as const, letterSpacing: -0.5 },
-  h3: { fontSize: 18, fontWeight: "800" as const, letterSpacing: -0.3 },
-  body: { fontSize: 15, fontWeight: "400" as const, letterSpacing: -0.1 },
-  bodyBold: { fontSize: 15, fontWeight: "700" as const, letterSpacing: -0.1 },
-  // Etiquetas tipo overline
-  label: {
-    fontSize: 11,
-    fontWeight: "700" as const,
-    letterSpacing: 1.2,
-    textTransform: "uppercase" as const,
+/**
+ * Sistema tipográfico jerárquico — Inter + JetBrains Mono.
+ *
+ * Reglas:
+ *  - Display / H1 / H2 / H3 -> Inter_900Black / 800ExtraBold + tracking-tighter (-1.2 a -0.4)
+ *  - Body / BodyRelaxed   -> Inter_400Regular sobre slate-700 con leading-relaxed
+ *  - Mono*                -> JetBrainsMono_600SemiBold + tabular-nums (timers, precios)
+ *  - Label                -> Inter_700Bold uppercase con tracking expandido (overline)
+ */
+export const typography: Record<string, TextStyle> = {
+  // Headlines deportivos (estética Nike / marcadores LED)
+  display: {
+    fontFamily: fonts.sansBlack,
+    fontSize: 40,
+    letterSpacing: -1.4,
+    lineHeight: 44,
+    color: colors.text.primary,
   },
-  caption: { fontSize: 12, fontWeight: "500" as const },
-  // Mono — para precios, distancias, contadores, posiciones de waitlist, timers
+  h1: {
+    fontFamily: fonts.sansBlack,
+    fontSize: 30,
+    letterSpacing: -1.0,
+    lineHeight: 34,
+    color: colors.text.primary,
+  },
+  h2: {
+    fontFamily: fonts.sansBlack,
+    fontSize: 22,
+    letterSpacing: -0.6,
+    lineHeight: 26,
+    color: colors.text.primary,
+  },
+  h3: {
+    fontFamily: fonts.sansExtraBold,
+    fontSize: 18,
+    letterSpacing: -0.4,
+    lineHeight: 22,
+    color: colors.text.primary,
+  },
+  brand: {
+    // Brand inline (PADELAPPRETAS · ADMIN, etc.)
+    fontFamily: fonts.sansBlack,
+    fontSize: 18,
+    letterSpacing: -0.4,
+    color: colors.brand.primary,
+  },
+
+  // Lectura cómoda — slate-700 + leading-relaxed
+  body: {
+    fontFamily: fonts.sansRegular,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.text.body,
+  },
+  bodyRelaxed: {
+    fontFamily: fonts.sansRegular,
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.text.body,
+  },
+  bodyBold: {
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.text.primary,
+  },
+  bodySm: {
+    fontFamily: fonts.sansRegular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text.body,
+  },
+
+  // Etiqueta tipo overline (chips, headers de secciones)
+  label: {
+    fontFamily: fonts.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.text.secondary,
+  },
+  caption: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.text.secondary,
+  },
+
+  // Botones (legible bajo el sol, alto contraste)
+  button: {
+    fontFamily: fonts.sansExtraBold,
+    fontSize: 13,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  buttonLg: {
+    fontFamily: fonts.sansExtraBold,
+    fontSize: 15,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+
+  // MONO — datos críticos (precios, distancias KM, posiciones, timers)
   mono: {
-    fontFamily: monoFont,
-    fontVariant: ["tabular-nums"] as ["tabular-nums"],
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    color: colors.text.primary,
+  },
+  monoSm: {
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    color: colors.text.body,
   },
   monoBold: {
-    fontFamily: monoFont,
-    fontVariant: ["tabular-nums"] as ["tabular-nums"],
-    fontWeight: "800" as const,
+    fontFamily: fonts.monoBold,
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    color: colors.text.primary,
   },
   monoLarge: {
-    fontFamily: monoFont,
-    fontVariant: ["tabular-nums"] as ["tabular-nums"],
-    fontWeight: "900" as const,
+    fontFamily: fonts.monoBold,
     fontSize: 22,
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
+    fontVariant: ["tabular-nums"],
+    color: colors.text.primary,
   },
 };
 
-// Sombras sutiles (Mobile-first, alto rendimiento bajo el sol)
 export const shadows = {
   card: Platform.select({
     ios: {

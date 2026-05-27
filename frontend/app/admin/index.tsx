@@ -16,6 +16,8 @@ import { BarChart3, LogOut, Plus, Wallet } from "lucide-react-native";
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
+import { BrandHeader } from "@/src/components/BrandHeader";
+import { EmptyState } from "@/src/components/EmptyState";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function AdminDashboard() {
@@ -55,22 +57,30 @@ export default function AdminDashboard() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>PADELAPPRETAS · ADMIN</Text>
-          <Text style={styles.tagline}>{retas.length} reta{retas.length === 1 ? "" : "s"} activas</Text>
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <TouchableOpacity onPress={() => router.push("/admin/mercadopago" as any)} style={styles.iconBtn} testID="mercadopago-btn">
-            <Wallet size={18} color={colors.brand.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
-            <BarChart3 size={18} color={colors.brand.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={logout} style={styles.iconBtn} testID="logout-btn">
-            <LogOut size={18} color={colors.status.red} />
-          </TouchableOpacity>
-        </View>
+      <BrandHeader
+        testID="admin-header"
+        wordmarkSize="md"
+        logoSize={32}
+        right={
+          <>
+            <TouchableOpacity onPress={() => router.push("/admin/mercadopago" as any)} style={styles.iconBtn} testID="mercadopago-btn">
+              <Wallet size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
+              <BarChart3 size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={logout} style={styles.iconBtn} testID="logout-btn">
+              <LogOut size={18} color={colors.status.red} />
+            </TouchableOpacity>
+          </>
+        }
+      />
+      <View style={styles.subhead}>
+        <Text style={styles.subheadLabel}>Panel admin</Text>
+        <Text style={styles.subheadCount}>
+          <Text style={styles.subheadCountNum}>{retas.length}</Text>
+          {" reta"}{retas.length === 1 ? "" : "s"}{" activa"}{retas.length === 1 ? "" : "s"}
+        </Text>
       </View>
 
       <View style={styles.ctaBar}>
@@ -103,12 +113,11 @@ export default function AdminDashboard() {
             />
           )}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Sin retas todavía</Text>
-              <Text style={styles.emptyText}>
-                Crea tu primer torneo Round Robin para 8 jugadores.
-              </Text>
-            </View>
+            <EmptyState
+              testID="admin-empty"
+              title="Sin retas todavía"
+              subtitle="Crea tu primer torneo Round Robin para 8 jugadores."
+            />
           }
         />
       )}
@@ -118,12 +127,16 @@ export default function AdminDashboard() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
-  header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm,
+  subhead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
   },
-  brand: { color: colors.brand.primary, fontWeight: "900", letterSpacing: 2, fontSize: 14 },
-  tagline: { color: colors.text.secondary, fontSize: 13, marginTop: 4 },
+  subheadLabel: { ...typography.label, color: colors.text.secondary },
+  subheadCount: { ...typography.bodySm, color: colors.text.secondary },
+  subheadCountNum: { ...typography.monoBold, fontSize: 14, color: colors.text.primary },
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md,
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
@@ -132,7 +145,4 @@ const styles = StyleSheet.create({
   ctaBar: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  empty: { paddingVertical: spacing.xxl, alignItems: "center", gap: spacing.md },
-  emptyTitle: { ...typography.h2, color: colors.text.primary, textAlign: "center" },
-  emptyText: { color: colors.text.secondary, textAlign: "center", lineHeight: 20 },
 });

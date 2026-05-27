@@ -1,31 +1,61 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { ActivityIndicator, StyleSheet, Text, TextStyle, TouchableOpacity, View } from "react-native";
+import { BrandLogo } from "@/src/components/BrandLogo";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
+type Size = "md" | "lg";
 
 type Props = {
   title: string;
   onPress: () => void;
   variant?: Variant;
+  size?: Size;
   disabled?: boolean;
   loading?: boolean;
   testID?: string;
   icon?: React.ReactNode;
+  /**
+   * Cuando es true, incrusta el isotipo PadelappRetas (pala/pelota mini blanca)
+   * a la izquierda del título. Usar en CTAs principales como "Pagar inscripción"
+   * o "Unirse a lista de espera" para guiar el ojo del usuario.
+   */
+  brandIcon?: boolean;
   block?: boolean;
 };
 
-export function Button({ title, onPress, variant = "primary", disabled, loading, testID, icon, block = true }: Props) {
+export function Button({
+  title,
+  onPress,
+  variant = "primary",
+  size = "md",
+  disabled,
+  loading,
+  testID,
+  icon,
+  brandIcon,
+  block = true,
+}: Props) {
   const styleVar = variantStyles[variant];
+  const sizeStyle = size === "lg" ? styles.baseLg : styles.base;
+  const labelStyle: TextStyle =
+    size === "lg" ? (typography.buttonLg as TextStyle) : (typography.button as TextStyle);
+
+  // Color del isotipo según variante (sobre fondo claro queremos color de marca,
+  // sobre fondo emerald queremos blanco).
+  const brandIconVariant = variant === "primary" || variant === "danger" ? "mono" : "default";
+  const isotipoSize = size === "lg" ? 18 : 16;
+
   return (
     <TouchableOpacity
       testID={testID}
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.7}
+      activeOpacity={0.85}
       style={[
-        styles.base,
+        sizeStyle,
         styleVar.button,
+        variant === "primary" && shadows.cta,
         block && { alignSelf: "stretch" },
         (disabled || loading) && { opacity: 0.5 },
       ]}
@@ -34,8 +64,13 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
         <ActivityIndicator color={styleVar.text.color} />
       ) : (
         <View style={styles.row}>
+          {brandIcon ? (
+            <View style={{ marginRight: spacing.sm }}>
+              <BrandLogo size={isotipoSize} variant={brandIconVariant} />
+            </View>
+          ) : null}
           {icon ? <View style={{ marginRight: spacing.sm }}>{icon}</View> : null}
-          <Text style={[styles.label, styleVar.text]}>{title}</Text>
+          <Text style={[labelStyle, styleVar.text]}>{title}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -50,11 +85,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  row: { flexDirection: "row", alignItems: "center" },
-  label: {
-    ...typography.label,
-    fontSize: 13,
+  baseLg: {
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  row: { flexDirection: "row", alignItems: "center" },
 });
 
 const variantStyles = {
@@ -72,7 +110,7 @@ const variantStyles = {
   },
   danger: {
     button: { backgroundColor: colors.status.red },
-    text: { color: colors.text.primary },
+    text: { color: colors.text.inverse },
   },
   ghost: {
     button: {

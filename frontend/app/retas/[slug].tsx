@@ -270,6 +270,8 @@ export default function RetaDetailScreen() {
               title={lleno ? "Unirse a Lista de Espera" : `Pagar $${reta.costo_inscripcion} e Inscribirme`}
               onPress={handleAction}
               variant={lleno ? "danger" : "primary"}
+              size="lg"
+              brandIcon
               loading={submitting}
               testID={lleno ? "waitlist-btn" : "pay-button"}
             />

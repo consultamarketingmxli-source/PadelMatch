@@ -15,6 +15,8 @@ import { ShieldCheck } from "lucide-react-native";
 import { api } from "@/src/api";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { BrandLogo } from "@/src/components/BrandLogo";
+import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function AdminLogin() {
@@ -49,10 +51,12 @@ export default function AdminLogin() {
         style={{ flex: 1 }}
       >
         <View style={styles.container}>
-          <View style={styles.iconWrap}>
-            <ShieldCheck size={28} color={colors.brand.primary} />
+          <View style={styles.brandWrap}>
+            <BrandLogo size={72} />
+            <View style={{ height: spacing.md }} />
+            <BrandWordmark size="lg" />
+            <Text style={styles.adminTag}>· Panel admin</Text>
           </View>
-          <Text style={styles.title}>PADELAPPRETAS · ADMIN</Text>
           <Text style={styles.subtitle}>
             Acceso para organizadores de clubes de pádel.
           </Text>
@@ -93,15 +97,16 @@ export default function AdminLogin() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
   container: { flex: 1, padding: spacing.lg, justifyContent: "center", gap: spacing.md },
-  iconWrap: {
-    width: 56, height: 56, borderRadius: radii.lg,
-    borderWidth: 1, borderColor: colors.brand.primaryBorder,
-    backgroundColor: colors.brand.primarySoft,
-    alignItems: "center", justifyContent: "center",
-    marginBottom: spacing.sm,
+  brandWrap: {
+    alignItems: "center",
+    marginBottom: spacing.base,
   },
-  title: { ...typography.h1, color: colors.text.primary, fontSize: 28 },
-  subtitle: { color: colors.text.secondary, lineHeight: 20, marginBottom: spacing.lg },
+  adminTag: {
+    ...typography.label,
+    color: colors.text.secondary,
+    marginTop: spacing.xs,
+  },
+  subtitle: { ...typography.bodyRelaxed, color: colors.text.secondary, textAlign: "center", marginBottom: spacing.lg },
   form: { gap: 0 },
-  hint: { color: colors.text.muted, fontSize: 12, marginTop: spacing.lg, textAlign: "center" },
+  hint: { ...typography.caption, color: colors.text.muted, marginTop: spacing.lg, textAlign: "center" },
 });
