@@ -92,3 +92,18 @@ async def obtener_status_sesion(session_id: str) -> CheckoutStatusResponse:
 
 async def procesar_webhook(payload: bytes, signature: Optional[str]) -> WebhookEventResponse:
     return await _client().handle_webhook(payload, signature)
+
+
+async def refundar_pago(payment_intent_id: str, amount: Optional[int] = None) -> dict:
+    """Reembolsa un pago Stripe. amount en centavos (None = total).
+    Usa el SDK oficial `stripe` directamente porque emergentintegrations no expone refund."""
+    import stripe
+    stripe.api_key = _get_api_key()
+    params = {"payment_intent": payment_intent_id}
+    if amount is not None:
+        params["amount"] = amount
+    # SDK síncrono — Stripe es rápido y este endpoint admin no es hot path
+    import asyncio as _asyncio
+    loop = _asyncio.get_event_loop()
+    refund = await loop.run_in_executor(None, lambda: stripe.Refund.create(**params))
+    return {"id": refund.id, "amount": refund.amount, "status": refund.status}

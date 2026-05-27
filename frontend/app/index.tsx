@@ -95,8 +95,12 @@ export default function HomeScreen() {
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <TouchableOpacity
-            testID="nav-profile-btn"
-            onPress={() => router.push("/perfil")}
+            testID="nav-mi-cuenta-btn"
+            onPress={async () => {
+              const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+              const tok = await AsyncStorage.getItem("padelreta.player.token");
+              router.push(tok ? ("/mi-cuenta" as any) : ("/login" as any));
+            }}
             style={styles.iconBtn}
           >
             <User size={18} color={colors.brand.primary} />

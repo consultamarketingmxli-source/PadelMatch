@@ -106,6 +106,64 @@ export type PaymentStatus = {
   stripe_payment_status?: string | null;
 };
 
+export type RetaKPI = {
+  reta_id: string;
+  nombre: string;
+  club: string;
+  fecha_evento: string;
+  url_slug: string;
+  capacidad_pct: number;
+  semaforo: "VERDE" | "AMARILLO" | "ROJO";
+  inscritos: number;
+  max_jugadores: number;
+  waitlist: number;
+  ingresos_mxn: number;
+  refunds_mxn: number;
+};
+
+export type AdminMetrics = {
+  ingresos_totales_mxn: number;
+  ingresos_pendientes_mxn: number;
+  refunds_totales_mxn: number;
+  pagos_aprobados: number;
+  pagos_pendientes: number;
+  pagos_fallidos: number;
+  conversion_pct: number;
+  retas_totales: number;
+  retas_futuras: number;
+  retas_llenas: number;
+  jugadores_unicos: number;
+  top_retas: RetaKPI[];
+  proximas_retas: RetaKPI[];
+};
+
+export type RefundResponse = {
+  ok: boolean;
+  inscripcion_id: string;
+  refund_id?: string | null;
+  amount_refunded_mxn: number;
+  promoted: boolean;
+};
+
+export type PlayerAuthResponse = {
+  access_token: string;
+  token_type: string;
+  jugador_id: string;
+  nombre: string;
+  telefono: string;
+};
+
+export type PlayerInscripcion = {
+  id: string;
+  reta_id: string;
+  reta_nombre: string;
+  reta_slug: string;
+  fecha_evento: string;
+  club: string;
+  estatus_pago: string;
+  creado_en: string;
+};
+
 export type TablaPosicionEntry = {
   nombre: string;
   partidos_jugados: number;
@@ -238,6 +296,36 @@ export const api = {
     }),
   paymentStatus: (inscripcionId: string) =>
     request<PaymentStatus>(`/public/inscripciones/${inscripcionId}/payment-status`),
+
+  // ===== admin dashboard =====
+  adminMetrics: () => request<AdminMetrics>(`/admin/metrics`, { auth: true }),
+  refundInscripcion: (retaId: string, inscripcionId: string) =>
+    request<RefundResponse>(
+      `/admin/retas/${retaId}/inscripciones/${inscripcionId}/refund`,
+      { method: "POST", auth: true },
+    ),
+
+  // ===== player auth (OTP) =====
+  playerRequestOtp: (body: { nombre: string; telefono: string }) =>
+    request<{ ok: boolean; enviado_por_sms: boolean; mensaje: string }>(
+      `/players/auth/otp/request`,
+      { method: "POST", body },
+    ),
+  playerVerifyOtp: (body: { telefono: string; codigo: string }) =>
+    request<PlayerAuthResponse>(`/players/auth/otp/verify`, { method: "POST", body }),
+  playerMe: (token: string) =>
+    request<{ jugador_id: string; telefono: string; nombre: string; role: string }>(
+      `/players/me`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    ),
+  playerMyInscripciones: (token: string) =>
+    request<PlayerInscripcion[]>(`/players/me/inscripciones`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  playerMyStats: (token: string) =>
+    request<PlayerStats>(`/players/me/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
 
   // ===== pdf =====
   async generatePdfUrl(retaId: string, jugadores: string[], numRondas: 5 | 6 | 7) {

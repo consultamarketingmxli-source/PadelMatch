@@ -1,0 +1,55 @@
+{
+  "summary": "Iteración 4 (backend only) probada: Dashboard admin metrics, Refund vía Stripe (incluyendo edge case sin payment_intent + promoción de waitlist + idempotencia) y Player OTP login (request/verify/me/inscripciones/stats). Se creó /app/backend/tests/test_dashboard_refund_player_auth.py con 16 nuevos test cases. Suite completa pasa 68/68 (52 previos + 16 nuevos). Sin regresión.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/metrics",
+        "issue": "`jugadores_unicos` se calcula con `db.usuarios.count_documents({})` que incluye al usuario admin. Considerar filtrar por role!=admin o por colección de jugadores reales. Reference: routers/admin_dashboard.py:141"
+      },
+      {
+        "endpoint": "GET /api/admin/metrics",
+        "issue": "`ingresos_pendientes_mxn=round(pendientes * 0, 2)` es código muerto (siempre 0). Si no se va a usar, removerlo del schema; si se va a usar, multiplicar por costo_inscripcion promedio o real. Reference: routers/admin_dashboard.py:160"
+      },
+      {
+        "endpoint": "POST /api/players/auth/otp/request",
+        "issue": "OTP se genera con `random.randint` (PRNG no criptográfico). Aunque hay un `secrets` importado, no se usa. Recomendable usar `secrets.randbelow(10)` para OTP de producción. Reference: routers/player_auth.py:67-68"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dashboard_refund_player_auth.py",
+    "/app/test_reports/pytest/iter4_full.xml",
+    "/app/test_reports/pytest/iter4_new.xml"
+  ],
+  "action_items": [
+    "[OPCIONAL] Filtrar jugadores_unicos por colección de jugadores o role!=admin en /api/admin/metrics.",
+    "[OPCIONAL] Limpiar el placeholder `ingresos_pendientes_mxn` en MetricsResponse o computarlo correctamente.",
+    "[OPCIONAL] Cambiar generación de OTP a `secrets.randbelow` para mayor entropía (no bloqueante en MVP).",
+    "[FUTURO] Crear índice TTL en player_otps.expires_at (actualmente la expiración solo se valida en lectura; documentos expirados quedan en la colección hasta que el mismo teléfono pida otro OTP)."
+  ],
+  "critical_code_review_comments": [
+    "Refund flow elimina la inscripción DESPUÉS de marcar la transacción como `refunded`. Si la operación de delete fallara, la transacción quedaría como refunded sin inscripción liberada. En MVP es aceptable; en producción considerar un job de reconciliación.",
+    "El endpoint refund llama a `obtener_status_sesion` y luego a `refundar_pago`: 2 llamadas a Stripe por refund. Aceptable, pero documentar como posible optimización.",
+    "Idempotencia del refund: actualmente el segundo intento retorna 404 (porque la inscripción ya fue borrada). Funcionalmente idempotente, aunque semánticamente confuso si el caller espera 200. Si el caller necesita confirmación, podría inspeccionar `stripe_transactions` para detectar refunds previos antes de 404."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dashboard_refund_player_auth.py (nuevo, 16 test cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (68/68 tests pasan: 52 previos + 16 nuevos)",
+    "frontend": "no probado (testing_type=backend only)"
+  },
+  "seed_data_creation": "Los tests crean retas TEST_ y limpieza con DELETE tras cada test class. OTPs y usuarios TEST_ se limpian inline via pymongo directo. Sin contaminación persistente.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite backend completa: pytest /app/backend/tests/ -v (68 tests, ~22s). El archivo test_dashboard_refund_player_auth.py usa pymongo directo para leer OTP code de db.player_otps (Twilio mocked). MOCKED: WhatsApp notifications + OTP delivery (intencional, sin Twilio). Para tests de refund con Stripe real (con payment_intent_id), se necesitaría un flow de Stripe completo (checkout-stripe + webhook real) — actualmente solo se cubre el edge case `sin payment_intent` (mock-aprobada).",
+  "rca_of_issue": "N/A — no hay bugs. Todas las features funcionan según spec.",
+  "test_credentials_used": "admin@pixelpadel.com / admin123 (de /app/memory/test_credentials.md, vía conftest fixture auth_headers)."
+}

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { LogOut, Plus, Settings } from "lucide-react-native";
+import { BarChart3, LogOut, Plus, Settings } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
@@ -61,6 +61,9 @@ export default function AdminDashboard() {
           <Text style={styles.tagline}>{retas.length} reta{retas.length === 1 ? "" : "s"} activas</Text>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
+            <BarChart3 size={18} color={colors.brand.primary} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={logout} style={styles.iconBtn} testID="logout-btn">
             <LogOut size={18} color={colors.status.red} />
           </TouchableOpacity>
