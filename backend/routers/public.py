@@ -1,11 +1,14 @@
-"""Endpoints públicos (sin auth): radar, búsqueda híbrida, detalle por slug, stats de jugador."""
+"""Endpoints públicos (sin auth): radar, búsqueda híbrida, detalle por slug, stats de jugador, QR."""
+import os
 import re
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from core.db import db
 from core.helpers import compute_public, strip_mongo
+from core.qr_utils import make_qr_png
 from logica_torneo import obtener_distancia_km
 from models import PlayerStats, RetaPublic
 
@@ -85,6 +88,34 @@ async def get_reta_by_slug(slug: str):
         raise HTTPException(404, "Reta no encontrada")
     await compute_public(r)
     return RetaPublic(**r)
+
+
+@router.get("/retas/{slug}/qr")
+async def public_reta_qr(slug: str):
+    """PNG del QR (público, sin auth) — sirve para imprimir desde cualquier
+    máquina sin necesidad de loguearse al admin."""
+    r = await db.retas.find_one({"url_slug": slug}, {"url_slug": 1, "_id": 0})
+    if not r:
+        raise HTTPException(404, "Reta no encontrada")
+    base = ""
+    for var in ("APP_PUBLIC_URL", "EXPO_PUBLIC_FRONTEND_URL", "EXPO_PUBLIC_BACKEND_URL"):
+        v = os.environ.get(var, "").strip().rstrip("/")
+        if v:
+            base = v
+            break
+    url = f"{base}/retas/{slug}" if base else f"/retas/{slug}"
+    try:
+        png = make_qr_png(url)
+    except Exception as e:
+        raise HTTPException(500, f"No se pudo generar QR: {e}")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=600",
+            "Content-Disposition": f'inline; filename="qr-{slug}.png"',
+        },
+    )
 
 
 @router.get("/players/{telefono}/stats", response_model=PlayerStats)

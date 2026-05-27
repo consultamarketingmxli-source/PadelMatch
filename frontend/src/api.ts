@@ -209,6 +209,33 @@ export type TablaPosicionEntry = {
   efectividad: number;
 };
 
+export type ShareInfo = {
+  reta_id: string;
+  nombre: string;
+  url_publica: string;
+  url_slug: string;
+  qr_endpoint: string;
+  qr_publico: string;
+  inscritos: number;
+  waitlist: number;
+  max_jugadores: number;
+  capacidad_pct: number;
+  semaforo: "VERDE" | "AMARILLO" | "ROJO";
+  sugerencia?: string | null;
+};
+
+export type PlayerWaitlistItem = {
+  waitlist_id: string;
+  reta_id: string;
+  reta_nombre: string;
+  reta_slug: string;
+  club: string;
+  fecha_evento: string;
+  posicion_fila: number;
+  total_en_espera: number;
+  notificado: boolean;
+};
+
 async function tokenHeader() {
   const t = await storage.secureGet<string>(TOKEN_KEY, "");
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -216,10 +243,17 @@ async function tokenHeader() {
 
 async function request<T>(
   path: string,
-  opts: { method?: string; body?: unknown; auth?: boolean; raw?: boolean } = {},
+  opts: {
+    method?: string;
+    body?: unknown;
+    auth?: boolean;
+    raw?: boolean;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (opts.auth) Object.assign(headers, await tokenHeader());
+  if (opts.headers) Object.assign(headers, opts.headers);
   const res = await fetch(`${BASE}/api${path}`, {
     method: opts.method ?? "GET",
     headers,
@@ -263,6 +297,11 @@ export const api = {
     request<{ ok: boolean }>(`/retas/${id}`, { method: "DELETE", auth: true }),
   listInscripciones: (id: string) =>
     request<Inscripcion[]>(`/retas/${id}/inscripciones`, { auth: true }),
+
+  // ===== Compartir (Fase B) =====
+  getShareInfo: (id: string) => request<ShareInfo>(`/retas/${id}/share-info`, { auth: true }),
+  /** URL absoluta del PNG QR público (no requiere auth) — sirve como src de <Image>. */
+  getPublicQrUrl: (slug: string) => `${BASE}/api/public/retas/${slug}/qr`,
 
   // ===== retas público =====
   radar: (lat?: number, lng?: number, radioKm = 30) => {
@@ -410,6 +449,10 @@ export const api = {
     }),
   playerMyStats: (token: string) =>
     request<PlayerStats>(`/players/me/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  playerMyWaitlist: (token: string) =>
+    request<PlayerWaitlistItem[]>(`/players/me/waitlist`, {
       headers: { Authorization: `Bearer ${token}` },
     }),
 

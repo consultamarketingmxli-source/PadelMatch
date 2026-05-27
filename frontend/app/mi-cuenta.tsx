@@ -1,4 +1,15 @@
-/** Pantalla privada del jugador: historial + stats. */
+/**
+ * Mi Cuenta (Fase D — Portal Jugador Premium).
+ *
+ * Lo nuevo respecto a la versión legacy:
+ *   • Stats con tarjeta "win/loss/efectividad" en grid 3+1.
+ *   • Sección "En lista de espera" con la posición exacta + total en cola.
+ *   • Carga paralela de inscripciones + stats + waitlist (resiliente, no rompe si una falla).
+ *   • Pull-to-refresh global.
+ *
+ * Diseño: tarjetas Club Pro Clean — espaciado 8/16/24, bordes radii.md,
+ * tipografía monoLarge para los números.
+ */
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,9 +24,18 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { LogOut, Trophy, Calendar, CheckCircle2, Clock, XCircle, ChevronRight } from "lucide-react-native";
+import {
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Hourglass,
+  LogOut,
+  Trophy,
+  XCircle,
+} from "lucide-react-native";
 
-import { PlayerInscripcion, PlayerStats, api } from "@/src/api";
+import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
@@ -23,10 +43,10 @@ const PLAYER_INFO_KEY = "padelappretas.player.info";
 
 export default function MiCuenta() {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
   const [info, setInfo] = useState<{ nombre: string; telefono: string } | null>(null);
   const [inscripciones, setInscripciones] = useState<PlayerInscripcion[]>([]);
   const [stats, setStats] = useState<PlayerStats | null>(null);
+  const [waitlist, setWaitlist] = useState<PlayerWaitlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -37,27 +57,35 @@ export default function MiCuenta() {
       router.replace("/login" as any);
       return;
     }
-    setToken(t);
     setInfo(JSON.parse(i));
-    try {
-      const [ins, st] = await Promise.all([
-        api.playerMyInscripciones(t),
-        api.playerMyStats(t),
-      ]);
-      setInscripciones(ins);
-      setStats(st);
-    } catch (e: any) {
-      // token expirado o inválido
+    // settleAll: si una API falla no rompemos la pantalla entera.
+    const [insRes, stRes, wlRes] = await Promise.allSettled([
+      api.playerMyInscripciones(t),
+      api.playerMyStats(t),
+      api.playerMyWaitlist(t),
+    ]);
+    // Si el token está expirado, las 3 fallarán con 401 → forzamos logout.
+    if (insRes.status === "rejected" && stRes.status === "rejected" && wlRes.status === "rejected") {
       await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
       await AsyncStorage.removeItem(PLAYER_INFO_KEY);
       router.replace("/login" as any);
-    } finally {
-      setLoading(false);
+      return;
     }
+    if (insRes.status === "fulfilled") setInscripciones(insRes.value);
+    if (stRes.status === "fulfilled") setStats(stRes.value);
+    if (wlRes.status === "fulfilled") setWaitlist(wlRes.value);
+    setLoading(false);
   }, [router]);
 
-  useEffect(() => { void load(); }, [load]);
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   const logout = async () => {
     Alert.alert("Cerrar sesión", "¿Quieres salir de tu cuenta?", [
@@ -77,16 +105,29 @@ export default function MiCuenta() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.center}><ActivityIndicator color={colors.brand.primary} /></View>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.brand.primary} />
+        </View>
       </SafeAreaView>
     );
   }
+
+  const jugados = stats?.partidos_jugados ?? 0;
+  const ganados = stats?.partidos_ganados ?? 0;
+  const perdidos = Math.max(0, jugados - ganados);
+  const efect = stats?.efectividad ?? 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand.primary}
+          />
+        }
       >
         <View style={styles.topBar}>
           <View>
@@ -98,12 +139,36 @@ export default function MiCuenta() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
-        <View style={styles.statsGrid}>
-          <Stat label="Partidos" value={String(stats?.partidos_jugados ?? 0)} />
-          <Stat label="Ganados" value={String(stats?.partidos_ganados ?? 0)} />
-          <Stat label="Efectividad" value={`${stats?.efectividad ?? 0}%`} />
+        {/* Stats hero — efectividad gigante */}
+        <View style={styles.heroCard}>
+          <Text style={styles.heroLabel}>EFECTIVIDAD</Text>
+          <Text style={styles.heroValue} testID="hero-efectividad">{efect}%</Text>
+          <View style={styles.heroBarBg}>
+            <View style={[styles.heroBarFg, { width: `${Math.min(100, efect)}%` }]} />
+          </View>
+          <Text style={styles.heroSub}>
+            {jugados === 0 ? "Aún no has jugado partidos" : `${ganados}G · ${perdidos}P · ${jugados} totales`}
+          </Text>
         </View>
+
+        <View style={styles.statsGrid}>
+          <Stat label="Jugados" value={String(jugados)} testID="stat-jugados" />
+          <Stat label="Ganados" value={String(ganados)} accent={colors.status.green} testID="stat-ganados" />
+          <Stat label="Perdidos" value={String(perdidos)} accent={colors.status.red} testID="stat-perdidos" />
+        </View>
+
+        {/* Lista de espera activa */}
+        {waitlist.length > 0 ? (
+          <>
+            <Text style={styles.section}>
+              <Hourglass size={14} color={colors.status.amber} />
+              {"  "}En lista de espera ({waitlist.length})
+            </Text>
+            {waitlist.map((w) => (
+              <WaitlistRow key={w.waitlist_id} w={w} router={router} />
+            ))}
+          </>
+        ) : null}
 
         <Text style={styles.section}>Mis retas</Text>
         {inscripciones.length === 0 ? (
@@ -123,23 +188,72 @@ export default function MiCuenta() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  accent,
+  testID,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+  testID?: string;
+}) {
   return (
-    <View style={styles.statBox}>
-      <Text style={styles.statValue}>{value}</Text>
+    <View style={styles.statBox} testID={testID}>
+      <Text style={[styles.statValue, accent ? { color: accent } : null]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
+function WaitlistRow({ w, router }: { w: PlayerWaitlistItem; router: any }) {
+  const fecha = new Date(w.fecha_evento);
+  const fechaStr = fecha.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <TouchableOpacity
+      onPress={() => router.push(`/retas/${w.reta_slug}` as any)}
+      style={[styles.insRow, styles.waitRow]}
+      testID={`mi-waitlist-${w.waitlist_id}`}
+    >
+      <View style={styles.posBadge}>
+        <Text style={styles.posBadgeNum}>#{w.posicion_fila}</Text>
+        <Text style={styles.posBadgeTot}>de {w.total_en_espera}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.insName} numberOfLines={1}>{w.reta_nombre}</Text>
+        <Text style={styles.insMeta} numberOfLines={1}>{w.club} · {fechaStr}</Text>
+        <View style={styles.insEstatusRow}>
+          <Hourglass size={12} color={colors.status.amber} />
+          <Text style={[styles.insEstatus, { color: colors.status.amber }]}>
+            En lista de espera
+          </Text>
+        </View>
+      </View>
+      <ChevronRight size={18} color={colors.text.muted} />
+    </TouchableOpacity>
+  );
+}
+
 function InscRow({ ins, router }: { ins: PlayerInscripcion; router: any }) {
-  const info = ins.estatus_pago === "Aprobado"
-    ? { color: colors.status.green, icon: <CheckCircle2 size={14} color={colors.status.green} />, label: "Pagado" }
-    : ins.estatus_pago === "Pendiente"
-    ? { color: colors.status.amber, icon: <Clock size={14} color={colors.status.amber} />, label: "Pendiente" }
-    : { color: colors.status.red, icon: <XCircle size={14} color={colors.status.red} />, label: ins.estatus_pago };
+  const info =
+    ins.estatus_pago === "Aprobado"
+      ? { color: colors.status.green, icon: <CheckCircle2 size={14} color={colors.status.green} />, label: "Pagado" }
+      : ins.estatus_pago === "Pendiente"
+        ? { color: colors.status.amber, icon: <Clock size={14} color={colors.status.amber} />, label: "Pendiente" }
+        : { color: colors.status.red, icon: <XCircle size={14} color={colors.status.red} />, label: ins.estatus_pago };
   const fecha = new Date(ins.fecha_evento);
-  const fechaStr = fecha.toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const fechaStr = fecha.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return (
     <TouchableOpacity
       onPress={() => router.push(`/retas/${ins.reta_slug}` as any)}
@@ -165,38 +279,123 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
   topBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: spacing.lg,
   },
   iconBtn: {
-    width: 40, height: 40, borderRadius: radii.md, backgroundColor: colors.bg.card,
-    borderWidth: 1, borderColor: colors.border.default, alignItems: "center", justifyContent: "center",
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    alignItems: "center",
+    justifyContent: "center",
   },
   hello: { color: colors.text.primary, fontSize: 22, fontWeight: "900" },
   subtle: { color: colors.text.secondary, fontSize: 12, marginTop: 2 },
+
+  heroCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  heroLabel: {
+    ...typography.label,
+    color: colors.text.secondary,
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  heroValue: {
+    color: colors.brand.primary,
+    fontSize: 48,
+    fontWeight: "900",
+    letterSpacing: -1,
+    lineHeight: 52,
+  },
+  heroBarBg: {
+    height: 8,
+    backgroundColor: colors.border.default,
+    borderRadius: 4,
+    marginTop: spacing.sm,
+    overflow: "hidden",
+  },
+  heroBarFg: { height: "100%", backgroundColor: colors.brand.primary },
+  heroSub: { color: colors.text.secondary, fontSize: 12, marginTop: 6 },
+
   statsGrid: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   statBox: {
-    flex: 1, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md, alignItems: "center",
+    flex: 1,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    alignItems: "center",
   },
-  statValue: { color: colors.brand.primary, fontSize: 22, fontWeight: "900" },
+  statValue: { color: colors.text.primary, fontSize: 22, fontWeight: "900" },
   statLabel: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
-  section: { ...typography.h2, color: colors.text.primary, fontSize: 16, marginBottom: spacing.sm },
-  insRow: {
-    flexDirection: "row", alignItems: "center", gap: spacing.sm,
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.sm,
+
+  section: {
+    ...typography.h2,
+    color: colors.text.primary,
+    fontSize: 16,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
   },
+
+  insRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  waitRow: {
+    borderColor: colors.status.amber,
+    backgroundColor: "#FFFCF2",
+  },
+  posBadge: {
+    width: 52,
+    paddingVertical: 6,
+    backgroundColor: colors.status.amber,
+    borderRadius: radii.sm,
+    alignItems: "center",
+  },
+  posBadgeNum: { color: "#fff", fontWeight: "900", fontSize: 16, lineHeight: 18 },
+  posBadgeTot: { color: "#fff", fontSize: 9, opacity: 0.9 },
+
   insName: { ...typography.bodyBold, color: colors.text.primary },
   insMeta: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
   insEstatusRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   insEstatus: { fontSize: 11, fontWeight: "700" },
+
   emptyCard: {
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.xl, alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radii.md,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.sm,
   },
   emptyTitle: { ...typography.h2, color: colors.text.primary, fontSize: 16, textAlign: "center" },
   emptyText: { color: colors.text.secondary, fontSize: 12, textAlign: "center" },
-  cta: { backgroundColor: colors.brand.primary, paddingHorizontal: 18, paddingVertical: 10, borderRadius: radii.pill, marginTop: spacing.sm },
+  cta: {
+    backgroundColor: colors.brand.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    marginTop: spacing.sm,
+  },
   ctaText: { color: colors.text.inverse, fontWeight: "800" },
 });

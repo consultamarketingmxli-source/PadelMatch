@@ -1,0 +1,53 @@
+{
+  "summary": "Validación HTTP end-to-end (motor async + Mongo real) de Fase A (max_jugadores 4-32 + formato_score + WebP compression), Fase B (share-info + QR admin + QR público), Fase D (/me/waitlist player) y regresión. 23/23 tests nuevos PASARON contra el backend desplegado. Sin embargo, encontré un BUG REAL de configuración: el servidor en producción está usando el JWT_SECRET default hardcodeado de auth.py — NO el de /app/backend/.env — porque auth.py se importa en server.py ANTES que core/db.py (que llama load_dotenv()). Esto compromete la rotación de secretos y es un issue de seguridad. También detecté que 24 tests pre-existentes en tests/test_stripe_payments.py y test_mercadopago_marketplace.py están fallando porque usan números de teléfono con formato inválido ('+521TEST_NX1') que el validador (correctamente) rechaza con 422 — no es regresión causada por Fase A/B/D, pero hay que actualizar la data de esos tests.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "AUTH (config)",
+        "issue": "JWT_SECRET de /app/backend/.env NO se carga: auth.py importa antes de que core/db.py haga load_dotenv(), entonces JWT_SECRET = os.environ.get('JWT_SECRET', DEFAULT) cae al DEFAULT hardcodeado. Confirmado: tokens firmados con la cadena default de auth.py son aceptados por el servidor, tokens firmados con el secret del .env son rechazados. Fix: en auth.py, llamar load_dotenv(BASE_DIR/'.env') antes de leer JWT_SECRET, o mover la lectura a una función lazy. Referencia: /app/backend/auth.py:11 vs /app/backend/server.py orden de imports.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "tests/test_stripe_payments.py + tests/test_mercadopago_marketplace.py + tests/test_dashboard_refund_player_auth.py",
+        "issue": "24 tests pre-existentes fallan con 422 porque usan teléfonos tipo '+521TEST_NX1' que ya no pasan el regex del validador. No es regresión funcional (el validador hace bien su trabajo), pero hay que actualizar fixtures con teléfonos válidos tipo '+5215512345678'."
+      },
+      {
+        "endpoint": "tests/test_buscar_hibrido.py",
+        "issue": "Colección de pytest falla con KeyError: 'EXPO_BACKEND_URL' cuando la var no está exportada. Debería usar .env directamente o fallar con mensaje claro."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_abd_http.py",
+    "/app/test_reports/pytest/iter7_http.xml"
+  ],
+  "action_items": [
+    "(CRITICAL) Fix JWT_SECRET loading bug: en /app/backend/auth.py, agregar `from dotenv import load_dotenv; load_dotenv(Path(__file__).parent/'.env')` ANTES de la línea 11 que define JWT_SECRET. Alternativa: leer JWT_SECRET en una función helper que se ejecute después del startup. Esto deja al sistema usando un secret default conocido en código, lo que es inseguro.",
+    "(MINOR) Actualizar fixtures de tests pre-existentes (test_stripe_payments.py, test_mercadopago_marketplace.py, test_dashboard_refund_player_auth.py) para usar teléfonos válidos formato '+52155xxxxxxxx' en lugar de '+521TEST_xxx'.",
+    "(MINOR) En tests/test_buscar_hibrido.py, leer BASE_URL con fallback o llamar load_dotenv antes de raise KeyError."
+  ],
+  "critical_code_review_comments": [
+    "auth.py:11 — JWT_SECRET se evalúa antes de load_dotenv() porque ningún módulo importado antes del primer uso de JWT_SECRET ha llamado load_dotenv. core/db.py SÍ llama load_dotenv pero se importa DESPUÉS de auth en server.py. Resultado: el .env JWT_SECRET es ignorado en producción.",
+    "routers/player_auth.py:284 — Filtro de eventos futuros usa fecha_evento parseado con fromisoformat, lo cual es correcto, pero descarta silenciosamente entradas pasadas. OK en producción pero requiere cuidado para QA con fechas próximas."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_abd_http.py (nuevo: 23 tests HTTP end-to-end de fases A/B/D + regresión)"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 nuevos HTTP tests). Tests pre-existentes: 184/208 (88%); las 24 fallas son por fixtures con teléfonos inválidos, no regresión de Fase A/B/D.",
+    "frontend": "N/A (sólo backend en este pase)"
+  },
+  "seed_data_creation": "El test crea/borra retas TEST_* en cada clase via teardown. No deja basura tras una corrida limpia. Se creó una entrada efímera en lista_espera con teléfono +5215599887766 que se elimina por cascada al borrar la reta TEST_FaseD Waitlist.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Para Fase D (player JWT), el servidor en este preview usa el JWT_SECRET hardcodeado de auth.py ('padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod'), NO el de .env. Si el bug del orden de imports se arregla, actualizar JWT_SECRET en test_phase_abd_http.py para leer de /app/backend/.env vía dotenv_values. Las fechas de fecha_str deben ser FUTURAS (>= 2026-06) porque /me/waitlist filtra eventos pasados.",
+  "rca_of_issue": "BUG JWT_SECRET — Root cause: en /app/backend/server.py el orden de imports es: (línea 14) `import auth` → (línea 15) `from core.db import db`. auth.py en la línea 11 hace `JWT_SECRET = os.environ.get('JWT_SECRET', '<default>')`. core/db.py ejecuta load_dotenv() al importarse. Como Python evalúa los imports secuencialmente, cuando auth.py se evalúa el .env aún no ha sido cargado y os.environ no tiene JWT_SECRET → se usa el default. Reproducción: 1) firmar JWT con el secret del .env (padelreta-jwt-secret-key-prod-please-change-at-least-32-chars) → 401 Unauthorized. 2) firmar el MISMO payload con el default hardcodeado (padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod) → 200 OK. Mitigación: en auth.py, antes de la línea 11, agregar `from pathlib import Path` y `from dotenv import load_dotenv; load_dotenv(Path(__file__).parent / '.env')`. Una vez aplicado el fix, las credenciales/secrets en .env serán las efectivas."
+}

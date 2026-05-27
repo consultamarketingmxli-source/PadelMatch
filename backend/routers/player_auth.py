@@ -248,3 +248,53 @@ async def my_stats(current=Depends(get_current_player)):
         partidos_ganados=ganados,
         efectividad=round(efectividad, 1),
     )
+
+
+# ---------------------------------------------------------------
+# Fase D — Portal jugador: mi posición en la lista de espera.
+# ---------------------------------------------------------------
+class PlayerWaitlistEntry(BaseModel):
+    waitlist_id: str
+    reta_id: str
+    reta_nombre: str
+    reta_slug: str
+    club: str
+    fecha_evento: str
+    posicion_fila: int
+    total_en_espera: int
+    notificado: bool
+
+
+@router.get("/me/waitlist", response_model=List[PlayerWaitlistEntry])
+async def my_waitlist(current=Depends(get_current_player)):
+    """Lista de retas donde el jugador está en lista de espera, con posición."""
+    telefono = current["sub"]
+    cursor = db.lista_espera.find({"telefono": telefono}, {"_id": 0}).sort("creado_en", 1)
+    out: List[PlayerWaitlistEntry] = []
+    async for w in cursor:
+        reta = await db.retas.find_one(
+            {"id": w["reta_id"]},
+            {"_id": 0, "nombre": 1, "url_slug": 1, "fecha_evento": 1, "club": 1},
+        )
+        if not reta:
+            continue
+        # Sólo eventos futuros (evita basura histórica al usuario)
+        try:
+            fecha_dt = datetime.fromisoformat(reta["fecha_evento"])
+            if fecha_dt.replace(tzinfo=fecha_dt.tzinfo or timezone.utc) < datetime.now(timezone.utc):
+                continue
+        except Exception:
+            pass
+        total = await db.lista_espera.count_documents({"reta_id": w["reta_id"]})
+        out.append(PlayerWaitlistEntry(
+            waitlist_id=w["id"],
+            reta_id=w["reta_id"],
+            reta_nombre=reta["nombre"],
+            reta_slug=reta["url_slug"],
+            club=reta["club"],
+            fecha_evento=reta["fecha_evento"],
+            posicion_fila=w.get("posicion_fila", 0),
+            total_en_espera=total,
+            notificado=w.get("notificado", False),
+        ))
+    return out
