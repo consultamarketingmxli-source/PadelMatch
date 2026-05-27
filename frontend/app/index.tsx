@@ -90,7 +90,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.brand} testID="app-brand">PADELRETA</Text>
+          <Text style={styles.brand} testID="app-brand">PIXEL PADEL</Text>
           <Text style={styles.tagline}>Tu reta de pádel, a un toque de pala</Text>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>

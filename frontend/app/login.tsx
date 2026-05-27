@@ -70,7 +70,7 @@ export default function PlayerLogin() {
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="login-back">
             <ArrowLeft size={18} color={colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Entrar a PadelReta</Text>
+          <Text style={styles.title}>Entrar a Pixel Padel</Text>
           <View style={{ width: 40 }} />
         </View>
 

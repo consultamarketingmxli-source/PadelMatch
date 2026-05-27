@@ -52,7 +52,7 @@ export default function AdminLogin() {
           <View style={styles.iconWrap}>
             <ShieldCheck size={28} color={colors.brand.primary} />
           </View>
-          <Text style={styles.title}>PADELRETA · ADMIN</Text>
+          <Text style={styles.title}>PIXEL PADEL · ADMIN</Text>
           <Text style={styles.subtitle}>
             Acceso para organizadores de clubes de pádel.
           </Text>
