@@ -19,7 +19,7 @@ from auth import JWT_ALG, JWT_SECRET, create_access_token
 from core.db import db
 from core.helpers import upsert_jugador
 from models import Inscripcion, PlayerStats, Usuario
-from notifications import send_whatsapp
+from notifications import is_twilio_configured, send_whatsapp
 
 try:
     import jwt
@@ -123,7 +123,7 @@ async def request_otp(body: OtpRequest):
     codigo = _generar_codigo()
     await _store_otp(body.telefono, codigo)
 
-    twilio_listo = bool(os.getenv("TWILIO_ACCOUNT_SID"))
+    twilio_listo = is_twilio_configured()
     # En todos los casos intentamos enviar (notifications.send_whatsapp es mock por defecto)
     msg = (
         f"Hola {body.nombre} 👋 Tu código PadelReta es: {codigo}\n"
