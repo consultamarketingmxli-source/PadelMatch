@@ -34,6 +34,9 @@ async def setup_indexes() -> None:
     await db.stripe_transactions.create_index("session_id", unique=True)
     await db.stripe_transactions.create_index("inscripcion_id")
     await db.stripe_events.create_index("event_id", unique=True)
+    # OTPs de jugadores con auto-expiración por TTL (Mongo limpia automáticamente)
+    await db.player_otps.create_index("expires_at_dt", expireAfterSeconds=0)
+    await db.player_otps.create_index("telefono", unique=True)
 
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:

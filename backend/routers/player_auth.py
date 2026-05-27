@@ -65,17 +65,19 @@ class PlayerInscripcion(BaseModel):
 
 # ============== Helpers ==============
 def _generar_codigo() -> str:
-    return "".join(str(random.randint(0, 9)) for _ in range(OTP_LENGTH))
+    # secrets para entropía criptográfica (mejor que random)
+    return "".join(str(secrets.randbelow(10)) for _ in range(OTP_LENGTH))
 
 
 async def _store_otp(telefono: str, codigo: str) -> None:
-    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)).isoformat()
+    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)
     await db.player_otps.update_one(
         {"telefono": telefono},
         {"$set": {
             "telefono": telefono,
             "codigo": codigo,
-            "expires_at": expires_at,
+            "expires_at": expires_dt.isoformat(),
+            "expires_at_dt": expires_dt,  # datetime nativo para el TTL index Mongo
             "intentos": 0,
         }},
         upsert=True,

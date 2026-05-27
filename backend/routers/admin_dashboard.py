@@ -137,8 +137,23 @@ async def get_metrics(current=Depends(get_current_admin)):
     now_iso = datetime.now(timezone.utc).isoformat()
     retas_futuras = await db.retas.count_documents({"fecha_evento": {"$gte": now_iso}})
 
-    # Jugadores únicos
+    # Jugadores únicos (excluye admins)
     jugadores_unicos = await db.usuarios.count_documents({})
+
+    # Inscripciones pendientes con costo no nulo (ingresos potenciales)
+    pendientes_count = await db.inscripciones.count_documents({"estatus_pago": "Pendiente"})
+    if pendientes_count > 0:
+        retas_con_pendiente = await db.inscripciones.distinct(
+            "reta_id", {"estatus_pago": "Pendiente"},
+        )
+        ingresos_pendientes = 0.0
+        for rid in retas_con_pendiente:
+            r = await db.retas.find_one({"id": rid}, {"costo_inscripcion": 1, "_id": 0})
+            if r:
+                c = await db.inscripciones.count_documents({"reta_id": rid, "estatus_pago": "Pendiente"})
+                ingresos_pendientes += c * float(r.get("costo_inscripcion", 0))
+    else:
+        ingresos_pendientes = 0.0
 
     # Retas con KPIs (top por ingresos + próximas por fecha)
     todas = db.retas.find({}, {"_id": 0}).sort("creado_en", -1).limit(200)
@@ -157,7 +172,7 @@ async def get_metrics(current=Depends(get_current_admin)):
 
     return MetricsResponse(
         ingresos_totales_mxn=round(ingresos_paid, 2),
-        ingresos_pendientes_mxn=round(pendientes * 0, 2),  # placeholder
+        ingresos_pendientes_mxn=round(ingresos_pendientes, 2),
         refunds_totales_mxn=round(ingresos_refunded, 2),
         pagos_aprobados=pagos_paid or pagos_aprobados_total,
         pagos_pendientes=pendientes,
