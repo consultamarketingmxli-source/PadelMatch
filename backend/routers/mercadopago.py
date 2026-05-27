@@ -28,6 +28,7 @@ import mercadopago_service as mps
 from auth import get_current_admin
 from core.circuit import with_timeout_and_retry
 from core.db import db, ADMIN_EMAIL_DEFAULT
+from core.email_service import email_service
 from core.helpers import crear_inscripcion_pendiente, promover_lista_espera
 from core.concurrency import liberar_lugar
 from core.validators import NombreStr, PhoneStr
@@ -248,6 +249,7 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
         "reta_id": reta_id,
         "jugador_id": insc.jugador_id,
         "telefono": insc.telefono,
+        "payer_email": (body.payer_email or "").strip() or None,
         "amount": float(reta["costo_inscripcion"]),
         "currency": "MXN",
         "preference_id": pref["id"],
@@ -300,6 +302,21 @@ async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_st
                 "aprobado_en": datetime.now(timezone.utc).isoformat(),
             }},
         )
+        # Confirmación por email (fire-and-forget, jamás rompe el webhook).
+        try:
+            reta = await db.retas.find_one({"id": tx["reta_id"]}, {"_id": 0})
+            if reta and insc:
+                await email_service.send_inscripcion_confirmada(
+                    to=tx.get("payer_email"),
+                    jugador=insc["nombre"],
+                    reta_nombre=reta["nombre"],
+                    club=reta.get("club", ""),
+                    fecha_evento=str(reta.get("fecha_evento", "")),
+                    inscripcion_id=inscripcion_id,
+                    reta_slug=reta.get("url_slug", ""),
+                )
+        except Exception:
+            logger.exception("email confirmación falló (no bloquea pago)")
         return {"matched": True, "estatus_pago": "Aprobado"}
 
     if mp_status in ("rejected", "cancelled", "refunded", "charged_back"):

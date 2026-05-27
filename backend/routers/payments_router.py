@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 import payments_stripe
 from core.db import db
+from core.email_service import email_service
 from core.helpers import crear_inscripcion_pendiente, promover_lista_espera
 from models import (
     PaymentStatus,
@@ -102,6 +103,22 @@ async def _aplicar_resultado_pago(session_id: str, payment_status: str) -> dict:
         await db.stripe_transactions.update_one(
             {"session_id": session_id}, {"$set": {"payment_status": "paid"}},
         )
+        # Confirmación por email (fire-and-forget). Skip silencioso si no
+        # tenemos email del comprador (Stripe puede no haberlo recolectado).
+        try:
+            reta = await db.retas.find_one({"id": tx["reta_id"]}, {"_id": 0})
+            if reta and insc:
+                await email_service.send_inscripcion_confirmada(
+                    to=tx.get("payer_email"),
+                    jugador=insc["nombre"],
+                    reta_nombre=reta["nombre"],
+                    club=reta.get("club", ""),
+                    fecha_evento=str(reta.get("fecha_evento", "")),
+                    inscripcion_id=tx["inscripcion_id"],
+                    reta_slug=reta.get("url_slug", ""),
+                )
+        except Exception:
+            logger.exception("email confirmación falló (no bloquea pago)")
         return {"matched": True, "estatus_pago": "Aprobado"}
 
     if payment_status in ("failed", "expired", "unpaid"):
