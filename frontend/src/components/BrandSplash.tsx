@@ -41,8 +41,7 @@ export function BrandSplash({ onDone }: { onDone?: () => void }) {
 
   return (
     <Animated.View
-      pointerEvents="none"
-      style={[styles.wrap, { opacity: fadeOut }]}
+      style={[styles.wrap, { opacity: fadeOut, pointerEvents: "none" }]}
       testID="brand-splash"
     >
       <Animated.View

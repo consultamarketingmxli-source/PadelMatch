@@ -1,9 +1,13 @@
 /**
  * Toast minimalista cross-platform (sin dependencias externas).
  * Aparece flotando arriba con fade-in, se autodescarta a los 2.5s.
+ *
+ * Web-safe:
+ *  - `useNativeDriver` activado sólo en native (React Native Web no lo soporta).
+ *  - `pointerEvents` declarado en `style` (la prop directa quedó deprecada en RN 0.74+).
  */
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text } from "react-native";
+import { Animated, Platform, StyleSheet, Text } from "react-native";
 import { colors, fonts, radii, shadows, spacing } from "@/src/theme";
 
 type Props = {
@@ -13,6 +17,8 @@ type Props = {
   tone?: "info" | "warn" | "error";
 };
 
+const USE_NATIVE_DRIVER = Platform.OS !== "web";
+
 export function Toast({ message, visible, onHide, tone = "info" }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(-12)).current;
@@ -20,13 +26,29 @@ export function Toast({ message, visible, onHide, tone = "info" }: Props) {
   useEffect(() => {
     if (!visible) return;
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
-      Animated.timing(translate, { toValue: 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: USE_NATIVE_DRIVER,
+      }),
+      Animated.timing(translate, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: USE_NATIVE_DRIVER,
+      }),
     ]).start();
     const t = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-        Animated.timing(translate, { toValue: -12, duration: 220, useNativeDriver: true }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: USE_NATIVE_DRIVER,
+        }),
+        Animated.timing(translate, {
+          toValue: -12,
+          duration: 220,
+          useNativeDriver: USE_NATIVE_DRIVER,
+        }),
       ]).start(() => onHide());
     }, 2500);
     return () => clearTimeout(t);
@@ -35,15 +57,18 @@ export function Toast({ message, visible, onHide, tone = "info" }: Props) {
   if (!visible) return null;
 
   const bg =
-    tone === "error" ? colors.status.redText :
-    tone === "warn"  ? colors.status.amberText :
-    colors.text.primary;
+    tone === "error"
+      ? colors.status.redText
+      : tone === "warn"
+      ? colors.status.amberText
+      : colors.text.primary;
 
   return (
     <Animated.View
-      pointerEvents="none"
       style={[
         styles.toast,
+        // pointerEvents moved to style (new API) for cross-platform consistency.
+        { pointerEvents: "none" as const },
         { backgroundColor: bg, opacity, transform: [{ translateY: translate }] },
       ]}
       testID="toast"

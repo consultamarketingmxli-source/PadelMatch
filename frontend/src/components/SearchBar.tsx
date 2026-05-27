@@ -106,9 +106,8 @@ export function SearchBar({
       <Animated.View
         style={[
           styles.gpsHalo,
-          { backgroundColor: halo, transform: [{ scale }] },
+          { backgroundColor: halo, transform: [{ scale }], pointerEvents: "none" },
         ]}
-        pointerEvents="none"
       />
       <TouchableOpacity
         testID="gps-toggle-btn"

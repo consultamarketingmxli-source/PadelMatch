@@ -20,6 +20,7 @@ import { api, Reta } from "@/src/api";
 import { TrafficLight } from "@/src/components/TrafficLight";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { buildPagoReturnUrl } from "@/src/utils/deepLink";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
@@ -112,22 +113,22 @@ export default function RetaDetailScreen() {
           `Estás en la lista de espera en posición #${wl.posicion_fila}. Te notificaremos por WhatsApp en cuanto se libere un cupo.`,
         );
       } else {
-        // 1) Crear preferencia Mercado Pago (servidor crea inscripción Pendiente y
-        //    devuelve init_point para redirigir al usuario al Checkout de MP).
-        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-        const slugUrl = `/retas/${slug}`;
-        const successUrl = baseUrl
-          ? `${baseUrl}${slugUrl}?pago=ok&provider=mp`
-          : undefined;
-        const cancelUrl = baseUrl
-          ? `${baseUrl}${slugUrl}?pago=cancelado&provider=mp`
-          : undefined;
+        // 1) Crear preferencia Mercado Pago. Las URLs de retorno son deep-links
+        //    cross-platform: `padelappretas://pago/exito` en native y URL
+        //    absoluta `https://.../pago/exito` en web. Eso permite que MP /
+        //    Stripe re-abran la app y aterricen al usuario en `/pago/exito|fallo`.
+        const successUrl = buildPagoReturnUrl("exito", {
+          provider: "mp",
+          reta_slug: slug,
+        });
+        const cancelUrl = buildPagoReturnUrl("fallo", {
+          provider: "mp",
+          reta_slug: slug,
+        });
         const mpSession = await api.checkoutMercadoPago(reta.id, {
           nombre: nombre.trim(),
           telefono: telefono.trim(),
-          success_url: successUrl
-            ? `${successUrl}&inscripcion=${"__INSC__"}`.replace("__INSC__", "")
-            : undefined,
+          success_url: `${successUrl}${successUrl.includes("?") ? "&" : "?"}inscripcion_id=${"__INSC__"}`.replace("__INSC__", ""),
           cancel_url: cancelUrl,
         });
         // Re-armamos success URL con el inscripcion_id real (back_url no soporta placeholders en MP)

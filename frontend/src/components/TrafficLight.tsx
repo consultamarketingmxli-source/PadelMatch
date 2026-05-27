@@ -4,8 +4,20 @@
  * Combina con la estética Club Pro Clean.
  */
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { Platform, View, Text, StyleSheet } from "react-native";
 import { colors, radii, spacing, typography } from "@/src/theme";
+
+// Glow LED multiplataforma. En web React Native usa `boxShadow` (props
+// shadow* quedaron deprecadas); en native seguimos con shadow*.
+const ledGlow = (color: string, radius: number) =>
+  Platform.OS === "web"
+    ? { boxShadow: `0 0 ${radius}px ${color}` as any }
+    : {
+        shadowColor: color,
+        shadowOpacity: radius >= 6 ? 0.6 : 0.5,
+        shadowRadius: radius,
+        shadowOffset: { width: 0, height: 0 },
+      };
 
 type Props = {
   status: "VERDE" | "AMARILLO" | "ROJO";
@@ -51,10 +63,8 @@ export function TrafficLight({ status, capacidadPct, size = "md" }: Props) {
         <View
           style={[
             styles.dotSm,
-            {
-              backgroundColor: palette.dot,
-              shadowColor: palette.dot,
-            },
+            { backgroundColor: palette.dot },
+            ledGlow(palette.dot, 4),
           ]}
         />
         <Text style={[styles.pctSm, { color: palette.text }]}>
@@ -75,10 +85,8 @@ export function TrafficLight({ status, capacidadPct, size = "md" }: Props) {
       <View
         style={[
           styles.dotMd,
-          {
-            backgroundColor: palette.dot,
-            shadowColor: palette.dot,
-          },
+          { backgroundColor: palette.dot },
+          ledGlow(palette.dot, 6),
         ]}
       />
       <Text style={[styles.labelMd, { color: palette.text }]}>
@@ -105,9 +113,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
   },
   pctSm: {
     ...typography.mono,
@@ -127,9 +132,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
   },
   labelMd: {
     ...typography.label,

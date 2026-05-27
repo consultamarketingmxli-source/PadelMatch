@@ -245,6 +245,7 @@ export const shadows = {
       shadowRadius: 6,
     },
     android: { elevation: 1 },
+    web: { boxShadow: "0 1px 6px rgba(15,23,42,0.04)" } as any,
     default: {},
   }),
   cardHover: Platform.select({
@@ -255,6 +256,7 @@ export const shadows = {
       shadowRadius: 12,
     },
     android: { elevation: 3 },
+    web: { boxShadow: "0 4px 12px rgba(15,23,42,0.08)" } as any,
     default: {},
   }),
   cta: Platform.select({
@@ -265,6 +267,7 @@ export const shadows = {
       shadowRadius: 14,
     },
     android: { elevation: 6 },
+    web: { boxShadow: "0 6px 14px rgba(5,150,105,0.25)" } as any,
     default: {},
   }),
 } as const;

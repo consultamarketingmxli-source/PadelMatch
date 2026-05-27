@@ -131,7 +131,7 @@ export function WaitlistShieldIcon({
 // =========== Divisor con malla metálica perimetral ===========
 export function MeshDivider({ style }: { style?: ViewStyle }) {
   return (
-    <View style={[meshStyles.wrap, style]} pointerEvents="none">
+    <View style={[meshStyles.wrap, style, { pointerEvents: "none" }]}>
       <Svg width="100%" height={14} viewBox="0 0 200 14" preserveAspectRatio="none">
         <Defs>
           <Pattern id="mesh" x={0} y={0} width={10} height={10} patternUnits="userSpaceOnUse">
@@ -182,10 +182,9 @@ export function CourtWatermark({
   return (
     <View
       style={[
-        { position: "absolute", right: -10, top: -10, opacity: 0.05 },
+        { position: "absolute", right: -10, top: -10, opacity: 0.05, pointerEvents: "none" },
         style,
       ]}
-      pointerEvents="none"
     >
       <Svg width={width} height={height} viewBox="0 0 200 100" fill="none">
         {/* Borde exterior */}
