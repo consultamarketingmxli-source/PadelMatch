@@ -24,12 +24,14 @@ import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
   const router = useRouter();
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const params = useLocalSearchParams<{ slug: string; pago?: string; session_id?: string; inscripcion?: string }>();
+  const { slug } = params;
   const [reta, setReta] = useState<Reta | null>(null);
   const [loading, setLoading] = useState(true);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [verifyingPago, setVerifyingPago] = useState(false);
 
   const load = useCallback(async () => {
     if (!slug) return;
@@ -47,6 +49,46 @@ export default function RetaDetailScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Manejo de retorno desde Stripe Checkout: poll del status hasta confirmación.
+  useEffect(() => {
+    if (params.pago === "cancelado") {
+      Alert.alert("Pago cancelado", "No se realizó el cobro. Tu lugar quedó liberado.");
+      return;
+    }
+    if (params.pago !== "ok" || !params.inscripcion) return;
+    let cancelled = false;
+    let intentos = 0;
+    setVerifyingPago(true);
+    const poll = async () => {
+      try {
+        while (!cancelled && intentos < 15) {
+          intentos++;
+          const s = await api.paymentStatus(params.inscripcion as string);
+          if (s.estatus_pago === "Aprobado") {
+            if (!cancelled) {
+              Alert.alert("¡Inscripción confirmada!", "Tu pago se procesó correctamente. Nos vemos en cancha.");
+              await load();
+            }
+            return;
+          }
+          if (s.estatus_pago === "Cancelado" || s.estatus_pago === "Expirado") {
+            if (!cancelled) {
+              Alert.alert("Pago no confirmado", "No pudimos validar tu pago. Inténtalo de nuevo.");
+            }
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      } catch {
+        // silencioso
+      } finally {
+        if (!cancelled) setVerifyingPago(false);
+      }
+    };
+    void poll();
+    return () => { cancelled = true; };
+  }, [params.pago, params.inscripcion, load]);
 
   const handleAction = async () => {
     if (!reta) return;
@@ -67,14 +109,50 @@ export default function RetaDetailScreen() {
           `Estás en la lista de espera en posición #${wl.posicion_fila}. Te notificaremos por WhatsApp en cuanto se libere un cupo.`,
         );
       } else {
-        const insc = await api.checkout(reta.id, {
-          reta_id: reta.id,
+        // 1) Crear sesión Stripe Checkout (servidor también crea inscripción Pendiente)
+        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+        const slugUrl = `/retas/${slug}`;
+        // Pasamos el ID de inscripción ahora; Stripe sustituye {CHECKOUT_SESSION_ID}.
+        const tempSession = await api.checkoutStripe(reta.id, {
           nombre: nombre.trim(),
           telefono: telefono.trim(),
         });
-        // Simulamos confirmación de pago inmediata para demo (mock).
-        await api.paymentWebhook(insc.id, "approved");
-        Alert.alert("¡Inscripción confirmada!", "Tu lugar está asegurado. Nos vemos en cancha.");
+        // Reconstruimos success_url INCLUYENDO inscripcion_id real obtenida del servidor
+        const successUrl = baseUrl
+          ? `${baseUrl}${slugUrl}?pago=ok&inscripcion=${tempSession.inscripcion_id}&session_id={CHECKOUT_SESSION_ID}`
+          : undefined;
+        // Reutilizamos la URL inicial; no rehacemos sesión si el servidor ya devolvió una válida.
+        // (Si queremos un success_url custom, hay que reabrir checkout; mantenemos el actual.)
+        void successUrl;
+        // 2) Redirigir a Stripe Checkout
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.location.href = tempSession.checkout_url;
+          return;
+        } else {
+          const Linking = require("expo-linking");
+          await Linking.openURL(tempSession.checkout_url);
+          // Polling de status en native (sin deep linking aún)
+          Alert.alert(
+            "Pago en proceso",
+            "Termina el pago en Stripe. Al volver, tu lugar quedará confirmado automáticamente.",
+          );
+          // Disparar polling manual
+          let intentos = 0;
+          const tick = async () => {
+            intentos++;
+            try {
+              const s = await api.paymentStatus(tempSession.inscripcion_id);
+              if (s.estatus_pago === "Aprobado") {
+                Alert.alert("¡Inscripción confirmada!", "Tu pago se procesó correctamente.");
+                await load();
+                return;
+              }
+              if (s.estatus_pago === "Cancelado") return;
+              if (intentos < 30) setTimeout(tick, 3000);
+            } catch { /* silencioso */ }
+          };
+          setTimeout(tick, 5000);
+        }
       }
       setNombre("");
       setTelefono("");

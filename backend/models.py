@@ -160,3 +160,38 @@ class TablaPosicionEntry(BaseModel):
     diferencia: int = 0
     puntos: int = 0  # 3 por victoria, 1 por empate
     efectividad: float = 0.0
+
+
+# ============= Stripe Payments =============
+class StripeCheckoutCreate(BaseModel):
+    nombre: str = Field(min_length=2, max_length=80)
+    telefono: str = Field(min_length=6, max_length=20)
+    success_url: Optional[str] = None  # URL absoluta a la que volver tras pago OK
+    cancel_url: Optional[str] = None
+
+
+class StripeCheckoutResponse(BaseModel):
+    inscripcion_id: str
+    checkout_url: str
+    session_id: str
+
+
+class PaymentStatus(BaseModel):
+    inscripcion_id: str
+    estatus_pago: str
+    session_id: Optional[str] = None
+    stripe_payment_status: Optional[str] = None
+
+
+class StripeTransaction(BaseModel):
+    """Tracking server-side de cada Checkout Session creada. NO confiamos en el cliente."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    inscripcion_id: str
+    reta_id: str
+    jugador_id: str
+    telefono: str
+    amount: float
+    currency: str
+    payment_status: Literal["initiated", "paid", "failed", "expired"] = "initiated"
+    creado_en: datetime = Field(default_factory=lambda: datetime.now())

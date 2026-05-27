@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING
@@ -46,12 +46,16 @@ from models import (
     LoginRequest,
     PartidoResultado,
     PartidoResultadoCreate,
+    PaymentStatus,
     PaymentWebhook,
     PDFRequest,
     PlayerStats,
     Reta,
     RetaCreate,
     RetaPublic,
+    StripeCheckoutCreate,
+    StripeCheckoutResponse,
+    StripeTransaction,
     TablaPosicionEntry,
     TokenResponse,
     Usuario,
@@ -59,6 +63,7 @@ from models import (
     WaitlistCreate,
     WaitlistEntry,
 )
+import payments_stripe
 from notifications import (
     construir_mensaje_recordatorio,
     construir_mensaje_waitlist_promovido,
@@ -100,6 +105,10 @@ async def startup():
         [("reta_id", ASCENDING), ("cancha", ASCENDING), ("ronda", ASCENDING), ("partido_idx", ASCENDING)],
         unique=True,
     )
+    # Stripe — transacciones + idempotencia de eventos
+    await db.stripe_transactions.create_index("session_id", unique=True)
+    await db.stripe_transactions.create_index("inscripcion_id")
+    await db.stripe_events.create_index("event_id", unique=True)
 
     # Seed admin
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})
@@ -161,7 +170,8 @@ async def _compute_public(r: dict) -> dict:
         "estatus_pago": "Aprobado",
     })
     ocupados = aprobados + pendientes_activos
-    wl = await db.lista_espera.count_documents({"reta_id": r["id"]})
+    # Solo contar jugadores aún en espera (no los ya promovidos)
+    wl = await db.lista_espera.count_documents({"reta_id": r["id"], "notificado": False})
 
     capacidad_pct = (ocupados / r["max_jugadores"]) * 100 if r["max_jugadores"] else 0
     if ocupados >= r["max_jugadores"]:
@@ -386,6 +396,212 @@ async def webhook_payment(body: PaymentWebhook):
         await db.inscripciones.delete_one({"id": body.inscripcion_id})
         await _promover_lista_espera(insc["reta_id"])
         return {"ok": True, "status": "Cancelado", "promoted": True}
+
+
+# ============== STRIPE CHECKOUT (real payments) ==============
+async def _crear_inscripcion_pendiente(reta: dict, nombre: str, telefono: str) -> Inscripcion:
+    """Crea (o reutiliza) una inscripción Pendiente lista para enviar a Stripe."""
+    reta_id = reta["id"]
+    # Limpiar pendientes expiradas
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.inscripciones.update_many(
+        {"reta_id": reta_id, "estatus_pago": "Pendiente",
+         "bloqueado_hasta": {"$lt": now_iso}},
+        {"$set": {"estatus_pago": "Expirado"}},
+    )
+
+    ocupados = await db.inscripciones.count_documents({
+        "reta_id": reta_id,
+        "estatus_pago": {"$in": ["Aprobado", "Pendiente"]},
+    })
+    if ocupados >= reta["max_jugadores"]:
+        raise HTTPException(409, "Reta llena. Únete a la lista de espera.")
+
+    # Upsert jugador
+    jugador = await db.usuarios.find_one({"telefono": telefono})
+    if not jugador:
+        nuevo = Usuario(nombre=nombre, telefono=telefono)
+        doc = nuevo.model_dump()
+        doc["creado_en"] = doc["creado_en"].isoformat()
+        await db.usuarios.insert_one(doc)
+        jugador_id = nuevo.id
+    else:
+        jugador_id = jugador["id"]
+
+    bloqueado_hasta = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    insc = Inscripcion(
+        reta_id=reta_id, jugador_id=jugador_id, nombre=nombre, telefono=telefono,
+        estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
+    )
+    doc = insc.model_dump()
+    doc["creado_en"] = doc["creado_en"].isoformat()
+    await db.inscripciones.insert_one(doc)
+    return insc
+
+
+@api.post("/public/retas/{reta_id}/checkout-stripe", response_model=StripeCheckoutResponse)
+async def checkout_stripe(reta_id: str, body: StripeCheckoutCreate, request: Request):
+    """Crea inscripción Pendiente + Stripe Checkout Session. Devuelve URL de pago.
+    El monto se calcula en el servidor desde reta.costo_inscripcion."""
+    if not payments_stripe.is_stripe_configured():
+        raise HTTPException(503, "Stripe no está configurado en el servidor.")
+
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    if reta.get("costo_inscripcion", 0) < 10:
+        raise HTTPException(400, "El costo de inscripción debe ser de al menos $10 MXN.")
+
+    insc = await _crear_inscripcion_pendiente(reta, body.nombre, body.telefono)
+
+    # URLs de retorno: si el front no las provee, usamos el host actual con inscripcion_id.
+    base = str(request.base_url).rstrip("/")
+    success = body.success_url or (
+        f"{base}/retas/{reta['url_slug']}?pago=ok&inscripcion={insc.id}&session_id={{CHECKOUT_SESSION_ID}}"
+    )
+    cancel = body.cancel_url or (
+        f"{base}/retas/{reta['url_slug']}?pago=cancelado&inscripcion={insc.id}"
+    )
+
+    try:
+        session = await payments_stripe.crear_session_checkout(
+            monto_principal=float(reta["costo_inscripcion"]),
+            moneda="mxn",
+            nombre_reta=reta["nombre"],
+            success_url=success,
+            cancel_url=cancel,
+            inscripcion_id=insc.id,
+            reta_id=reta_id,
+            jugador_id=insc.jugador_id,
+            telefono=insc.telefono,
+        )
+    except Exception as e:
+        logger.exception("Stripe checkout error: %s", e)
+        # Rollback de la inscripción para no bloquear el cupo
+        await db.inscripciones.delete_one({"id": insc.id})
+        raise HTTPException(502, f"Error con Stripe: {e}") from e
+
+    tx = StripeTransaction(
+        session_id=session.session_id, inscripcion_id=insc.id, reta_id=reta_id,
+        jugador_id=insc.jugador_id, telefono=insc.telefono,
+        amount=float(reta["costo_inscripcion"]), currency="mxn",
+    )
+    tdoc = tx.model_dump()
+    tdoc["creado_en"] = tdoc["creado_en"].isoformat()
+    await db.stripe_transactions.insert_one(tdoc)
+
+    # Guardar referencia inversa en la inscripción
+    await db.inscripciones.update_one(
+        {"id": insc.id},
+        {"$set": {"stripe_session_id": session.session_id}},
+    )
+
+    return StripeCheckoutResponse(
+        inscripcion_id=insc.id,
+        checkout_url=session.url,
+        session_id=session.session_id,
+    )
+
+
+async def _aplicar_resultado_pago(session_id: str, payment_status: str) -> dict:
+    """Lógica idempotente: dado un session_id y un payment_status reciente, actualiza
+    la inscripción asociada. Retorna info de qué cambió."""
+    tx = await db.stripe_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx:
+        return {"matched": False}
+
+    # Idempotencia: ya procesado en estado terminal
+    if tx.get("payment_status") in ("paid", "failed", "expired"):
+        return {"matched": True, "already": True, "estatus_pago": tx["payment_status"]}
+
+    insc = await db.inscripciones.find_one({"id": tx["inscripcion_id"]}, {"_id": 0})
+
+    if payment_status == "paid":
+        if insc and insc["estatus_pago"] == "Pendiente":
+            await db.inscripciones.update_one(
+                {"id": tx["inscripcion_id"]},
+                {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
+            )
+        await db.stripe_transactions.update_one(
+            {"session_id": session_id}, {"$set": {"payment_status": "paid"}},
+        )
+        return {"matched": True, "estatus_pago": "Aprobado"}
+
+    if payment_status in ("failed", "expired", "unpaid"):
+        if insc:
+            await db.inscripciones.delete_one({"id": tx["inscripcion_id"]})
+            await _promover_lista_espera(tx["reta_id"])
+        await db.stripe_transactions.update_one(
+            {"session_id": session_id}, {"$set": {"payment_status": payment_status}},
+        )
+        return {"matched": True, "estatus_pago": payment_status}
+
+    return {"matched": True, "estatus_pago": payment_status, "ignored": True}
+
+
+@api.post("/webhooks/stripe")
+async def webhook_stripe(request: Request):
+    """Webhook real de Stripe. Verifica firma (si STRIPE_WEBHOOK_SECRET está) y
+    aplica el resultado del pago a la inscripción de forma idempotente."""
+    body = await request.body()
+    signature = request.headers.get("stripe-signature") or request.headers.get("Stripe-Signature")
+    try:
+        evt = await payments_stripe.procesar_webhook(body, signature)
+    except Exception as e:
+        logger.warning("Webhook Stripe rechazado: %s", e)
+        raise HTTPException(400, f"Webhook inválido: {e}") from e
+
+    # Idempotencia por event_id
+    if evt.event_id:
+        seen = await db.stripe_events.find_one({"event_id": evt.event_id})
+        if seen:
+            return {"ok": True, "duplicate": True}
+        await db.stripe_events.insert_one({
+            "event_id": evt.event_id, "type": evt.event_type,
+            "creado_en": datetime.now(timezone.utc).isoformat(),
+        })
+
+    result = {"matched": False}
+    if evt.session_id and evt.payment_status:
+        result = await _aplicar_resultado_pago(evt.session_id, evt.payment_status)
+
+    return {"ok": True, "event": evt.event_type, **result}
+
+
+@api.get("/public/inscripciones/{inscripcion_id}/payment-status", response_model=PaymentStatus)
+async def get_payment_status(inscripcion_id: str):
+    """Polling-friendly endpoint para que el cliente sepa si Stripe ya confirmó.
+    Si el cliente tiene session_id, también consulta a Stripe directamente para
+    refrescar más rápido (sin esperar al webhook). Idempotente."""
+    insc = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0})
+    if not insc:
+        # Si la transacción existe pero ya no la inscripción, devolvemos status final
+        tx = await db.stripe_transactions.find_one({"inscripcion_id": inscripcion_id}, {"_id": 0})
+        if tx:
+            return PaymentStatus(
+                inscripcion_id=inscripcion_id,
+                estatus_pago="Cancelado",
+                session_id=tx.get("session_id"),
+                stripe_payment_status=tx.get("payment_status"),
+            )
+        raise HTTPException(404, "Inscripción no encontrada")
+
+    session_id = insc.get("stripe_session_id")
+    if session_id and insc["estatus_pago"] == "Pendiente" and payments_stripe.is_stripe_configured():
+        # Refresco proactivo desde Stripe (no espera al webhook)
+        try:
+            status = await payments_stripe.obtener_status_sesion(session_id)
+            if status.payment_status in ("paid", "failed", "unpaid"):
+                await _aplicar_resultado_pago(session_id, status.payment_status)
+                insc = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0}) or insc
+        except Exception as e:
+            logger.warning("No se pudo consultar Stripe status: %s", e)
+
+    return PaymentStatus(
+        inscripcion_id=inscripcion_id,
+        estatus_pago=insc["estatus_pago"],
+        session_id=session_id,
+    )
 
 
 # ============== LISTA DE ESPERA ==============
@@ -751,24 +967,51 @@ async def _cronjob_recordatorios():
         await asyncio.sleep(60 * 15)  # 15 min
 
 
+async def _expirar_bloqueos_pass(force_reta_id: Optional[str] = None) -> dict:
+    """Una pasada de expiración. Si force_reta_id se da, expira TODAS las pendientes
+    de esa reta (útil para manual override de admin). Retorna conteos."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    query: dict = {"estatus_pago": "Pendiente"}
+    if force_reta_id:
+        query["reta_id"] = force_reta_id
+    else:
+        query["bloqueado_hasta"] = {"$lt": now_iso}
+
+    expiradas = db.inscripciones.find(query).limit(500)
+    retas_afectadas: set[str] = set()
+    eliminadas = 0
+    async for ins in expiradas:
+        await db.inscripciones.delete_one({"id": ins["id"]})
+        retas_afectadas.add(ins["reta_id"])
+        eliminadas += 1
+    promovidos = 0
+    for reta_id in retas_afectadas:
+        nuevo = await _promover_lista_espera(reta_id)
+        if nuevo is not None:
+            promovidos += 1
+    return {"eliminadas": eliminadas, "promovidos": promovidos, "retas_afectadas": list(retas_afectadas)}
+
+
 async def _cronjob_expirar_bloqueos():
     """Cada 30s: expira inscripciones con bloqueo vencido y promueve waitlist."""
     while True:
         try:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            expiradas = db.inscripciones.find({
-                "estatus_pago": "Pendiente",
-                "bloqueado_hasta": {"$lt": now_iso},
-            }).limit(500)
-            retas_afectadas = set()
-            async for ins in expiradas:
-                await db.inscripciones.delete_one({"id": ins["id"]})
-                retas_afectadas.add(ins["reta_id"])
-            for reta_id in retas_afectadas:
-                await _promover_lista_espera(reta_id)
+            await _expirar_bloqueos_pass()
         except Exception as e:
             logger.exception("Error cronjob bloqueos: %s", e)
         await asyncio.sleep(30)
+
+
+# ============== ADMIN: liberar pendientes manualmente ==============
+@api.post("/retas/{reta_id}/expirar-pendientes")
+async def admin_expirar_pendientes(reta_id: str, current=Depends(get_current_admin)):
+    """Liberación manual: elimina todas las inscripciones Pendientes (aunque
+    aún no haya vencido el bloqueo de 5 min) y promueve a quienes estén en cola."""
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    res = await _expirar_bloqueos_pass(force_reta_id=reta_id)
+    return {"ok": True, **res}
 
 
 # ============== HEALTH ==============

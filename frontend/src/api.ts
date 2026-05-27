@@ -93,6 +93,19 @@ export type PartidoResultado = {
   creado_en: string;
 };
 
+export type StripeCheckoutResponse = {
+  inscripcion_id: string;
+  checkout_url: string;
+  session_id: string;
+};
+
+export type PaymentStatus = {
+  inscripcion_id: string;
+  estatus_pago: string;
+  session_id?: string | null;
+  stripe_payment_status?: string | null;
+};
+
 export type TablaPosicionEntry = {
   nombre: string;
   partidos_jugados: number;
@@ -213,6 +226,18 @@ export const api = {
     }),
   tablaPosiciones: (retaId: string) =>
     request<TablaPosicionEntry[]>(`/public/retas/${retaId}/tabla`),
+
+  // ===== stripe checkout =====
+  checkoutStripe: (
+    retaId: string,
+    body: { nombre: string; telefono: string; success_url?: string; cancel_url?: string },
+  ) =>
+    request<StripeCheckoutResponse>(`/public/retas/${retaId}/checkout-stripe`, {
+      method: "POST",
+      body,
+    }),
+  paymentStatus: (inscripcionId: string) =>
+    request<PaymentStatus>(`/public/inscripciones/${inscripcionId}/payment-status`),
 
   // ===== pdf =====
   async generatePdfUrl(retaId: string, jugadores: string[], numRondas: 5 | 6 | 7) {

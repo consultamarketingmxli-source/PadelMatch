@@ -1,0 +1,48 @@
+{
+  "summary": "Backend Stripe integration testing (iteración 3). 52/52 tests pytest PASS — 35 previos sin regresión + 17 nuevos cubriendo Stripe Checkout real. Verificados todos los endpoints/flujos requeridos: (1) POST /api/public/retas/{id}/checkout-stripe crea Inscripción Pendiente + Stripe Checkout Session real (URL https://checkout.stripe.com/c/pay/cs_test_...), monto tomado de reta.costo_inscripcion server-side. (2) Validaciones: 404 reta inexistente, 409 reta llena (tras llenar 8 lugares con webhook mock), 400 costo_inscripcion<10. (3) POST /api/webhooks/stripe — paid → Aprobado, expired → elimina inscripción y promueve waitlist, idempotente por event_id (segundo POST devuelve {duplicate:true} sin duplicar efectos), payload inválido → 400. (4) GET /api/public/inscripciones/{id}/payment-status — devuelve Pendiente tras checkout y Aprobado tras webhook; 404 si inscripción inexistente. (5) stripe_transactions documento creado con session_id, inscripcion_id, reta_id, jugador_id, telefono, amount=150.0, currency='mxn', payment_status='initiated' (verificado por inspección directa de Mongo). Índices únicos: stripe_transactions.session_id, stripe_events.event_id. (6) waitlist_count en /api/retas (admin) ahora cuenta solo notificado:false — verificado: 3→2 tras una promoción. (7) POST /api/retas/{id}/expirar-pendientes (admin) — elimina TODAS las pendientes y promueve waitlist; devuelve {ok, eliminadas, promovidos, retas_afectadas}. Auth requerida (401/403 sin token). 404 reta inexistente. (8) Mock retrocompat POST /api/webhooks/payment con {inscripcion_id, status:'approved'|'failed'} sigue funcionando para tests legacy. (9) No regresión en 35 tests previos (login, retas CRUD, radar, checkout mock, waitlist+promotion, PDF, rol, resultados, tabla, player_stats). El endpoint /checkout-stripe llamó realmente a Stripe API (logs muestran POST a integrations.emergentagent.com/stripe/v1/checkout/sessions con 200 OK).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/webhooks/stripe", "issue": "STRIPE_WEBHOOK_SECRET no está configurada en .env, por lo que en producción Stripe rechazará si lo agregan sin probarlo. En sandbox/test ahora mismo el wrapper de emergent solo hace json.loads — correcto para tests pero indicar al main agent que documente este TODO."},
+      {"endpoint": "stripe_transactions / stripe_events", "issue": "Las colecciones no se limpian al borrar la reta (DELETE /api/retas/{id} solo cascade en inscripciones y lista_espera). 12 tx + 8 events acumulados tras los tests. No bloqueante (idempotencia se preserva) pero recomendable limpiar en cascade o agregar TTL index."},
+      {"endpoint": "GET /api/public/retas/radar", "issue": "Pre-existente: retas sin latitud/longitud se omiten correctamente cuando se proveen lat/lng. (Marcado como issue en iteración 2; en realidad el código sí lo hace bien — corregido aquí)."},
+      {"endpoint": "POST /api/auth/login", "issue": "Pre-existente: warning de passlib/bcrypt. No bloqueante."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_api_pixel_padel.py",
+    "/app/backend/tests/test_logic_modules.py",
+    "/app/backend/tests/test_stripe_payments.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/stripe_results.xml"
+  ],
+  "action_items": [
+    "(Opcional, cleanup) Cascade delete de stripe_transactions y stripe_events al eliminar una reta (DELETE /api/retas/{id}). Hoy quedan huérfanos.",
+    "(Opcional, prod hardening) Agregar STRIPE_WEBHOOK_SECRET a .env y documentar que Stripe live signing es obligatorio antes de pasar a producción real (sandbox emergent no lo exige).",
+    "(Opcional, observabilidad) Considerar registrar `event_type` y `payment_status` recibidos en logs estructurados (hoy solo se loguea cuando hay error).",
+    "(Opcional, UX) Endpoint /payment-status hace refresh proactivo desde Stripe en cada GET cuando estatus=Pendiente y existe session_id — verificado OK. Si el polling es frecuente desde el frontend, considerar throttle (p.ej. mínimo 3s entre llamadas a Stripe por session) para evitar rate-limit en producción."
+  ],
+  "critical_code_review_comments": [
+    "server.py ya pasa de 1000 líneas — recomendable split en routers (auth_router, retas_admin_router, retas_public_router, payments_router, resultados_router, cronjobs.py). El test report previo ya lo mencionaba; con los endpoints Stripe es aún más urgente.",
+    "payments_stripe.py: el wrapper instancia un nuevo StripeCheckout en cada llamada (`_client()`), lo cual es OK pero crea sesión HTTP nueva cada vez. Para alto throughput considerar singleton con lazy init.",
+    "En _aplicar_resultado_pago, la condición `if tx.get('payment_status') in ('paid','failed','expired')` previene re-aplicar el efecto, pero NO previene mark-as-paid si la inscripción fue manualmente eliminada por un admin. Verificar este edge case si /expirar-pendientes corre antes de que Stripe llame al webhook (hoy: webhook paid llegaría y haría find_one que retorna None, luego solo actualiza la tx — comportamiento seguro pero silencioso).",
+    "models.py Inscripcion.estatus_pago tiene Literal['Pendiente','Aprobado','Expirado'] pero el código a veces escribe 'Cancelado' (en /payment-status fallback). Inconsistencia menor — agregar 'Cancelado' al Literal o normalizar siempre a 'Expirado'.",
+    "El timeout del checkout-stripe es 15 minutos (vs 5 min del mock /checkout); coherente con el tiempo que Stripe da al cliente para pagar. OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stripe_payments.py (nuevo — 17 tests para Stripe end-to-end + idempotencia + waitlist_count + admin expire + retrocompat)"
+  ],
+  "success_rate": {"backend": "100% (52/52)", "frontend": "no testeado (testing_type=backend only)"},
+  "seed_data_creation": "Tests crean retas con prefijo TEST_StripeReta_ y limpian con DELETE en finally. stripe_transactions y stripe_events quedan huérfanos pero no afectan tests futuros (session_id y event_id son únicos por uuid).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite pytest ahora tiene 52 tests (35 previos + 17 Stripe). El archivo /app/backend/tests/test_stripe_payments.py prueba el flujo completo de Stripe: checkout real (llama a Stripe API sandbox vía emergentintegrations), webhook simulado con payloads JSON tipo Stripe (no requiere signature porque STRIPE_WEBHOOK_SECRET no está en .env — Stripe wrapper hace json.loads directo), polling de payment-status, expirar-pendientes admin, waitlist_count semantics, retrocompat del webhook mock. El test test_webhook_invalid_payload_returns_400 envía 'not-json-at-all{{{' como body para verificar manejo de error. Para tests futuros que necesiten un session_id real de Stripe, llamar POST /api/public/retas/{id}/checkout-stripe — devuelve session_id real (cs_test_...) que puede usarse para construir eventos webhook. Los eventos webhook usan estructura Stripe estándar: {id, type, data:{object:{id, payment_status, metadata:{}}}}. Para idempotencia, reutilizar el mismo event_id devuelve {duplicate:true}.",
+  "rca_of_issue": "N/A — implementación completa funcionando. Smoke real con Stripe API sandbox: POST /api/public/retas/{id}/checkout-stripe devuelve URL real https://checkout.stripe.com/c/pay/cs_test_..., session_id cs_test_..., y crea documento en stripe_transactions con currency='mxn' y amount tomado de reta.costo_inscripcion. Idempotencia validada con event_id repetido. Waitlist_count refleja correctamente notificado:false después del cambio en _compute_public."
+}
