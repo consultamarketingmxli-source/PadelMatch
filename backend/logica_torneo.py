@@ -195,22 +195,100 @@ def generar_rol_filtrado_8_jugadores(
     return rol
 
 
+# -----------------------------------------------------------------------------
+# Round Robin Americano perfecto para 4 jugadores (1 cancha).
+# 3 rondas, 3 partidos en total. Cada jugador es pareja una vez con cada otro
+# y rival contra los otros 2. Combinación clásica:
+#   R1: (1,2) vs (3,4)
+#   R2: (1,3) vs (2,4)
+#   R3: (1,4) vs (2,3)
+# -----------------------------------------------------------------------------
+ROUND_ROBIN_4_PERFECTO: List[List[Tuple[Tuple[int, int], Tuple[int, int]]]] = [
+    [((1, 2), (3, 4))],
+    [((1, 3), (2, 4))],
+    [((1, 4), (2, 3))],
+]
+
+
+def generar_rol_filtrado_4_jugadores(
+    jugadores: List[str],
+    num_rondas: int = 3,
+) -> List[Dict]:
+    """Rol Round Robin Americano perfecto para 4 jugadores en 1 cancha.
+    Soporta num_rondas 1..3. Si se piden más rondas las recicla en ciclo.
+    """
+    if len(jugadores) != 4:
+        raise ValueError(f"Se requieren exactamente 4 jugadores, recibidos: {len(jugadores)}")
+    if num_rondas < 1:
+        raise ValueError("num_rondas debe ser >= 1")
+
+    rol = []
+    for idx in range(num_rondas):
+        ronda = ROUND_ROBIN_4_PERFECTO[idx % 3]
+        partidos = []
+        for (pA, pB) in ronda:
+            partidos.append({
+                "pareja_a": [jugadores[pA[0] - 1], jugadores[pA[1] - 1]],
+                "pareja_b": [jugadores[pB[0] - 1], jugadores[pB[1] - 1]],
+            })
+        rol.append({"ronda": idx + 1, "partidos": partidos})
+    return rol
+
+
 def generar_rol_multi_cancha(
     jugadores: List[str],
     canchas: int,
     num_rondas: int = 7,
 ) -> List[Dict]:
     """
-    Para torneos con más de 8 jugadores. Particiona en grupos de 8 (uno por cancha)
-    y genera el rol Round Robin independiente para cada cancha.
+    Generador ELÁSTICO de rol para capacidades múltiplo de 4.
+
+    Estrategia: se asignan grupos a cada cancha tratando de maximizar grupos
+    de 8 (rotación clásica de 7 rondas). El remanente de 4 jugadores —si lo
+    hay— se asigna a la última cancha con la rotación americana de 3 rondas.
+
+    Combinaciones soportadas (N = len(jugadores)):
+        N=4   -> 1 cancha de 4    (3 rondas)
+        N=8   -> 1 cancha de 8    (5..7 rondas)
+        N=12  -> 1 cancha de 8 + 1 cancha de 4
+        N=16  -> 2 canchas de 8
+        N=20  -> 2 canchas de 8 + 1 cancha de 4
+        N=24  -> 3 canchas de 8
+        N=28  -> 3 canchas de 8 + 1 cancha de 4
+        N=32  -> 4 canchas de 8
+
+    El argumento `canchas` se ignora si el N no es coherente; el sistema
+    siempre intenta la asignación óptima.
     """
-    if len(jugadores) != canchas * 8:
+    n = len(jugadores)
+    if n < 4 or n > 32 or n % 4 != 0:
         raise ValueError(
-            f"Para {canchas} cancha(s) se requieren exactamente {canchas * 8} jugadores"
+            f"Capacidad inválida ({n}). Usa múltiplos de 4 entre 4 y 32."
         )
-    resultado = []
-    for c in range(canchas):
-        grupo = jugadores[c * 8:(c + 1) * 8]
-        rol = generar_rol_filtrado_8_jugadores(grupo, num_rondas)
-        resultado.append({"cancha": c + 1, "rondas": rol})
+
+    grupos_8 = n // 8
+    grupos_4 = (n % 8) // 4  # 0 o 1
+
+    resultado: List[Dict] = []
+    idx = 0
+    cancha_num = 1
+
+    # Asignar grupos de 8 primero
+    for _ in range(grupos_8):
+        grupo = jugadores[idx:idx + 8]
+        rol = generar_rol_filtrado_8_jugadores(grupo, num_rondas=num_rondas)
+        resultado.append({"cancha": cancha_num, "rondas": rol})
+        idx += 8
+        cancha_num += 1
+
+    # Asignar grupo de 4 (si quedó remanente)
+    for _ in range(grupos_4):
+        grupo = jugadores[idx:idx + 4]
+        # Para mini-grupo de 4, generamos hasta 3 rondas (americano clásico).
+        rondas_4 = min(num_rondas, 3)
+        rol = generar_rol_filtrado_4_jugadores(grupo, num_rondas=rondas_4)
+        resultado.append({"cancha": cancha_num, "rondas": rol})
+        idx += 4
+        cancha_num += 1
+
     return resultado

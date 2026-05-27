@@ -5,8 +5,9 @@ Protege contra:
   - Teléfonos malformados antes de mandar a Twilio (E.164 sin espacios).
   - Textos de observaciones que rompen el PDF A4 o WhatsApp (> 140 chars).
   - Nombres con emojis rotos o tamaños abusivos.
+  - Capacidad de jugadores fuera de [4,32] o no múltiplo de 4 (pádel = parejas).
 
-Todos los modelos Pydantic deben usar estos tipos en lugar de `str` plano.
+Todos los modelos Pydantic deben usar estos tipos en lugar de `str`/`int` plano.
 """
 from __future__ import annotations
 
@@ -15,6 +16,10 @@ import unicodedata
 from typing import Annotated
 
 from pydantic import AfterValidator, Field, StringConstraints
+
+# Capacidad mínima/máxima por reta — multiplo de 4 (pádel = parejas)
+JUGADORES_MIN = 4
+JUGADORES_MAX = 32
 
 # E.164: "+" obligatorio + 1-3 dígitos país + 7-12 dígitos número. Máximo 15 dígitos.
 _PHONE_RE = re.compile(r"^\+[1-9]\d{7,14}$")
@@ -65,6 +70,28 @@ def _validate_observaciones(raw: str) -> str:
     return s[:140]
 
 
+def _validate_jugadores_par4(n: int) -> int:
+    """Capacidad de reta de pádel: múltiplo de 4, entre 4 y 32.
+
+    El pádel se juega en parejas, por eso exigimos múltiplos de 4. El piso
+    de 4 permite la reta minimalista (1 cancha, 3 partidos americanos), y
+    el techo de 32 garantiza que el algoritmo de rol corra rápido.
+    """
+    if not isinstance(n, int) or isinstance(n, bool):
+        raise ValueError("max_jugadores debe ser entero")
+    if n < JUGADORES_MIN or n > JUGADORES_MAX:
+        raise ValueError(
+            f"max_jugadores debe estar entre {JUGADORES_MIN} y {JUGADORES_MAX}."
+        )
+    if n % 4 != 0:
+        sugerido = max(JUGADORES_MIN, (n // 4) * 4)
+        raise ValueError(
+            f"El pádel se juega en parejas (múltiplos de 4). "
+            f"Te sugerimos cambiar a {sugerido} jugadores o habilitar lista de espera."
+        )
+    return n
+
+
 # Tipos exportados — úsalos en Pydantic models.
 PhoneStr = Annotated[str, AfterValidator(_validate_phone)]
 NombreStr = Annotated[str, AfterValidator(_validate_nombre)]
@@ -73,3 +100,4 @@ ObservacionesStr = Annotated[
     AfterValidator(_validate_observaciones),
     Field(max_length=140),
 ]
+JugadoresPar4 = Annotated[int, AfterValidator(_validate_jugadores_par4)]

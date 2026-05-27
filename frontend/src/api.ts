@@ -4,6 +4,12 @@ import { storage } from "@/src/utils/storage";
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 const TOKEN_KEY = "ppos.admin.token";
 
+export type FormatoScore = {
+  tipo: "PUNTOS" | "TIEMPO";
+  valor: number;
+  unidad: "juegos" | "sets" | "minutos";
+};
+
 export type Reta = {
   id: string;
   organizador_id: string;
@@ -15,6 +21,7 @@ export type Reta = {
   costo_inscripcion: number;
   modalidad_juego: "PUNTOS" | "TIEMPO";
   num_rondas: 5 | 6 | 7;
+  formato_score?: FormatoScore;
   url_slug: string;
   organizador_logo_url?: string | null;
   observaciones_publicas: string;

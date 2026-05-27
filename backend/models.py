@@ -1,10 +1,10 @@
 """Pydantic models for PadelappRetas OS."""
 from datetime import datetime
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field, model_validator
 import uuid
 
-from core.validators import NombreStr, ObservacionesStr, PhoneStr
+from core.validators import JugadoresPar4, NombreStr, ObservacionesStr, PhoneStr
 
 
 # ============= Usuarios =============
@@ -29,6 +29,39 @@ class PlayerStats(BaseModel):
 
 
 # ============= Retas =============
+class FormatoScore(BaseModel):
+    """Formato de juego elástico. El admin elige cómo se define el ganador.
+
+    - PUNTOS  + unidad="juegos":  ej. a 6/9/11 juegos por partido
+    - PUNTOS  + unidad="sets":    ej. al mejor de 1 / 3 sets
+    - TIEMPO  + unidad="minutos": ej. 15 / 20 / 30 min por partido
+
+    El frontend adapta los marcadores en vivo según `tipo` (contadores
+    incrementales para PUNTOS, timer regresivo para TIEMPO).
+    """
+    tipo: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
+    valor: int = Field(default=9, ge=1, le=180)
+    unidad: Literal["juegos", "sets", "minutos"] = "juegos"
+
+    @model_validator(mode="after")
+    def _coherencia(self) -> "FormatoScore":
+        if self.tipo == "TIEMPO" and self.unidad != "minutos":
+            raise ValueError("Con TIEMPO la unidad debe ser 'minutos'.")
+        if self.tipo == "PUNTOS" and self.unidad not in ("juegos", "sets"):
+            raise ValueError("Con PUNTOS la unidad debe ser 'juegos' o 'sets'.")
+        if self.unidad == "minutos" and not (5 <= self.valor <= 90):
+            raise ValueError("Duración en minutos válida: 5..90.")
+        if self.unidad == "sets" and not (1 <= self.valor <= 5):
+            raise ValueError("Sets válidos: 1..5.")
+        if self.unidad == "juegos" and not (1 <= self.valor <= 21):
+            raise ValueError("Juegos válidos: 1..21.")
+        return self
+
+
+def _default_formato_score() -> FormatoScore:
+    return FormatoScore(tipo="PUNTOS", valor=9, unidad="juegos")
+
+
 class RetaCreate(BaseModel):
     nombre: str = Field(min_length=2, max_length=80)
     club: str = Field(min_length=2, max_length=80)
@@ -36,9 +69,13 @@ class RetaCreate(BaseModel):
     hora_str: str   # HH:mm
     tz_offset_minutes: int = -360  # default CDMX
     canchas_disponibles: int = Field(ge=1, le=8)
+    # Capacidad elástica — múltiplo de 4 entre 4 y 32. Si no se manda, se
+    # calcula como 8 * canchas (retrocompat con clientes antiguos).
+    max_jugadores: Optional[JugadoresPar4] = None
     costo_inscripcion: float = Field(default=0.0, ge=0, le=100000)
     modalidad_juego: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
     num_rondas: Literal[5, 6, 7] = 7
+    formato_score: FormatoScore = Field(default_factory=_default_formato_score)
     organizador_logo_url: Optional[str] = None
     observaciones_publicas: ObservacionesStr = ""
     latitud: Optional[float] = Field(default=None, ge=-90, le=90)
@@ -52,10 +89,11 @@ class Reta(BaseModel):
     club: str
     fecha_evento: str  # ISO 8601 con offset
     canchas_disponibles: int
-    max_jugadores: int  # 8 * canchas
+    max_jugadores: int  # múltiplo de 4, 4..32
     costo_inscripcion: float = 0.0
     modalidad_juego: Literal["PUNTOS", "TIEMPO"]
     num_rondas: int
+    formato_score: FormatoScore = Field(default_factory=_default_formato_score)
     url_slug: str
     organizador_logo_url: Optional[str] = None
     observaciones_publicas: str = ""

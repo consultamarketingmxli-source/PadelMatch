@@ -1,4 +1,5 @@
 """Endpoints admin de Retas: CRUD + listar inscripciones + expirar pendientes."""
+import math
 from datetime import datetime
 from typing import List
 
@@ -8,10 +9,27 @@ from slugify import slugify
 from auth import get_current_admin
 from core.db import db
 from core.helpers import compute_public, expirar_bloqueos_pass, strip_mongo
+from core.image_utils import compress_logo_to_webp
 from logica_torneo import construir_fecha_local_iso
 from models import Inscripcion, Reta, RetaCreate, RetaPublic
 
 router = APIRouter(prefix="/retas", tags=["retas"])
+
+
+def _resolve_max_jugadores(body: RetaCreate) -> int:
+    """Si el cliente manda max_jugadores explícito lo respeta (ya validado).
+    Si NO lo manda, retrocompat: 8 jugadores por cancha (clientes antiguos)."""
+    if body.max_jugadores is not None:
+        return int(body.max_jugadores)
+    return 8 * body.canchas_disponibles
+
+
+def _derive_canchas(max_jugadores: int, declared: int) -> int:
+    """Calcula cuántas canchas físicas hacen falta para `max_jugadores`.
+    Cada cancha estándar = 8 jugadores; remanente de 4 = 1 cancha mini.
+    Si el organizador declaró más canchas que las necesarias, las respeta."""
+    necesarias = math.ceil(max_jugadores / 8)
+    return max(int(declared), int(necesarias))
 
 
 @router.post("", response_model=Reta)
@@ -24,17 +42,22 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         n += 1
         slug = f"{base_slug}-{n}"
 
+    max_jug = _resolve_max_jugadores(body)
+    canchas = _derive_canchas(max_jug, body.canchas_disponibles)
+    logo_webp = compress_logo_to_webp(body.organizador_logo_url)
+
     reta = Reta(
         nombre=body.nombre,
         club=body.club,
         fecha_evento=fecha_iso,
-        canchas_disponibles=body.canchas_disponibles,
-        max_jugadores=8 * body.canchas_disponibles,
+        canchas_disponibles=canchas,
+        max_jugadores=max_jug,
         costo_inscripcion=body.costo_inscripcion,
         modalidad_juego=body.modalidad_juego,
         num_rondas=body.num_rondas,
+        formato_score=body.formato_score,
         url_slug=slug,
-        organizador_logo_url=body.organizador_logo_url,
+        organizador_logo_url=logo_webp,
         observaciones_publicas=body.observaciones_publicas,
         latitud=body.latitud,
         longitud=body.longitud,
@@ -74,16 +97,20 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
     if not r:
         raise HTTPException(404, "Reta no encontrada")
     fecha_iso = construir_fecha_local_iso(body.fecha_str, body.hora_str, body.tz_offset_minutes)
+    max_jug = _resolve_max_jugadores(body)
+    canchas = _derive_canchas(max_jug, body.canchas_disponibles)
+    logo_webp = compress_logo_to_webp(body.organizador_logo_url)
     update = {
         "nombre": body.nombre,
         "club": body.club,
         "fecha_evento": fecha_iso,
-        "canchas_disponibles": body.canchas_disponibles,
-        "max_jugadores": 8 * body.canchas_disponibles,
+        "canchas_disponibles": canchas,
+        "max_jugadores": max_jug,
         "costo_inscripcion": body.costo_inscripcion,
         "modalidad_juego": body.modalidad_juego,
         "num_rondas": body.num_rondas,
-        "organizador_logo_url": body.organizador_logo_url,
+        "formato_score": body.formato_score.model_dump(),
+        "organizador_logo_url": logo_webp,
         "observaciones_publicas": body.observaciones_publicas,
         "latitud": body.latitud,
         "longitud": body.longitud,
