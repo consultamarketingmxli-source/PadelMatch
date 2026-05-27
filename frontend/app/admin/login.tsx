@@ -52,9 +52,9 @@ export default function AdminLogin() {
           <View style={styles.iconWrap}>
             <ShieldCheck size={28} color={colors.brand.primary} />
           </View>
-          <Text style={styles.title}>ADMIN · CONTROL</Text>
+          <Text style={styles.title}>PADELRETA · ADMIN</Text>
           <Text style={styles.subtitle}>
-            Acceso restringido a organizadores autorizados de Pixel Padel OS.
+            Acceso para organizadores de clubes de pádel.
           </Text>
 
           <View style={styles.form}>

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Trophy, Clock, Image as ImageIcon } from "lucide-react-native";
+import { ArrowLeft, Trophy, Clock, Image as ImageIcon, BarChart2 } from "lucide-react-native";
 
 import { api } from "@/src/api";
 import { Button } from "@/src/components/Button";
@@ -254,6 +254,14 @@ export default function RetaForm() {
 
           {!isNew ? (
             <>
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Capturar resultados de partidos"
+                onPress={() => router.push(`/admin/reta/resultados/${retaIdReal}` as any)}
+                variant="secondary"
+                icon={<BarChart2 size={14} color={colors.brand.primary} />}
+                testID="form-resultados-btn"
+              />
               <View style={{ height: spacing.md }} />
               <Button
                 title="Generar Rol & Descargar PDF A4"

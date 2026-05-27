@@ -307,7 +307,9 @@ class TestPlayerStats:
         assert data["partidos_jugados"] == 0
         assert data["efectividad"] == 0.0
 
-    def test_stats_known_player_after_approval(self, api_client, auth_headers):
+    def test_stats_known_player_no_results_yet(self, api_client, auth_headers):
+        """Después de la refactor: la efectividad se calcula desde resultados REALES.
+        Un jugador recién aprobado, sin partidos capturados, debe tener 0/0."""
         reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
         try:
             phone = "+521TESTSTATSPLAYER"
@@ -323,7 +325,296 @@ class TestPlayerStats:
             assert r.status_code == 200
             data = r.json()
             assert data["nombre"] == "TEST_StatsPlayer"
-            assert data["partidos_jugados"] == 14  # 7 rondas * 2
-            assert 0 < data["efectividad"] <= 100
+            assert data["partidos_jugados"] == 0
+            assert data["partidos_ganados"] == 0
+            assert data["efectividad"] == 0.0
         finally:
             _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_stats_real_efectividad_from_resultados(self, api_client, auth_headers):
+        """Crea una reta, captura 3 partidos donde 'TEST_RealStats' gana 2 y pierde 1
+        y verifica que efectividad = 2/3*100 = 66.7."""
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            phone = "+521TESTREALSTATS"
+            target = "TEST_RealStats"
+            # Inscribir y aprobar al jugador
+            ins = api_client.post(
+                f"{BASE_URL}/api/public/retas/{reta['id']}/checkout",
+                json={"reta_id": reta["id"], "nombre": target, "telefono": phone},
+            ).json()
+            api_client.post(
+                f"{BASE_URL}/api/webhooks/payment",
+                json={"inscripcion_id": ins["id"], "status": "approved"},
+            )
+            # 3 partidos: gana, gana, pierde
+            partidos = [
+                {"cancha": 1, "ronda": 1, "partido_idx": 0, "pareja_a": [target, "X"], "pareja_b": ["Y", "Z"], "score_a": 6, "score_b": 3},
+                {"cancha": 1, "ronda": 2, "partido_idx": 0, "pareja_a": ["Y", target], "pareja_b": ["X", "Z"], "score_a": 6, "score_b": 2},
+                {"cancha": 1, "ronda": 3, "partido_idx": 0, "pareja_a": ["X", "Y"], "pareja_b": [target, "Z"], "score_a": 6, "score_b": 4},
+            ]
+            for p in partidos:
+                r = api_client.post(
+                    f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                    json=p, headers=auth_headers,
+                )
+                assert r.status_code == 200, r.text
+            r = api_client.get(f"{BASE_URL}/api/public/players/{phone}/stats")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["partidos_jugados"] == 3
+            assert data["partidos_ganados"] == 2
+            assert abs(data["efectividad"] - 66.7) < 0.2
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+
+# ============== ROL ==============
+class TestRol:
+    def test_get_rol_returns_round_robin(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            r = api_client.get(
+                f"{BASE_URL}/api/retas/{reta['id']}/rol", headers=auth_headers,
+            )
+            assert r.status_code == 200, r.text
+            data = r.json()
+            assert data["reta_id"] == reta["id"]
+            assert data["canchas"] == 1
+            assert data["num_rondas"] == 7
+            assert len(data["jugadores"]) == 8  # 8 * 1 cancha
+            # Placeholders 'Jugador N'
+            assert all(j.startswith("Jugador ") for j in data["jugadores"])
+            # rol estructura: 1 cancha con 7 rondas, cada ronda con 2 partidos
+            assert len(data["rol"]) == 1
+            cancha1 = data["rol"][0]
+            assert cancha1["cancha"] == 1
+            assert len(cancha1["rondas"]) == 7
+            for ronda in cancha1["rondas"]:
+                assert len(ronda["partidos"]) == 2
+                for p in ronda["partidos"]:
+                    assert len(p["pareja_a"]) == 2
+                    assert len(p["pareja_b"]) == 2
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_get_rol_requires_auth(self, api_client):
+        r = api_client.get(f"{BASE_URL}/api/retas/fake-id/rol")
+        assert r.status_code in (401, 403)
+
+
+# ============== RESULTADOS (POST/GET) ==============
+class TestResultados:
+    def test_post_resultado_calcula_ganador_A(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            r = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={
+                    "cancha": 1, "ronda": 1, "partido_idx": 0,
+                    "pareja_a": ["A1", "A2"], "pareja_b": ["B1", "B2"],
+                    "score_a": 6, "score_b": 3,
+                },
+                headers=auth_headers,
+            )
+            assert r.status_code == 200, r.text
+            data = r.json()
+            assert data["ganador"] == "A"
+            assert data["score_a"] == 6 and data["score_b"] == 3
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_post_resultado_calcula_ganador_B_y_empate(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            # B gana
+            r1 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={"cancha": 1, "ronda": 1, "partido_idx": 0,
+                      "pareja_a": ["A1", "A2"], "pareja_b": ["B1", "B2"],
+                      "score_a": 2, "score_b": 6},
+                headers=auth_headers,
+            )
+            assert r1.json()["ganador"] == "B"
+            # EMPATE
+            r2 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={"cancha": 1, "ronda": 2, "partido_idx": 0,
+                      "pareja_a": ["A1", "A2"], "pareja_b": ["B1", "B2"],
+                      "score_a": 4, "score_b": 4},
+                headers=auth_headers,
+            )
+            assert r2.json()["ganador"] == "EMPATE"
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_post_resultado_idempotente_upsert(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            payload = {
+                "cancha": 1, "ronda": 1, "partido_idx": 0,
+                "pareja_a": ["A1", "A2"], "pareja_b": ["B1", "B2"],
+                "score_a": 6, "score_b": 3,
+            }
+            r1 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json=payload, headers=auth_headers,
+            )
+            assert r1.status_code == 200
+            first_id = r1.json()["id"]
+
+            # Update score con misma key — debería ACTUALIZAR, no crear
+            payload["score_a"] = 4
+            payload["score_b"] = 6
+            r2 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json=payload, headers=auth_headers,
+            )
+            assert r2.status_code == 200
+            assert r2.json()["id"] == first_id, "Debe mantener mismo id (upsert)"
+            assert r2.json()["ganador"] == "B"
+
+            # GET lista debe tener exactamente 1
+            g = api_client.get(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                headers=auth_headers,
+            )
+            assert g.status_code == 200
+            assert len(g.json()) == 1
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_get_resultados_ordenado(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=2, num_rondas=7)
+        try:
+            # Insertar en orden caótico
+            payloads = [
+                (2, 3, 1), (1, 1, 0), (2, 1, 0), (1, 2, 1),
+            ]
+            for cancha, ronda, idx in payloads:
+                api_client.post(
+                    f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                    json={"cancha": cancha, "ronda": ronda, "partido_idx": idx,
+                          "pareja_a": ["A", "B"], "pareja_b": ["C", "D"],
+                          "score_a": 5, "score_b": 4},
+                    headers=auth_headers,
+                )
+            r = api_client.get(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                headers=auth_headers,
+            )
+            assert r.status_code == 200
+            data = r.json()
+            tuples = [(d["cancha"], d["ronda"], d["partido_idx"]) for d in data]
+            assert tuples == sorted(tuples), f"No ordenado: {tuples}"
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_post_validations_cancha_ronda_pareja(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            # Cancha fuera de rango (reta tiene 1 cancha) -> 400
+            r1 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={"cancha": 5, "ronda": 1, "partido_idx": 0,
+                      "pareja_a": ["A", "B"], "pareja_b": ["C", "D"],
+                      "score_a": 6, "score_b": 0},
+                headers=auth_headers,
+            )
+            assert r1.status_code in (400, 422), r1.text
+
+            # Ronda fuera de rango (>7) -> 422 (pydantic) o 400
+            r2 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={"cancha": 1, "ronda": 99, "partido_idx": 0,
+                      "pareja_a": ["A", "B"], "pareja_b": ["C", "D"],
+                      "score_a": 6, "score_b": 0},
+                headers=auth_headers,
+            )
+            assert r2.status_code in (400, 422)
+
+            # pareja_a con 1 sola persona -> 400/422
+            r3 = api_client.post(
+                f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                json={"cancha": 1, "ronda": 1, "partido_idx": 0,
+                      "pareja_a": ["A"], "pareja_b": ["C", "D"],
+                      "score_a": 6, "score_b": 0},
+                headers=auth_headers,
+            )
+            assert r3.status_code in (400, 422)
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+
+# ============== TABLA DE POSICIONES ==============
+class TestTabla:
+    def test_tabla_ordering_y_puntos(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1, num_rondas=7)
+        try:
+            # Configuración: J1 gana 2 y empata 1 -> 7 pts
+            #                J2 socio en gana 1 y pierde 2 -> 3 pts
+            #                J3 y J4 son rivales
+            partidos = [
+                # P1: J1+X gana 6-3 a J3+J4 -> J1=3pts
+                {"cancha": 1, "ronda": 1, "partido_idx": 0,
+                 "pareja_a": ["J1", "X"], "pareja_b": ["J3", "J4"],
+                 "score_a": 6, "score_b": 3},
+                # P2: J1+J2 gana 6-2 a J3+J4 -> J1+3, J2+3
+                {"cancha": 1, "ronda": 2, "partido_idx": 0,
+                 "pareja_a": ["J1", "J2"], "pareja_b": ["J3", "J4"],
+                 "score_a": 6, "score_b": 2},
+                # P3: J1+J2 empata 4-4 con J3+J4 -> J1+1, J2+1
+                {"cancha": 1, "ronda": 3, "partido_idx": 0,
+                 "pareja_a": ["J1", "J2"], "pareja_b": ["J3", "J4"],
+                 "score_a": 4, "score_b": 4},
+            ]
+            for p in partidos:
+                rr = api_client.post(
+                    f"{BASE_URL}/api/retas/{reta['id']}/resultados",
+                    json=p, headers=auth_headers,
+                )
+                assert rr.status_code == 200, rr.text
+
+            r = api_client.get(f"{BASE_URL}/api/public/retas/{reta['id']}/tabla")
+            assert r.status_code == 200, r.text
+            tabla = r.json()
+            by_name = {e["nombre"]: e for e in tabla}
+            assert "J1" in by_name and "J2" in by_name and "J3" in by_name
+            # J1: 3 partidos, 2G + 1E -> 7 pts
+            assert by_name["J1"]["partidos_jugados"] == 3
+            assert by_name["J1"]["partidos_ganados"] == 2
+            assert by_name["J1"]["partidos_empatados"] == 1
+            assert by_name["J1"]["puntos"] == 7
+            # J2: 2 partidos (no jugó P1), 1G + 1E -> 4 pts
+            assert by_name["J2"]["partidos_jugados"] == 2
+            assert by_name["J2"]["puntos"] == 4
+            # J3: 3 partidos, 0G + 1E + 2P -> 1 pt
+            assert by_name["J3"]["puntos"] == 1
+            assert by_name["J3"]["partidos_perdidos"] == 2
+            # Diferencia J1 = (6+6+4)-(3+2+4) = 16-9 = 7
+            assert by_name["J1"]["diferencia"] == 7
+            assert by_name["J1"]["juegos_a_favor"] == 16
+            assert by_name["J1"]["juegos_en_contra"] == 9
+            # Efectividad J1 = 2/3*100 = 66.7
+            assert abs(by_name["J1"]["efectividad"] - 66.7) < 0.2
+            # Ordenamiento: J1 (7) > J2 (4) > J3 (1)
+            puntos_lista = [e["puntos"] for e in tabla]
+            assert puntos_lista == sorted(puntos_lista, reverse=True)
+            # J1 debe ser el primero
+            assert tabla[0]["nombre"] == "J1"
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_tabla_publica_sin_auth(self, api_client, auth_headers):
+        reta = _create_reta(api_client, auth_headers, canchas_disponibles=1)
+        try:
+            # Sin headers de auth
+            r = requests.get(f"{BASE_URL}/api/public/retas/{reta['id']}/tabla")
+            assert r.status_code == 200
+            assert isinstance(r.json(), list)
+        finally:
+            _delete_reta(api_client, auth_headers, reta["id"])
+
+    def test_tabla_reta_inexistente_404(self, api_client):
+        r = requests.get(f"{BASE_URL}/api/public/retas/no-existe-xyz/tabla")
+        assert r.status_code == 404

@@ -56,6 +56,56 @@ export type PlayerStats = {
   efectividad: number;
 };
 
+export type PartidoRol = {
+  pareja_a: [string, string];
+  pareja_b: [string, string];
+};
+
+export type RondaRol = {
+  ronda: number;
+  partidos: PartidoRol[];
+};
+
+export type CanchaRol = {
+  cancha: number;
+  rondas: RondaRol[];
+};
+
+export type RolResponse = {
+  reta_id: string;
+  canchas: number;
+  num_rondas: 5 | 6 | 7;
+  jugadores: string[];
+  rol: CanchaRol[];
+};
+
+export type PartidoResultado = {
+  id: string;
+  reta_id: string;
+  cancha: number;
+  ronda: number;
+  partido_idx: number;
+  pareja_a: string[];
+  pareja_b: string[];
+  score_a: number;
+  score_b: number;
+  ganador: "A" | "B" | "EMPATE";
+  creado_en: string;
+};
+
+export type TablaPosicionEntry = {
+  nombre: string;
+  partidos_jugados: number;
+  partidos_ganados: number;
+  partidos_empatados: number;
+  partidos_perdidos: number;
+  juegos_a_favor: number;
+  juegos_en_contra: number;
+  diferencia: number;
+  puntos: number;
+  efectividad: number;
+};
+
 async function tokenHeader() {
   const t = await storage.secureGet<string>(TOKEN_KEY, "");
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -138,6 +188,31 @@ export const api = {
   // ===== stats =====
   playerStats: (telefono: string) =>
     request<PlayerStats>(`/public/players/${encodeURIComponent(telefono)}/stats`),
+
+  // ===== resultados =====
+  getRol: (retaId: string) =>
+    request<RolResponse>(`/retas/${retaId}/rol`, { auth: true }),
+  listResultados: (retaId: string) =>
+    request<PartidoResultado[]>(`/retas/${retaId}/resultados`, { auth: true }),
+  upsertResultado: (
+    retaId: string,
+    body: {
+      cancha: number;
+      ronda: number;
+      partido_idx: number;
+      pareja_a: string[];
+      pareja_b: string[];
+      score_a: number;
+      score_b: number;
+    },
+  ) =>
+    request<PartidoResultado>(`/retas/${retaId}/resultados`, {
+      method: "POST",
+      body,
+      auth: true,
+    }),
+  tablaPosiciones: (retaId: string) =>
+    request<TablaPosicionEntry[]>(`/public/retas/${retaId}/tabla`),
 
   // ===== pdf =====
   async generatePdfUrl(retaId: string, jugadores: string[], numRondas: 5 | 6 | 7) {

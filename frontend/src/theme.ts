@@ -1,35 +1,37 @@
 /**
- * Pixel Padel OS — Design tokens.
- * Premium dark theme + neon padel green accent.
+ * PadelReta — Design tokens.
+ * Paleta amigable: blanco + azul profesional + acentos cielo.
  */
 export const colors = {
   bg: {
-    app: "#0A0A0A",
-    card: "#151515",
-    elevated: "#1A1A1A",
-    modal: "rgba(0,0,0,0.85)",
+    app: "#F8FAFC",         // slate-50 — fondo principal suave
+    card: "#FFFFFF",
+    elevated: "#F1F5F9",    // slate-100 — chips/stat boxes
+    modal: "rgba(15, 23, 42, 0.55)",
   },
   brand: {
-    primary: "#A3E635",
-    primaryMuted: "rgba(163,230,53,0.15)",
-    primaryBorder: "rgba(163,230,53,0.4)",
-    primarySoft: "rgba(163,230,53,0.05)",
+    primary: "#2563EB",     // blue-600 — botones, links
+    primaryHover: "#1D4ED8",
+    primaryMuted: "rgba(37, 99, 235, 0.10)",
+    primaryBorder: "rgba(37, 99, 235, 0.30)",
+    primarySoft: "rgba(37, 99, 235, 0.06)",
+    accent: "#0EA5E9",      // sky-500 — secundario
   },
   text: {
-    primary: "#FFFFFF",
-    secondary: "#A1A1AA",
-    muted: "#52525B",
-    inverse: "#000000",
+    primary: "#0F172A",     // slate-900
+    secondary: "#475569",   // slate-600
+    muted: "#94A3B8",       // slate-400
+    inverse: "#FFFFFF",
   },
   status: {
-    green: "#22C55E",
-    yellow: "#EAB308",
-    red: "#EF4444",
+    green: "#16A34A",       // disponible
+    yellow: "#CA8A04",      // alta demanda
+    red: "#DC2626",         // llena
   },
   border: {
-    default: "#27272A",
-    focus: "#A3E635",
-    subtle: "#1F1F22",
+    default: "#E2E8F0",     // slate-200
+    focus: "#2563EB",
+    subtle: "#F1F5F9",
   },
 } as const;
 
@@ -45,20 +47,20 @@ export const spacing = {
 
 export const radii = {
   sm: 6,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  md: 10,
+  lg: 14,
+  xl: 18,
   pill: 999,
 } as const;
 
 export const typography = {
-  h1: { fontSize: 32, fontWeight: "900" as const, letterSpacing: -1 },
-  h2: { fontSize: 24, fontWeight: "800" as const, letterSpacing: -0.5 },
-  h3: { fontSize: 20, fontWeight: "700" as const },
-  body: { fontSize: 16, fontWeight: "400" as const },
-  bodyBold: { fontSize: 16, fontWeight: "700" as const },
+  h1: { fontSize: 30, fontWeight: "800" as const, letterSpacing: -0.6 },
+  h2: { fontSize: 22, fontWeight: "800" as const, letterSpacing: -0.3 },
+  h3: { fontSize: 18, fontWeight: "700" as const },
+  body: { fontSize: 15, fontWeight: "400" as const },
+  bodyBold: { fontSize: 15, fontWeight: "700" as const },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700" as const,
     letterSpacing: 1.2,
     textTransform: "uppercase" as const,

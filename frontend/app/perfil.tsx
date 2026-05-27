@@ -65,7 +65,7 @@ export default function ProfileScreen() {
               {stats?.nombre || "Identifícate"}
             </Text>
             <Text style={styles.subtitle}>
-              Consulta tus estadísticas históricas en Pixel Padel OS
+              Consulta tus estadísticas históricas en PadelReta
             </Text>
           </View>
 

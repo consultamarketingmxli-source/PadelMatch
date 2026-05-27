@@ -1,0 +1,44 @@
+{
+  "summary": "Backend + Frontend testing PadelReta iteración 2 (captura de resultados + tabla de posiciones). 35/35 tests pytest PASS (24 previos + 11 nuevos). Verificados todos los endpoints nuevos: GET /api/retas/{id}/rol (auth, 1 cancha x 7 rondas x 2 partidos con placeholders 'Jugador N'), POST /api/retas/{id}/resultados (upsert idempotente por (cancha,ronda,partido_idx), cálculo ganador A/B/EMPATE, validaciones cancha/ronda/pareja), GET /api/retas/{id}/resultados (ordenado por cancha,ronda,partido_idx), GET /api/public/retas/{id}/tabla (3pts win / 1 empate / 0 perder, juegos_a_favor, diferencia, ordenamiento, sin auth). El endpoint de player_stats ahora calcula efectividad REAL desde colección 'resultados' (verificado: jugador sin partidos = 0; jugador con 2G/1P = 66.7%). No regresión en los 24 endpoints previos (login, retas CRUD, radar, checkout, waitlist+promotion, webhook, PDF, semaforo). UI mobile: navegación login → /admin → editar reta → 'Capturar resultados' funciona; contador X/14 se actualiza al guardar; botón BarChart2 abre /retas/tabla/{id} con leaderboard real. Vocabulario verificado: header 'PADELRETA' (no 'Pixel Padel'), 'pala' presente, 'raqueta' ausente. Botón ver-tabla-btn en /retas/{slug} funciona.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/public/retas/radar", "issue": "Pre-existente: retas con latitud/longitud=None se incluyen siempre cuando lat/lng se proveen. No bloqueante."},
+      {"endpoint": "POST /api/auth/login", "issue": "Pre-existente: JWT secret <32 bytes y warning de bcrypt/passlib. No bloqueante."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global", "issues": ["Warnings console: 'shadow*' style props deprecated (usar boxShadow), 'props.pointerEvents' deprecated (usar style.pointerEvents). No bloqueantes pero conviene migrar."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_api_pixel_padel.py",
+    "/app/backend/tests/test_logic_modules.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Opcional) Migrar style props deprecadas: shadow* -> boxShadow; props.pointerEvents -> style.pointerEvents en componentes Card/Botones del theme.",
+    "(Opcional, pre-existente) Filtrar retas sin coordenadas en /api/public/retas/radar cuando lat/lng se proveen.",
+    "(Opcional, pre-existente) Rotar JWT_SECRET a >=32 bytes; pinear passlib/bcrypt compatibles."
+  ],
+  "critical_code_review_comments": [
+    "server.py crece con los endpoints nuevos — recomendable extraer en routers (retas_router, public_router, resultados_router) cuando supere ~750 líneas.",
+    "Validación 'len(pareja_a)==2' está en el handler (string match) pero podría moverse a Pydantic con conlist/min_length=2,max_length=2 para que el 422 venga automático.",
+    "GET /api/public/retas/{id}/tabla acepta tanto id como slug? Verificar comportamiento si llega slug — el test_tabla_reta_inexistente_404 cubre 404 pero no slug-as-id.",
+    "Si los placeholders 'Jugador N' se ven en producción es porque hay <8 aprobados; considerar exponer en /rol un flag 'incompleto: true' para que el frontend muestre warning visible al admin."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_api_pixel_padel.py (agregado TestRol, TestResultados, TestTabla; refactor TestPlayerStats para efectividad real)"
+  ],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% (todos los flujos críticos verificados)"},
+  "seed_data_creation": "Tests crean retas con prefijo TEST_ y limpian con DELETE /api/retas/{id} (cascade). UI test creó 1 reta UI_Test_* y resultados huérfanos que se limpiaron manualmente al final.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite pytest en /app/backend/tests/ ahora tiene 35 tests (11 nuevos para rol/resultados/tabla). El test test_stats_known_player_after_approval fue REEMPLAZADO por dos tests nuevos (test_stats_known_player_no_results_yet y test_stats_real_efectividad_from_resultados) porque la lógica cambió: ahora la efectividad se calcula desde resultados reales (colección 'resultados'), no desde un placeholder 0.55. Para futuros tests que necesiten un jugador con stats reales: POST /api/retas/{id}/resultados con el nombre del jugador en pareja_a o pareja_b. La clave única en MongoDB es (reta_id, cancha, ronda, partido_idx) — POST con misma clave hace UPDATE.",
+  "rca_of_issue": "N/A — implementación completa funcionando. Tests: 35/35 PASS en 7.68s. UI flow end-to-end verificado con screenshots."
+}

@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.brand}>ADMIN · CONTROL</Text>
+          <Text style={styles.brand}>PADELRETA · ADMIN</Text>
           <Text style={styles.tagline}>{retas.length} reta{retas.length === 1 ? "" : "s"} activas</Text>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>

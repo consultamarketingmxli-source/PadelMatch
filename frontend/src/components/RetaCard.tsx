@@ -35,7 +35,7 @@ export function RetaCard({ reta, onPress, testID }: Props) {
               style={styles.logo}
             />
           ) : (
-            <Text style={styles.logoFallback}>P·OS</Text>
+            <Text style={styles.logoFallback}>PR</Text>
           )}
         </View>
         <View style={{ flex: 1 }}>

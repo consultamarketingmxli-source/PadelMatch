@@ -127,3 +127,36 @@ class PaymentWebhook(BaseModel):
 class PDFRequest(BaseModel):
     jugadores: List[str]
     num_rondas: Literal[5, 6, 7] = 7
+
+
+# ============= Resultados de partidos =============
+class PartidoResultadoCreate(BaseModel):
+    """Score de un partido. Se identifica de forma única por
+    (reta_id, cancha, ronda, partido_idx)."""
+    cancha: int = Field(ge=1, le=8)
+    ronda: int = Field(ge=1, le=7)
+    partido_idx: int = Field(ge=0, le=1)  # 0 = primer partido de la ronda, 1 = segundo
+    pareja_a: List[str]  # nombres (2)
+    pareja_b: List[str]  # nombres (2)
+    score_a: int = Field(ge=0, le=99)
+    score_b: int = Field(ge=0, le=99)
+
+
+class PartidoResultado(PartidoResultadoCreate):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    reta_id: str
+    ganador: Literal["A", "B", "EMPATE"] = "A"
+    creado_en: datetime = Field(default_factory=lambda: datetime.now())
+
+
+class TablaPosicionEntry(BaseModel):
+    nombre: str
+    partidos_jugados: int = 0
+    partidos_ganados: int = 0
+    partidos_empatados: int = 0
+    partidos_perdidos: int = 0
+    juegos_a_favor: int = 0
+    juegos_en_contra: int = 0
+    diferencia: int = 0
+    puntos: int = 0  # 3 por victoria, 1 por empate
+    efectividad: float = 0.0

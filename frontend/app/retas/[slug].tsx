@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Calendar, MapPin, Trophy, DollarSign, Users, Clock } from "lucide-react-native";
+import { ArrowLeft, Calendar, MapPin, Trophy, DollarSign, Users, Clock, BarChart2 } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
 import { TrafficLight } from "@/src/components/TrafficLight";
@@ -112,7 +112,16 @@ export default function RetaDetailScreen() {
             <TouchableOpacity onPress={() => router.back()} testID="back-btn" style={styles.iconBtn}>
               <ArrowLeft size={18} color={colors.text.primary} />
             </TouchableOpacity>
-            <TrafficLight status={reta.semaforo} capacidadPct={reta.capacidad_pct} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+              <TouchableOpacity
+                onPress={() => router.push(`/retas/tabla/${reta.id}` as any)}
+                style={styles.iconBtn}
+                testID="ver-tabla-btn"
+              >
+                <BarChart2 size={18} color={colors.brand.primary} />
+              </TouchableOpacity>
+              <TrafficLight status={reta.semaforo} capacidadPct={reta.capacidad_pct} />
+            </View>
           </View>
 
           <View style={styles.heroRow}>
@@ -120,7 +129,7 @@ export default function RetaDetailScreen() {
               {reta.organizador_logo_url ? (
                 <Image source={{ uri: reta.organizador_logo_url }} style={styles.logo} />
               ) : (
-                <Text style={styles.logoFallback}>P·OS</Text>
+                <Text style={styles.logoFallback}>PR</Text>
               )}
             </View>
             <View style={{ flex: 1 }}>
@@ -173,9 +182,7 @@ export default function RetaDetailScreen() {
               onChangeText={setTelefono}
               keyboardType="phone-pad"
               testID="checkout-telefono-input"
-            />
-
-            <Button
+            />            <Button
               title={lleno ? "Unirse a Lista de Espera" : `Pagar $${reta.costo_inscripcion} e Inscribirme`}
               onPress={handleAction}
               variant={lleno ? "danger" : "primary"}
