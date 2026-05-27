@@ -1,9 +1,20 @@
+/**
+ * RetaCard \u00b7 Tarjeta de Reta con est\u00e9tica "Club Pro Clean".
+ * - Header con marca de agua de cancha (opacity-5).
+ * - Mono font para datos variables (jugadores, costo).
+ * - Iconos tem\u00e1ticos de p\u00e1del.
+ */
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Calendar, MapPin, Users, DollarSign } from "lucide-react-native";
+import { Calendar, MapPin } from "lucide-react-native";
 import { Reta } from "@/src/api";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { colors, radii, spacing, typography, shadows } from "@/src/theme";
 import { TrafficLight } from "./TrafficLight";
+import {
+  CourtWatermark,
+  PadelPalaIcon,
+  WaitlistShieldIcon,
+} from "./PadelIcons";
 
 type Props = {
   reta: Reta;
@@ -24,9 +35,12 @@ export function RetaCard({ reta, onPress, testID }: Props) {
     <TouchableOpacity
       testID={testID}
       onPress={onPress}
-      activeOpacity={0.85}
-      style={styles.card}
+      activeOpacity={0.92}
+      style={[styles.card, shadows.card as object]}
     >
+      {/* Marca de agua de plano de cancha en la esquina */}
+      <CourtWatermark width={240} height={80} style={{ right: -30, top: -10 }} />
+
       <View style={styles.headerRow}>
         <View style={styles.logoBox}>
           {reta.organizador_logo_url ? (
@@ -35,7 +49,7 @@ export function RetaCard({ reta, onPress, testID }: Props) {
               style={styles.logo}
             />
           ) : (
-            <Text style={styles.logoFallback}>PR</Text>
+            <PadelPalaIcon size={26} color={colors.brand.primary} />
           )}
         </View>
         <View style={{ flex: 1 }}>
@@ -53,9 +67,20 @@ export function RetaCard({ reta, onPress, testID }: Props) {
       </View>
 
       <View style={styles.statsGrid}>
-        <Stat icon={<Calendar size={14} color={colors.brand.primary} />} label={fechaStr} />
-        <Stat icon={<Users size={14} color={colors.brand.primary} />} label={`${reta.inscritos_count}/${reta.max_jugadores}`} />
-        <Stat icon={<DollarSign size={14} color={colors.brand.primary} />} label={`$${reta.costo_inscripcion}`} />
+        <Stat
+          icon={<Calendar size={14} color={colors.brand.primary} />}
+          label={fechaStr}
+        />
+        <Stat
+          icon={<WaitlistShieldIcon size={14} color={colors.brand.primary} />}
+          label={`${reta.inscritos_count}/${reta.max_jugadores}`}
+          mono
+        />
+        <Stat
+          icon={<Text style={styles.statCurrency}>$</Text>}
+          label={`${reta.costo_inscripcion.toLocaleString("es-MX")}`}
+          mono
+        />
       </View>
 
       {reta.observaciones_publicas ? (
@@ -70,11 +95,24 @@ export function RetaCard({ reta, onPress, testID }: Props) {
   );
 }
 
-function Stat({ icon, label }: { icon: React.ReactNode; label: string }) {
+function Stat({
+  icon,
+  label,
+  mono,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  mono?: boolean;
+}) {
   return (
     <View style={styles.stat}>
       {icon}
-      <Text style={styles.statText} numberOfLines={1}>{label}</Text>
+      <Text
+        style={[styles.statText, mono && (typography.mono as object)]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -87,6 +125,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border.default,
     padding: spacing.base,
     marginBottom: spacing.md,
+    overflow: "hidden",
+    position: "relative",
   },
   headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   logoBox: {
@@ -101,12 +141,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   logo: { width: 48, height: 48, resizeMode: "cover" },
-  logoFallback: {
-    color: colors.brand.primary,
-    fontWeight: "900",
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
   title: {
     ...typography.h3,
     color: colors.text.primary,
@@ -123,7 +157,7 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: spacing.sm,
     marginTop: spacing.base,
     flexWrap: "wrap",
   },
@@ -135,11 +169,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
   },
   statText: {
     ...typography.caption,
     color: colors.text.primary,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  statCurrency: {
+    color: colors.brand.primary,
+    fontWeight: "900",
+    fontSize: 13,
   },
   obsBox: {
     marginTop: spacing.md,

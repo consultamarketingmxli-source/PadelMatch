@@ -1,7 +1,11 @@
-/** Semáforo de participación: 3 dots con glow. */
+/**
+ * TrafficLight · Semáforo de Participación
+ * Estilo "LED deportivo": badge circular de alta visibilidad con dot + label.
+ * Combina con la estética Club Pro Clean.
+ */
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { colors, spacing, typography } from "@/src/theme";
+import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Props = {
   status: "VERDE" | "AMARILLO" | "ROJO";
@@ -10,51 +14,131 @@ type Props = {
 };
 
 export function TrafficLight({ status, capacidadPct, size = "md" }: Props) {
-  const active = {
-    VERDE: 0,
-    AMARILLO: 1,
-    ROJO: 2,
+  const palette = {
+    VERDE: {
+      dot: colors.status.green,
+      bg: colors.status.greenBg,
+      text: colors.status.greenText,
+      border: colors.status.greenBorder,
+      label: "DISPONIBLE",
+    },
+    AMARILLO: {
+      dot: colors.status.amber,
+      bg: colors.status.amberBg,
+      text: colors.status.amberText,
+      border: colors.status.amberBorder,
+      label: "DEMANDA",
+    },
+    ROJO: {
+      dot: colors.status.red,
+      bg: colors.status.redBg,
+      text: colors.status.redText,
+      border: colors.status.redBorder,
+      label: "LLENA",
+    },
   }[status];
-  const dot = size === "sm" ? 8 : 12;
-  const palette = [colors.status.green, colors.status.yellow, colors.status.red];
-  return (
-    <View style={styles.row} testID="traffic-light">
-      <View style={styles.dotsWrap}>
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={[
-              styles.dot,
-              {
-                width: dot,
-                height: dot,
-                borderRadius: dot / 2,
-                backgroundColor:
-                  i === active ? palette[i] : "rgba(255,255,255,0.12)",
-                shadowColor: i === active ? palette[i] : "transparent",
-                shadowOpacity: i === active ? 0.9 : 0,
-                shadowRadius: i === active ? 8 : 0,
-                shadowOffset: { width: 0, height: 0 },
-              },
-            ]}
-          />
-        ))}
-      </View>
-      {size === "md" && (
-        <Text style={styles.label}>
-          {capacidadPct.toFixed(0)}% · {status}
+
+  if (size === "sm") {
+    // Variante compacta: solo dot LED + porcentaje pequeño
+    return (
+      <View
+        style={[
+          styles.badgeSm,
+          { backgroundColor: palette.bg, borderColor: palette.border },
+        ]}
+        testID="traffic-light"
+      >
+        <View
+          style={[
+            styles.dotSm,
+            {
+              backgroundColor: palette.dot,
+              shadowColor: palette.dot,
+            },
+          ]}
+        />
+        <Text style={[styles.pctSm, { color: palette.text }]}>
+          {Math.round(capacidadPct)}%
         </Text>
-      )}
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.badgeMd,
+        { backgroundColor: palette.bg, borderColor: palette.border },
+      ]}
+      testID="traffic-light"
+    >
+      <View
+        style={[
+          styles.dotMd,
+          {
+            backgroundColor: palette.dot,
+            shadowColor: palette.dot,
+          },
+        ]}
+      />
+      <Text style={[styles.labelMd, { color: palette.text }]}>
+        {palette.label}
+      </Text>
+      <Text style={[styles.pctMd, { color: palette.text }]}>
+        · {Math.round(capacidadPct)}%
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  dotsWrap: { flexDirection: "row", gap: 6 },
-  dot: { borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
-  label: {
+  badgeSm: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+  },
+  dotSm: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  pctSm: {
+    ...typography.mono,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  badgeMd: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+  },
+  dotMd: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  labelMd: {
     ...typography.label,
-    color: colors.text.secondary,
+    fontSize: 10,
+    letterSpacing: 1.2,
+  },
+  pctMd: {
+    ...typography.mono,
+    fontSize: 11,
+    fontWeight: "800",
   },
 });
