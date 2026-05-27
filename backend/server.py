@@ -213,7 +213,7 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
 
 @api.get("/retas", response_model=List[RetaPublic])
 async def list_retas_admin(current=Depends(get_current_admin)):
-    cursor = db.retas.find().sort("creado_en", -1)
+    cursor = db.retas.find().sort("creado_en", -1).limit(500)
     out = []
     async for r in cursor:
         _strip_mongo(r)
@@ -268,7 +268,7 @@ async def delete_reta(reta_id: str, current=Depends(get_current_admin)):
 
 @api.get("/retas/{reta_id}/inscripciones", response_model=List[Inscripcion])
 async def list_inscripciones(reta_id: str, current=Depends(get_current_admin)):
-    cursor = db.inscripciones.find({"reta_id": reta_id}, {"_id": 0}).sort("creado_en", 1)
+    cursor = db.inscripciones.find({"reta_id": reta_id}, {"_id": 0}).sort("creado_en", 1).limit(500)
     out = []
     async for d in cursor:
         out.append(Inscripcion(**d))
@@ -283,7 +283,7 @@ async def radar(
     radio_km: float = Query(30.0, gt=0, le=200),
 ):
     """Si lat/lng se proveen, filtra por radio. Si no, retorna todas las retas futuras."""
-    cursor = db.retas.find().sort("fecha_evento", 1)
+    cursor = db.retas.find().sort("fecha_evento", 1).limit(500)
     out = []
     async for r in cursor:
         _strip_mongo(r)
@@ -497,7 +497,7 @@ async def generar_pdf_reta(
         cursor = db.inscripciones.find(
             {"reta_id": reta_id, "estatus_pago": "Aprobado"},
             {"_id": 0},
-        ).sort("creado_en", 1)
+        ).sort("creado_en", 1).limit(required)
         jugadores = []
         async for d in cursor:
             jugadores.append(d["nombre"])
@@ -540,7 +540,7 @@ async def player_stats(telefono: str):
     cursor = db.resultados.find(
         {"$or": [{"pareja_a": nombre}, {"pareja_b": nombre}]},
         {"_id": 0},
-    )
+    ).limit(1000)
     total = 0
     ganados = 0
     async for r in cursor:
@@ -575,7 +575,7 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
 
     cursor = db.inscripciones.find(
         {"reta_id": reta_id, "estatus_pago": "Aprobado"}, {"_id": 0},
-    ).sort("creado_en", 1)
+    ).sort("creado_en", 1).limit(required)
     jugadores = [d["nombre"] async for d in cursor]
     while len(jugadores) < required:
         jugadores.append(f"Jugador {len(jugadores)+1}")
@@ -665,7 +665,7 @@ async def registrar_resultado(
 async def listar_resultados_admin(reta_id: str, current=Depends(get_current_admin)):
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).sort(
         [("cancha", 1), ("ronda", 1), ("partido_idx", 1)]
-    )
+    ).limit(500)
     return [PartidoResultado(**d) async for d in cursor]
 
 
@@ -683,7 +683,7 @@ async def tabla_posiciones(reta_id: str):
             stats[name] = TablaPosicionEntry(nombre=name)
         return stats[name]
 
-    cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0})
+    cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(500)
     async for r in cursor:
         for n in r["pareja_a"]:
             e = _get(n)
@@ -734,11 +734,11 @@ async def _cronjob_recordatorios():
             cursor = db.retas.find({
                 "alertas_enviadas": False,
                 "fecha_evento": {"$gte": ventana_ini, "$lte": ventana_fin},
-            })
+            }).limit(200)
             async for r in cursor:
                 inscripciones = db.inscripciones.find({
                     "reta_id": r["id"], "estatus_pago": "Aprobado",
-                })
+                }).limit(500)
                 async for ins in inscripciones:
                     msg = construir_mensaje_recordatorio(
                         ins["nombre"], r["nombre"], r["club"], r["fecha_evento"],
@@ -759,7 +759,7 @@ async def _cronjob_expirar_bloqueos():
             expiradas = db.inscripciones.find({
                 "estatus_pago": "Pendiente",
                 "bloqueado_hasta": {"$lt": now_iso},
-            })
+            }).limit(500)
             retas_afectadas = set()
             async for ins in expiradas:
                 await db.inscripciones.delete_one({"id": ins["id"]})
@@ -779,10 +779,13 @@ async def health():
 
 app.include_router(api)
 
+_cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+_cors_origins = ["*"] if _cors_origins_env.strip() == "*" else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
