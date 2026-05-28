@@ -245,6 +245,13 @@ export default function AdminRetaParejas() {
             <View style={styles.emptyMini}>
               <Text style={styles.emptyMiniTxt}>No hay free-agents pendientes.</Text>
             </View>
+          ) : freeAgents.length === 1 ? (
+            <View style={styles.emptyMini} testID="free-agent-singleton">
+              <Text style={styles.emptyMiniTxt}>
+                Hay 1 jugador sin pareja. Necesitas al menos 2 free-agents para
+                poder emparejarlos. Espera más registros o ajusta inscripciones.
+              </Text>
+            </View>
           ) : (
             <View style={{ gap: spacing.sm }}>
               {freeAgents.map((fa) => {

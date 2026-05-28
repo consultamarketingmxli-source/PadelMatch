@@ -75,12 +75,31 @@ export default function AdminNotificaciones() {
     label: string;
     payload: NotifyResult;
   } | null>(null);
+  // Estado pre-fetch del modo Twilio (live/test/missing/unknown).
+  const [twilioMode, setTwilioMode] = useState<"live" | "test" | "missing" | "unknown" | null>(null);
+  // Info del sandbox (código join) si aplica.
+  const [sandboxInfo, setSandboxInfo] = useState<{ join_code: string | null; sandbox_number: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!retaId) return;
     try {
       const r = await api.getReta(retaId);
       setReta(r);
+      // Pre-fetch del estado Twilio para mostrar el banner de modo.
+      try {
+        const dr = await api.getDeployReadiness();
+        const tw = dr.integrations.find((i) => i.env.startsWith("TWILIO_ACCOUNT_SID"));
+        if (tw) setTwilioMode(tw.mode);
+        // Si es sandbox, pre-cargar el código join.
+        if (tw?.mode === "test") {
+          try {
+            const si = await api.getTwilioSandboxInfo();
+            setSandboxInfo({ join_code: si.join_code, sandbox_number: si.sandbox_number });
+          } catch { /* ignore */ }
+        }
+      } catch {
+        // ignore — banner se ocultará silenciosamente
+      }
     } catch (e: any) {
       Alert.alert("Error", e.message ?? "No se pudo cargar la reta");
     } finally {
@@ -101,11 +120,6 @@ export default function AdminNotificaciones() {
     () => Array.from({ length: totalCanchas }, (_, i) => i + 1),
     [totalCanchas],
   );
-
-  // Indicador sin necesidad de fetch: Twilio se considera "configured" cuando
-  // el último broadcast lo reportó. Por defecto asumimos "desconocido" hasta
-  // el primer dispatch.
-  const twilioConfigured = lastResult?.payload.configured;
 
   const runBroadcast = async (
     label: string, fn: () => Promise<NotifyResult>,
@@ -154,14 +168,33 @@ export default function AdminNotificaciones() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Indicador de Twilio configurado */}
-        {twilioConfigured === false ? (
+        {/* Indicador del modo Twilio (pre-fetch) */}
+        {twilioMode === "missing" ? (
           <View style={styles.warnBox} testID="twilio-mock-banner">
             <AlertTriangle size={14} color={colors.status.amber} />
             <Text style={styles.warnText}>
-              Twilio NO está configurado o WHATSAPP_FORCE_MOCK=true. Los mensajes
-              se simulan (no salen a destinatarios reales).
+              Twilio NO está configurado. Los mensajes se simulan (no salen a
+              destinatarios reales). Ve a Dashboard → Estado de Deployment LIVE
+              para configurarlo.
             </Text>
+          </View>
+        ) : twilioMode === "test" ? (
+          <View style={styles.warnBox} testID="twilio-sandbox-banner">
+            <AlertTriangle size={14} color={colors.status.amber} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.warnText}>
+                Twilio en modo SANDBOX (límite de 5 msgs/día por cuenta). Para
+                producción, configura un número WhatsApp Business desde el panel
+                de Deployment.
+              </Text>
+              {sandboxInfo?.join_code ? (
+                <Text style={styles.warnTextHint} testID="sandbox-join-hint">
+                  Para recibir mensajes, cada jugador debe enviar
+                  &quot;{sandboxInfo.join_code}&quot; al WhatsApp{" "}
+                  {sandboxInfo.sandbox_number} ANTES del evento.
+                </Text>
+              ) : null}
+            </View>
           </View>
         ) : null}
 
@@ -432,6 +465,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.status.amber + "40",
   },
   warnText: { color: colors.text.primary, fontSize: 12, flex: 1, lineHeight: 16 },
+  warnTextHint: {
+    color: colors.text.primary, fontSize: 11, marginTop: 6, lineHeight: 15,
+    fontStyle: "italic",
+  },
 
   card: {
     backgroundColor: colors.bg.card,

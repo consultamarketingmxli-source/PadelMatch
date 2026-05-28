@@ -171,8 +171,11 @@ async def emparejar_free_agents(
                 f"La inscripción de {d['nombre']} ya pertenece a una pareja. "
                 "Cancela primero la asociación previa.",
             )
-        if d.get("telefono") and d["telefono"] == docs[0]["telefono"] and d != docs[0]:
-            raise HTTPException(400, "Ambos jugadores tienen el mismo teléfono.")
+    # Validación de teléfonos distintos (post-recorrido).
+    tel_a = (docs[0].get("telefono") or "").strip()
+    tel_b = (docs[1].get("telefono") or "").strip()
+    if tel_a and tel_b and tel_a == tel_b:
+        raise HTTPException(400, "Ambos jugadores tienen el mismo teléfono.")
 
     # Asignar pareja_grupo_id compartido y snapshot cruzado.
     pareja_grupo_id = str(uuid.uuid4())

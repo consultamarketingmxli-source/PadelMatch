@@ -12,8 +12,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -134,22 +132,31 @@ export default function AdminDeployReadiness() {
               </Text>
             </View>
           ) : (
-            <Button
-              title={Platform.OS === "web" ? "Abrir docs en nueva pestaña" : "Copiar nombre del doc"}
-              variant="secondary"
-              onPress={() => {
-                if (Platform.OS === "web") {
-                  // El doc vive en filesystem; mostramos un alert con la ruta.
-                  Alert.alert(
-                    "Documentación",
-                    "Ruta: /app/memory/LIVE_DEPLOYMENT_KEYS.md\n\nÁbrelo desde tu editor o repo.",
-                  );
-                } else {
-                  void Linking.openURL("https://dashboard.stripe.com/apikeys");
-                }
-              }}
-              testID="deploy-open-docs"
-            />
+            <View style={styles.howtoBox} testID="deploy-howto">
+              <Text style={styles.howtoTitle}>¿Cómo cambiar a LIVE?</Text>
+              <Text style={styles.howtoLine}>
+                1. Abre el panel de Emergent → botón &quot;Publish&quot; (esquina superior derecha).
+              </Text>
+              <Text style={styles.howtoLine}>
+                2. En la sección &quot;Environment Variables&quot;, sustituye los valores TEST
+                por los productivos (las variables exactas están listadas arriba en cada card).
+              </Text>
+              <Text style={styles.howtoLine}>
+                3. Guarda y haz click en &quot;Publish&quot; para regenerar el build.
+              </Text>
+              <Text style={styles.howtoLine}>
+                4. Vuelve a esta pantalla y pulsa el botón refrescar para validar.
+              </Text>
+              <View style={{ height: spacing.sm }} />
+              <Button
+                title="Refrescar estado"
+                variant="secondary"
+                onPress={onRefresh}
+                icon={<RefreshCw size={14} color={colors.brand.primary} />}
+                loading={refreshing}
+                testID="deploy-howto-refresh"
+              />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -236,7 +243,7 @@ const styles = StyleSheet.create({
   itemName: { flex: 1, ...typography.bodyBold, color: colors.text.primary, fontSize: 14 },
   modeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radii.sm, borderWidth: 1 },
   modeBadgeTxt: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
-  itemEnv: { color: colors.text.tertiary, fontSize: 10, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", marginBottom: 6 },
+  itemEnv: { color: colors.text.tertiary, fontSize: 10, fontFamily: "monospace", marginBottom: 6 },
   itemAdvice: { color: colors.text.primary, fontSize: 12, lineHeight: 17 },
   itemExtra: { color: colors.text.secondary, fontSize: 10, marginTop: 6, fontStyle: "italic" },
 
@@ -247,4 +254,20 @@ const styles = StyleSheet.create({
   },
   readyTitle: { ...typography.bodyBold, color: colors.status.green, fontSize: 14, marginBottom: 4 },
   readyText: { color: colors.text.primary, fontSize: 12, lineHeight: 17 },
+
+  // How-to box (cuando NO ready) — instrucciones inline + botón refrescar.
+  howtoBox: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1, borderColor: colors.brand.primaryBorder,
+    borderStyle: "dashed",
+    borderRadius: radii.md, padding: spacing.md,
+  },
+  howtoTitle: {
+    ...typography.bodyBold, color: colors.brand.primary,
+    fontSize: 14, marginBottom: spacing.sm,
+  },
+  howtoLine: {
+    color: colors.text.primary, fontSize: 12,
+    lineHeight: 18, marginBottom: 4,
+  },
 });

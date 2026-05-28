@@ -16,6 +16,7 @@ Cada respuesta incluye:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,6 +33,7 @@ from notifications import (
 
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(prefix="/retas", tags=["notificaciones-admin"])
+twilio_router = APIRouter(prefix="/admin/twilio", tags=["notificaciones-admin"])
 
 
 # -------------------- helpers --------------------
@@ -294,4 +296,29 @@ async def notify_lista_espera(reta_id: str, current=Depends(get_current_admin)):
         "total_targets": len(items),
         "configured": is_twilio_configured(),
         "items": items,
+    }
+
+
+# ============================================================================
+# Sandbox info — instrucciones para que el destinatario se una al bot Twilio.
+# ============================================================================
+@twilio_router.get("/sandbox-info")
+async def twilio_sandbox_info(current=Depends(get_current_admin)):
+    """Devuelve las instrucciones de unión al sandbox Twilio WhatsApp.
+
+    Pensado para que el organizador pueda mostrar a sus jugadores el código
+    de "join" en pantalla / WhatsApp Business si la cuenta es Sandbox.
+    """
+    from notifications import get_join_instructions, is_twilio_configured
+    sandbox_num = (
+        os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
+        .replace("whatsapp:", "")
+    )
+    join_code = os.getenv("TWILIO_JOIN_CODE", "").strip()
+    return {
+        "configured": is_twilio_configured(),
+        "is_sandbox": bool(join_code),
+        "sandbox_number": sandbox_num,
+        "join_code": join_code or None,
+        "instructions": get_join_instructions(),
     }

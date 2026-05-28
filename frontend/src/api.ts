@@ -622,6 +622,16 @@ export const api = {
       items: { nombre?: string; telefono?: string; status: string }[];
     }>(`/retas/${retaId}/notify/lista-espera`, { method: "POST", auth: true }),
 
+  /** Devuelve info del Sandbox Twilio (instrucciones de "join" para destinatarios). */
+  getTwilioSandboxInfo: () =>
+    request<{
+      configured: boolean;
+      is_sandbox: boolean;
+      sandbox_number: string;
+      join_code: string | null;
+      instructions: string;
+    }>("/admin/twilio/sandbox-info", { auth: true }),
+
   // ===== Deploy readiness (LIVE checklist) =====
   /** Verifica el estado de las credenciales productivas antes de publicar. */
   getDeployReadiness: () =>

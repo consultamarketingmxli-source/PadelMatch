@@ -1,0 +1,34 @@
+{
+  "summary": "Iter18 — Validación post-refinamientos UX/copy + bug fixes. 8/8 tests nuevos PASS + 50/50 regresión PASS (test_phase1 + test_phase234 + test_action_items_2_3). Cubre: (1-2) nuevo endpoint GET /api/admin/twilio/sandbox-info con auth y shape correctos, (3) match con mismo teléfono → 400 con copy 'mismo teléfono', (4) IDs iguales → 400, (5) ya emparejado → 409, (6) match exitoso → 200 + pareja_grupo_id. Verificación estática frontend: testIDs deploy-howto, deploy-howto-refresh, readyBox, twilio-mock-banner, twilio-sandbox-banner, sandbox-join-hint, notify-sandbox-warning, free-agent-singleton presentes; Platform import correctamente removido. No se pudo hacer Playwright porque el tunnel ngrok responde 502 (ERR_NGROK_334 infrastructural — no es bug del código).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_refinamientos.py",
+    "/app/test_reports/pytest/iter18_new.xml",
+    "/app/test_reports/pytest/iter18_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Bug fix de comparación de teléfonos correctamente aplicado en parejas_admin.py:175-178 — comparación post-loop con tel_a/tel_b explícitos.",
+    "Nuevo router twilio_router correctamente registrado en server.py:25,55 — endpoint expuesto como /api/admin/twilio/sandbox-info.",
+    "Endpoint sandbox-info devuelve shape consistente: is_sandbox = bool(join_code), confirmado por test_p1b.",
+    "Frontend: testIDs en su sitio: deploy-howto, deploy-howto-refresh, readyBox, twilio-mock-banner, twilio-sandbox-banner, sandbox-join-hint, notify-sandbox-warning, free-agent-singleton.",
+    "Platform import correctamente removido de deploy-readiness.tsx (grep no devuelve ningún match)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter18_refinamientos.py (nuevo, 8 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (58/58 = 8 nuevos + 50 regresión)",
+    "frontend": "static-only (tunnel 502 — todos los testIDs verificados por grep)"
+  },
+  "seed_data_creation": "Tests crean retas TEST_/TEST con fixture de cleanup (DELETE /api/retas/{id}). No quedan datos residuales.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Tunnel ngrok del preview puede estar 502 (ERR_NGROK_334) — usar test backend directamente al EXPO_PUBLIC_BACKEND_URL. Twilio cuenta REAL pero con límite 5 msgs/día (63038); para tests de notify-broadcast usar WHATSAPP_FORCE_MOCK=true en backend/.env. Acumulado: 156 (prev) + 8 (iter18 nuevos) = 164 tests verdes."
+}
