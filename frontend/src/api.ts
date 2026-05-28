@@ -10,6 +10,8 @@ export type FormatoScore = {
   unidad: "juegos" | "sets" | "minutos";
 };
 
+export type ModalidadRegistro = "individual" | "parejas_libres" | "parejas_mixtas";
+
 export type Reta = {
   id: string;
   organizador_id: string;
@@ -22,6 +24,8 @@ export type Reta = {
   modalidad_juego: "PUNTOS" | "TIEMPO";
   num_rondas: 5 | 6 | 7;
   formato_score?: FormatoScore;
+  modalidad_registro?: ModalidadRegistro;
+  permitir_individual_en_parejas?: boolean;
   url_slug: string;
   organizador_logo_url?: string | null;
   observaciones_publicas: string;
@@ -42,6 +46,11 @@ export type Inscripcion = {
   telefono: string;
   estatus_pago: "Pendiente" | "Aprobado" | "Expirado";
   bloqueado_hasta?: string | null;
+  // Soporte parejas (Fase 1)
+  pareja_grupo_id?: string | null;
+  pareja_nombre?: string | null;
+  pareja_telefono?: string | null;
+  es_free_agent?: boolean;
   creado_en: string;
 };
 

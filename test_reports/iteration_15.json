@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 1 — Modalidad de Registro (parejas foundation) backend tests: 12/12 PASS on the new test file + 164/164 PASS on existing regression suites (logic_modules, phase_a_elastico, phase_b_qr, phase_c_realtime, phase_c_supplement, phase_abd_http). Defaults, parejas_libres, parejas_mixtas, PUT round-trip, coherence validator (silently flips permitir_individual_en_parejas to False when modalidad='individual' on both POST and PUT), 422 on invalid/empty enums, and Inscripcion model defaults (pareja_grupo_id/nombre/telefono=None, es_free_agent=False) all verified end-to-end via the public preview URL. Created test retas cleaned up via DELETE in the fixture teardown — 0 leftovers in DB after run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_modalidad_registro.py",
+    "/app/test_reports/pytest/iter15_phase1.xml",
+    "/app/test_reports/pytest/iter15_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "models.py:99 — `_coherencia_modalidad` mutates a frozen-style validated model via `object.__setattr__`. Works correctly today because Pydantic v2 BaseModel is mutable by default, but if `model_config = ConfigDict(frozen=True)` is ever added, this will silently no-op. Consider returning a copy or assigning normally (`self.permitir_individual_en_parejas = False`) for clarity.",
+    "models.py:Inscripcion — `pareja_grupo_id` non-null and `es_free_agent=True` are described as 'mutually exclusive' in the comment but no validator enforces it. Should be enforced in Phase 2 when InscripcionCreate is touched.",
+    "routers/retas.py:124 update_reta — re-uses `RetaCreate` body; if a client PUTs without `modalidad_registro` it defaults to 'individual' silently overwriting a parejas_libres reta. Not a bug per spec (PUT is full replace), but worth noting for the admin UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_modalidad_registro.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "not tested (per request)"
+  },
+  "seed_data_creation": "No persistent seed data. Test fixture creates 5-7 TEST_ retas during run and DELETEs all of them in module teardown. Verified 0 TEST_ leftovers in DB post-run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 1 'Modalidad de Registro' is GREEN. Next phases (per code comments): Phase 2 will modify InscripcionCreate to accept pareja_grupo_id/nombre/telefono/es_free_agent + add the public checkout flow for parejas. Phase 4 will add the free-agents bolsa endpoints. When those land, extend /app/backend/tests/test_phase1_modalidad_registro.py with new test classes (pattern is already established). Public inscription endpoint is POST /api/public/retas/{reta_id}/checkout (uses reta_id, not slug). Admin login = POST /api/auth/login with {username,password} (NOT email key)."
+}

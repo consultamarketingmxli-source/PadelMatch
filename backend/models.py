@@ -76,10 +76,28 @@ class RetaCreate(BaseModel):
     modalidad_juego: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
     num_rondas: Literal[5, 6, 7] = 7
     formato_score: FormatoScore = Field(default_factory=_default_formato_score)
+    # Modalidad de Registro elástica (Fase 1 — Foundation parejas).
+    # individual       → flujo clásico round-robin individual (default, retrocompat).
+    # parejas_libres   → inscripción por duplas, sin restricción de género.
+    # parejas_mixtas   → inscripción por duplas, label/intent informativo
+    #                    (la validación de género la administra el organizador).
+    modalidad_registro: Literal["individual", "parejas_libres", "parejas_mixtas"] = "individual"
+    # Si la reta es de parejas y este flag es True, se permite que jugadores
+    # se inscriban SOLOS esperando que el organizador los empareje
+    # manualmente desde la "bolsa de free agents" (Fase 4).
+    permitir_individual_en_parejas: bool = False
     organizador_logo_url: Optional[str] = None
     observaciones_publicas: ObservacionesStr = ""
     latitud: Optional[float] = Field(default=None, ge=-90, le=90)
     longitud: Optional[float] = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _coherencia_modalidad(self) -> "RetaCreate":
+        # El toggle de free-agents solo aplica si la reta es de parejas.
+        if self.modalidad_registro == "individual" and self.permitir_individual_en_parejas:
+            # Lo silenciamos (no rompemos), simplemente lo apagamos.
+            object.__setattr__(self, "permitir_individual_en_parejas", False)
+        return self
 
 
 class Reta(BaseModel):
@@ -94,6 +112,10 @@ class Reta(BaseModel):
     modalidad_juego: Literal["PUNTOS", "TIEMPO"]
     num_rondas: int
     formato_score: FormatoScore = Field(default_factory=_default_formato_score)
+    # Modalidad de Registro — default "individual" para retrocompatibilidad
+    # de retas creadas antes de Fase 1.
+    modalidad_registro: Literal["individual", "parejas_libres", "parejas_mixtas"] = "individual"
+    permitir_individual_en_parejas: bool = False
     url_slug: str
     organizador_logo_url: Optional[str] = None
     observaciones_publicas: str = ""
@@ -125,6 +147,20 @@ class Inscripcion(BaseModel):
     telefono: str
     estatus_pago: Literal["Pendiente", "Aprobado", "Expirado"] = "Pendiente"
     bloqueado_hasta: Optional[str] = None  # ISO
+    # ===== Soporte parejas (Fase 1 — Foundation) =====
+    # UUID compartido por las DOS inscripciones que pertenecen a la misma
+    # dupla (creada al momento del checkout coordinado en Fase 2).
+    # Null para inscripciones individuales o free-agents sin emparejar.
+    pareja_grupo_id: Optional[str] = None
+    # Snapshot conveniente del nombre/teléfono del compañero. No es la
+    # fuente de verdad (cada miembro tiene su propia fila), pero acelera
+    # render en UI sin necesidad de hacer JOIN.
+    pareja_nombre: Optional[str] = None
+    pareja_telefono: Optional[str] = None
+    # True si el jugador se inscribió SOLO a una reta de parejas con la
+    # intención de ser emparejado por el organizador (bolsa free-agents).
+    # Mutuamente excluyente con `pareja_grupo_id` no-null.
+    es_free_agent: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 
 

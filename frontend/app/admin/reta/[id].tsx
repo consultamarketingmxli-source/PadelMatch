@@ -93,6 +93,14 @@ export default function RetaForm() {
   const [lng, setLng] = useState("");
   const [retaIdReal, setRetaIdReal] = useState<string | null>(null);
 
+  // Modalidad de Registro (Fase 1 — soporte parejas)
+  const [modalidadRegistro, setModalidadRegistro] = useState<
+    "individual" | "parejas_libres" | "parejas_mixtas"
+  >("individual");
+  const [permitirIndividualEnParejas, setPermitirIndividualEnParejas] = useState(false);
+
+  const esParejas = modalidadRegistro !== "individual";
+
   useEffect(() => {
     if (isNew) {
       const t = new Date();
@@ -128,6 +136,9 @@ export default function RetaForm() {
         setObs(r.observaciones_publicas);
         setLat(r.latitud != null ? String(r.latitud) : "");
         setLng(r.longitud != null ? String(r.longitud) : "");
+        // Modalidad de Registro (default individual si la reta es legacy)
+        setModalidadRegistro(r.modalidad_registro ?? "individual");
+        setPermitirIndividualEnParejas(!!r.permitir_individual_en_parejas);
       } catch (e: any) {
         Alert.alert("Error", e.message ?? "No se pudo cargar");
         router.back();
@@ -186,6 +197,8 @@ export default function RetaForm() {
       modalidad_juego: fsTipo, // espejo del FormatoScore.tipo
       num_rondas: rondas,
       formato_score: { tipo: fsTipo, valor: fsValor, unidad: fsUnidad },
+      modalidad_registro: modalidadRegistro,
+      permitir_individual_en_parejas: esParejas ? permitirIndividualEnParejas : false,
       organizador_logo_url: logoUrl || null,
       observaciones_publicas: obs.slice(0, 140),
       latitud: lat ? parseFloat(lat) : null,
@@ -369,6 +382,66 @@ export default function RetaForm() {
             Canchas estimadas: <Text style={{ fontWeight: "800", color: colors.text.primary }}>{canchasEstimadas}</Text>
             {"  ·  "}Cada cancha = 8 jugadores · remanente de 4 = 1 cancha mini.
           </Text>
+
+          {/* MODALIDAD DE REGISTRO — Fase 1: soporte parejas */}
+          <Text style={styles.sectionLabel}>MODALIDAD DE REGISTRO</Text>
+          <Text style={styles.hintText}>
+            Define cómo se inscriben los jugadores en esta reta.
+          </Text>
+          <View style={styles.segGroup}>
+            {(
+              [
+                { key: "individual", label: "Individual", hint: "Cada jugador se inscribe solo" },
+                { key: "parejas_libres", label: "Parejas libres", hint: "Inscripción por dupla" },
+                { key: "parejas_mixtas", label: "Parejas mixtas", hint: "Dupla mixta (validas tú)" },
+              ] as const
+            ).map((opt) => {
+              const active = modalidadRegistro === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  testID={`form-modreg-${opt.key}`}
+                  onPress={() => setModalidadRegistro(opt.key)}
+                  activeOpacity={0.7}
+                  style={[styles.seg, active && styles.segActive]}
+                >
+                  <Text style={[styles.segText, active && styles.segTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.subLabel}>
+            {modalidadRegistro === "individual"
+              ? "Round Robin individual clásico: todos juegan con todos cambiando de pareja."
+              : modalidadRegistro === "parejas_libres"
+                ? "Round Robin por duplas fijas. La pareja se inscribe y juega junta toda la reta."
+                : "Round Robin por duplas fijas. Tú validas que cada dupla sea mixta (Hombre + Mujer)."}
+          </Text>
+
+          {esParejas ? (
+            <TouchableOpacity
+              testID="form-permitir-indiv"
+              onPress={() => setPermitirIndividualEnParejas((v) => !v)}
+              activeOpacity={0.7}
+              style={[
+                styles.toggleRow,
+                permitirIndividualEnParejas && styles.toggleRowActive,
+              ]}
+            >
+              <View style={[styles.toggleBox, permitirIndividualEnParejas && styles.toggleBoxActive]}>
+                {permitirIndividualEnParejas ? (
+                  <Text style={styles.toggleCheck}>✓</Text>
+                ) : null}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Permitir inscripción individual</Text>
+                <Text style={styles.toggleSub}>
+                  Los jugadores pueden registrarse solos a la bolsa de libres; tú los emparejas
+                  manualmente desde el panel del admin.
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
 
           <Input label="Costo de inscripción $" value={costo} onChangeText={setCosto} keyboardType="decimal-pad" testID="form-costo" />
 
@@ -611,5 +684,52 @@ const styles = StyleSheet.create({
   segRecommended: { borderColor: colors.brand.primaryBorder, borderStyle: "dashed" },
   segText: { color: colors.text.primary, fontWeight: "700", fontSize: 13 },
   segTextActive: { color: colors.text.inverse },
+  toggleRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+    padding: spacing.md,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radii.md,
+    marginBottom: spacing.sm,
+  },
+  toggleRowActive: {
+    borderColor: colors.brand.primary,
+    backgroundColor: "#F0FDE7",
+  },
+  toggleBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.border.default,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  toggleBoxActive: {
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+  },
+  toggleCheck: {
+    color: colors.text.inverse,
+    fontWeight: "900",
+    fontSize: 13,
+    lineHeight: 14,
+  },
+  toggleTitle: {
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  toggleSub: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    lineHeight: 15,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
