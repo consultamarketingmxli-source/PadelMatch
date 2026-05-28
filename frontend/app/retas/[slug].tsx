@@ -157,8 +157,6 @@ export default function RetaDetailScreen() {
     setCuponState(null);
   };
 
-  const cuponAplicado = cuponState?.ok === true;
-
   const handleAction = async () => {
     if (!reta) return;
     if (!nombre.trim() || !telefono.trim()) {
