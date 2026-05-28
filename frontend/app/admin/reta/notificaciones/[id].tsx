@@ -293,6 +293,18 @@ export default function AdminNotificaciones() {
         {lastResult ? (
           <View style={styles.resultCard} testID="notify-last-result">
             <Text style={styles.resultTitle}>{lastResult.label}</Text>
+            {/* Banner especial: TODOS fallaron con código sandbox (63038 daily limit / 63015 no-join) */}
+            {lastResult.payload.failed > 0 && lastResult.payload.sent === 0 ? (
+              <View style={styles.sandboxWarn} testID="notify-sandbox-warning">
+                <AlertTriangle size={14} color={colors.status.amber} />
+                <Text style={styles.sandboxWarnTxt}>
+                  Todos los envíos fallaron. Probablemente alcanzaste el límite
+                  diario del Twilio Sandbox (5 mensajes/día) o el destinatario
+                  no envió &quot;join&quot; al bot. Configura Twilio productivo
+                  desde el panel de Deployment.
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.resultStats}>
               <StatPill
                 color={colors.status.green}
