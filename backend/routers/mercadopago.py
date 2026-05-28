@@ -79,6 +79,8 @@ class MpCheckoutResponse(BaseModel):
     preference_id: str
     init_point: str
     sandbox_init_point: Optional[str] = None
+    monto_total: Optional[float] = None  # Total cobrado (x2 si es dúo)
+    cupos_reservados: Optional[int] = None  # 1 o 2 según modalidad
 
 
 class MpPaymentStatus(BaseModel):
@@ -330,6 +332,8 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
         preference_id=pref["id"],
         init_point=pref["init_point"],
         sandbox_init_point=pref.get("sandbox_init_point"),
+        monto_total=float(costo_total),
+        cupos_reservados=int(cupos_reservados),
     )
 
 

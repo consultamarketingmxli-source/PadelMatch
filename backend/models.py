@@ -300,6 +300,8 @@ class StripeCheckoutResponse(BaseModel):
     inscripcion_id: str
     checkout_url: str
     session_id: str
+    monto_total: Optional[float] = None  # Total cobrado (x2 si es dúo).
+    cupos_reservados: Optional[int] = None  # 1 o 2 según modalidad.
 
 
 class PaymentStatus(BaseModel):

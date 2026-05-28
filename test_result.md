@@ -269,9 +269,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "UI Director de Arte v3 — Login Split 50/50 + Foto Pexels"
-    - "PadelPalaIcon v4 — geometría refinada"
-    - "Theme tokens v3 — border.hairline + shadows.premium"
+    - "Fase 2 - Checkout coordinado por DÚO (MP/Mock/Stripe)"
+    - "Fase 3 - Motor Round Robin de Parejas (rol + standings + exports)"
+    - "Fase 4 - Admin edge cases (free-agents/match, cancel dúo|solo, listar dúos)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -279,7 +279,13 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Hybrid Search Engine completo (backend + frontend). Validar:
+        Fase 2/3/4 "Retas de Parejas" COMPLETAS.
+        BACKEND: 25/25 tests phase234 + 12/12 phase1 + 44/44 regresión → 37/37 PASS final tras añadir monto_total/cupos_reservados a MP/Stripe response.
+        FRONTEND: /retas/{slug} con chip de modalidad, selector dúo/free-agent, inputs dinámicos de pareja, validación de teléfonos iguales, botón con monto x2.
+        Archivos clave nuevos: routers/parejas_admin.py, core/standings.py:compute_duo_standings, logica_torneo.py:generar_rol_multi_cancha_parejas.
+        Admin: GET /retas/{id}/free-agents, POST /free-agents/match, DELETE /inscripciones/{id}?modo=duo|solo, GET /duos.
+        Credenciales: admin@padelappretas.com / admin123.
+
         BACKEND:
         1. GET /api/public/retas/buscar (sin params) → lista todas las retas ordenadas por fecha_evento ASC.
         2. GET /api/public/retas/buscar?q=club → busca usando text index Mongo (case-insensitive, trim aplicado en server).

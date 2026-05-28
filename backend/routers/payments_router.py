@@ -149,6 +149,8 @@ async def checkout_stripe(reta_id: str, body: StripeCheckoutCreate, request: Req
         inscripcion_id=insc.id,
         checkout_url=session.url,
         session_id=session.session_id,
+        monto_total=float(costo_total),
+        cupos_reservados=int(cupos_reservados),
     )
 
 
