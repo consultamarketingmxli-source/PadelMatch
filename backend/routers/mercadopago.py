@@ -29,7 +29,12 @@ from auth import get_current_admin
 from core.circuit import with_timeout_and_retry
 from core.db import db, ADMIN_EMAIL_DEFAULT
 from core.email_service import email_service
-from core.helpers import crear_inscripcion_pendiente, promover_lista_espera
+from core.helpers import (
+    crear_inscripcion_free_agent_pendiente,
+    crear_inscripcion_pareja_pendiente,
+    crear_inscripcion_pendiente,
+    promover_lista_espera,
+)
 from core.concurrency import liberar_lugar
 from core.validators import NombreStr, PhoneStr
 
@@ -63,6 +68,10 @@ class MpCheckoutCreate(BaseModel):
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
     payer_email: Optional[str] = Field(default=None, max_length=120)
+    # Soporte parejas (Fase 2) — opcionales para retrocompat.
+    pareja_nombre: Optional[NombreStr] = None
+    pareja_telefono: Optional[PhoneStr] = None
+    es_free_agent: bool = False
 
 
 class MpCheckoutResponse(BaseModel):
@@ -201,7 +210,45 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
     access_token = admin["access_token_pasarela"]
     apply_fee = bool(admin.get("mp_apply_fee", False))
 
-    insc = await crear_inscripcion_pendiente(reta, body.nombre, body.telefono, minutos_bloqueo=15)
+    # ===== Detección de modalidad (Fase 2 — soporte parejas) =====
+    es_parejas = reta.get("modalidad_registro", "individual") != "individual"
+    permite_indiv = bool(reta.get("permitir_individual_en_parejas", False))
+    costo_unitario = float(reta["costo_inscripcion"])
+
+    # Branch en 3 vías: dúo / free-agent / individual.
+    if not es_parejas:
+        if body.pareja_nombre or body.es_free_agent:
+            raise HTTPException(
+                400, "Esta reta es individual; no admite pareja ni free-agent.",
+            )
+        insc = await crear_inscripcion_pendiente(
+            reta, body.nombre, body.telefono, minutos_bloqueo=15,
+        )
+        cupos_reservados = 1
+        costo_total = costo_unitario
+        partner_insc_id = None
+    elif body.pareja_nombre and body.pareja_telefono:
+        insc, insc_b = await crear_inscripcion_pareja_pendiente(
+            reta, body.nombre, body.telefono,
+            body.pareja_nombre, body.pareja_telefono,
+            minutos_bloqueo=15,
+        )
+        cupos_reservados = 2
+        costo_total = costo_unitario * 2
+        partner_insc_id = insc_b.id
+    elif body.es_free_agent and permite_indiv:
+        insc = await crear_inscripcion_free_agent_pendiente(
+            reta, body.nombre, body.telefono, minutos_bloqueo=15,
+        )
+        cupos_reservados = 1
+        costo_total = costo_unitario
+        partner_insc_id = None
+    else:
+        raise HTTPException(
+            400,
+            "Reta de parejas: debes inscribir a tu pareja o marcar "
+            "'inscribirme solo' (si el organizador lo permite).",
+        )
 
     # MP rechaza localhost en back_urls. Usamos APP_PUBLIC_URL si está definido.
     public_base = os.getenv("APP_PUBLIC_URL", "").rstrip("/")
@@ -219,7 +266,7 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
             lambda: mps.crear_preferencia(
                 access_token=access_token,
                 nombre_reta=reta["nombre"],
-                costo_mxn=float(reta["costo_inscripcion"]),
+                costo_mxn=costo_total,
                 success_url=success,
                 cancel_url=cancel,
                 notification_url=notification,
@@ -233,24 +280,30 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
         )
     except Exception as e:
         logger.exception("MP preference error tras reintentos")
-        # Rollback: borra inscripción y libera cupo atómico.
-        await db.inscripciones.delete_one({"id": insc.id})
-        await liberar_lugar(reta_id, 1)
+        # Rollback pareja-aware: borra inscripción(es) y libera cupo(s) atómicos.
+        if cupos_reservados == 2 and insc.pareja_grupo_id:
+            await db.inscripciones.delete_many({"pareja_grupo_id": insc.pareja_grupo_id})
+        else:
+            await db.inscripciones.delete_one({"id": insc.id})
+        await liberar_lugar(reta_id, cupos_reservados)
         raise HTTPException(
             502,
             "Estamos experimentando intermitencias con Mercado Pago. Tu lugar fue liberado, "
             "intenta de nuevo en unos segundos.",
         ) from e
 
-    # Persistimos tracking server-side
+    # Persistimos tracking server-side (incluye partner_insc_id para dúo)
     tx_doc = {
         "id": insc.id,  # reusamos id de inscripción como tracking principal
         "inscripcion_id": insc.id,
+        "partner_inscripcion_id": partner_insc_id,
+        "pareja_grupo_id": insc.pareja_grupo_id,
+        "cupos_reservados": cupos_reservados,
         "reta_id": reta_id,
         "jugador_id": insc.jugador_id,
         "telefono": insc.telefono,
         "payer_email": (body.payer_email or "").strip() or None,
-        "amount": float(reta["costo_inscripcion"]),
+        "amount": costo_total,
         "currency": "MXN",
         "preference_id": pref["id"],
         "init_point": pref["init_point"],
@@ -262,8 +315,12 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
     }
     await db.mp_transactions.insert_one(tx_doc)
 
-    await db.inscripciones.update_one(
-        {"id": insc.id},
+    # Asociamos preference_id a TODAS las inscripciones del grupo (1 o 2).
+    ids_a_actualizar = [insc.id]
+    if partner_insc_id:
+        ids_a_actualizar.append(partner_insc_id)
+    await db.inscripciones.update_many(
+        {"id": {"$in": ids_a_actualizar}},
         {"$set": {"mp_preference_id": pref["id"]}},
     )
 
@@ -278,7 +335,11 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
 
 # ===================== Webhook =====================
 async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_status: str) -> dict:
-    """Idempotente: actualiza inscripción + tracking según el estado del pago."""
+    """Idempotente y pareja-aware: actualiza inscripción(es) + tracking según pago.
+
+    Si la inscripción pertenece a un grupo de pareja, se confirman/cancelan
+    AMBAS al unísono, liberando 2 cupos en caso de rechazo.
+    """
     tx = await db.mp_transactions.find_one({"inscripcion_id": inscripcion_id}, {"_id": 0})
     if not tx:
         return {"matched": False}
@@ -287,11 +348,21 @@ async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_st
         return {"matched": True, "already": True, "payment_status": tx["payment_status"]}
 
     insc = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0})
+    cupos = int(tx.get("cupos_reservados") or 1)
+    grupo_id = (insc or {}).get("pareja_grupo_id") or tx.get("pareja_grupo_id")
+    if grupo_id:
+        ids = [
+            d["id"] async for d in db.inscripciones.find(
+                {"pareja_grupo_id": grupo_id}, {"id": 1, "_id": 0},
+            )
+        ]
+    else:
+        ids = [inscripcion_id]
 
     if mp_status == "approved":
-        if insc and insc["estatus_pago"] == "Pendiente":
-            await db.inscripciones.update_one(
-                {"id": inscripcion_id},
+        if ids:
+            await db.inscripciones.update_many(
+                {"id": {"$in": ids}, "estatus_pago": "Pendiente"},
                 {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
             )
         await db.mp_transactions.update_one(
@@ -317,19 +388,19 @@ async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_st
                 )
         except Exception:
             logger.exception("email confirmación falló (no bloquea pago)")
-        return {"matched": True, "estatus_pago": "Aprobado"}
+        return {"matched": True, "estatus_pago": "Aprobado", "afectadas": len(ids)}
 
     if mp_status in ("rejected", "cancelled", "refunded", "charged_back"):
         if insc and insc["estatus_pago"] == "Pendiente":
-            await db.inscripciones.delete_one({"id": inscripcion_id})
-            # Liberar cupo atómico ANTES de promover waitlist.
-            await liberar_lugar(tx["reta_id"], 1)
+            await db.inscripciones.delete_many({"id": {"$in": ids}})
+            # Liberar TODOS los cupos atómicos ANTES de promover waitlist.
+            await liberar_lugar(tx["reta_id"], cupos)
             await promover_lista_espera(tx["reta_id"])
         await db.mp_transactions.update_one(
             {"inscripcion_id": inscripcion_id},
             {"$set": {"payment_status": mp_status, "mp_payment_id": mp_payment_id}},
         )
-        return {"matched": True, "estatus_pago": mp_status}
+        return {"matched": True, "estatus_pago": mp_status, "afectadas": len(ids)}
 
     # pending / in_process / authorized — no cerramos aún
     await db.mp_transactions.update_one(

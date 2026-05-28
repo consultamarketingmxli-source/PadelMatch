@@ -146,6 +146,122 @@ async def crear_inscripcion_pendiente(
         raise
 
 
+async def crear_inscripcion_pareja_pendiente(
+    reta: dict,
+    nombre_a: str,
+    telefono_a: str,
+    nombre_b: str,
+    telefono_b: str,
+    minutos_bloqueo: int = 15,
+) -> tuple[Inscripcion, Inscripcion]:
+    """Crea DOS inscripciones Pendiente ligadas por `pareja_grupo_id`.
+
+    Reserva atómica de 2 cupos consecutivos. Si el segundo cupo no puede
+    reservarse (capacidad insuficiente o race condition), libera el primero
+    y retorna 409. Si el insert de cualquier inscripción falla, rollback
+    completo de los 2 cupos.
+
+    Returns:
+        (insc_a, insc_b) — ambas con el mismo `pareja_grupo_id`.
+    """
+    import uuid as _uuid
+
+    reta_id = reta["id"]
+    await expirar_pendientes_vencidas(reta_id)
+
+    # Defensa: no permitimos auto-emparejarse (mismo teléfono).
+    if telefono_a.strip() == telefono_b.strip():
+        raise HTTPException(400, "Tú y tu pareja no pueden tener el mismo teléfono.")
+
+    # 1) Reserva atómica del primer cupo.
+    reta1 = await reservar_lugar_atomico(reta_id)
+    if reta1 is None:
+        raise HTTPException(
+            409,
+            "Reta llena. Únanse a la lista de espera.",
+        )
+
+    # 2) Reserva atómica del segundo cupo. Si falla, libera el primero.
+    reta2 = await reservar_lugar_atomico(reta_id)
+    if reta2 is None:
+        await liberar_lugar(reta_id, 1)
+        raise HTTPException(
+            409,
+            "Solo queda 1 cupo disponible; esta reta requiere inscripción por pareja "
+            "(2 cupos). Intenten más tarde o inscriban a la pareja por separado vía "
+            "lista de espera.",
+        )
+
+    # 3) Crear ambas inscripciones con UUID compartido.
+    pareja_grupo_id = str(_uuid.uuid4())
+    bloqueado_hasta = (
+        datetime.now(timezone.utc) + timedelta(minutes=minutos_bloqueo)
+    ).isoformat()
+
+    try:
+        jugador_a_id = await upsert_jugador(nombre_a, telefono_a)
+        jugador_b_id = await upsert_jugador(nombre_b, telefono_b)
+
+        insc_a = Inscripcion(
+            reta_id=reta_id, jugador_id=jugador_a_id,
+            nombre=nombre_a, telefono=telefono_a,
+            estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
+            pareja_grupo_id=pareja_grupo_id,
+            pareja_nombre=nombre_b, pareja_telefono=telefono_b,
+        )
+        insc_b = Inscripcion(
+            reta_id=reta_id, jugador_id=jugador_b_id,
+            nombre=nombre_b, telefono=telefono_b,
+            estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
+            pareja_grupo_id=pareja_grupo_id,
+            pareja_nombre=nombre_a, pareja_telefono=telefono_a,
+        )
+        for insc in (insc_a, insc_b):
+            doc = insc.model_dump()
+            doc["creado_en"] = doc["creado_en"].isoformat()
+            await db.inscripciones.insert_one(doc)
+        return insc_a, insc_b
+    except Exception:
+        # Rollback total: libera ambos cupos y borra inscripciones parciales.
+        await db.inscripciones.delete_many({"pareja_grupo_id": pareja_grupo_id})
+        await liberar_lugar(reta_id, 2)
+        raise
+
+
+async def crear_inscripcion_free_agent_pendiente(
+    reta: dict, nombre: str, telefono: str, minutos_bloqueo: int = 15,
+) -> Inscripcion:
+    """Crea inscripción Pendiente como FREE-AGENT (espera emparejamiento manual).
+
+    Equivalente a `crear_inscripcion_pendiente` pero marca `es_free_agent=True`
+    para que el organizador la pueda emparejar luego desde la bolsa de libres.
+    """
+    reta_id = reta["id"]
+    await expirar_pendientes_vencidas(reta_id)
+
+    reta_actual = await reservar_lugar_atomico(reta_id)
+    if reta_actual is None:
+        raise HTTPException(409, "Reta llena. Únete a la lista de espera.")
+
+    try:
+        jugador_id = await upsert_jugador(nombre, telefono)
+        bloqueado_hasta = (
+            datetime.now(timezone.utc) + timedelta(minutes=minutos_bloqueo)
+        ).isoformat()
+        insc = Inscripcion(
+            reta_id=reta_id, jugador_id=jugador_id, nombre=nombre, telefono=telefono,
+            estatus_pago="Pendiente", bloqueado_hasta=bloqueado_hasta,
+            es_free_agent=True,
+        )
+        doc = insc.model_dump()
+        doc["creado_en"] = doc["creado_en"].isoformat()
+        await db.inscripciones.insert_one(doc)
+        return insc
+    except Exception:
+        await liberar_lugar(reta_id, 1)
+        raise
+
+
 async def promover_lista_espera(reta_id: str) -> Optional[Inscripcion]:
     """Promueve a la siguiente persona de la lista de espera.
 

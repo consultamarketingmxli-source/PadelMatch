@@ -137,6 +137,28 @@ class InscripcionCreate(BaseModel):
     reta_id: str
     nombre: NombreStr
     telefono: PhoneStr
+    # Soporte parejas (Fase 2). Opcionales para retrocompat con flujos
+    # individuales y free-agents.
+    pareja_nombre: Optional[NombreStr] = None
+    pareja_telefono: Optional[PhoneStr] = None
+    es_free_agent: bool = False
+
+    @model_validator(mode="after")
+    def _coherencia_pareja(self) -> "InscripcionCreate":
+        # No puedes ser free-agent Y enviar datos de pareja a la vez.
+        if self.es_free_agent and (self.pareja_nombre or self.pareja_telefono):
+            raise ValueError(
+                "Inconsistencia: 'es_free_agent' no admite datos de pareja."
+            )
+        # Si mandas un dato de pareja, debes mandar ambos.
+        if bool(self.pareja_nombre) ^ bool(self.pareja_telefono):
+            raise ValueError(
+                "Debes proporcionar nombre Y teléfono de la pareja, o ninguno."
+            )
+        # Auto-mejora: si llegan los datos, normalizamos espacios trim.
+        if self.pareja_nombre:
+            object.__setattr__(self, "pareja_nombre", self.pareja_nombre.strip())
+        return self
 
 
 class Inscripcion(BaseModel):

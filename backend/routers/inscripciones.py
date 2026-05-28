@@ -19,6 +19,8 @@ from core.concurrency import (
     siguiente_posicion_waitlist_atomica,
 )
 from core.helpers import (
+    crear_inscripcion_free_agent_pendiente,
+    crear_inscripcion_pareja_pendiente,
     crear_inscripcion_pendiente,
     promover_lista_espera,
 )
@@ -35,12 +37,23 @@ logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["inscripciones"])
 
 
+def _es_reta_de_parejas(reta: dict) -> bool:
+    return reta.get("modalidad_registro", "individual") != "individual"
+
+
 @router.post("/public/retas/{reta_id}/checkout", response_model=Inscripcion)
 async def checkout_mock(reta_id: str, body: InscripcionCreate):
     """Bloquea el lugar por 5 minutos mientras se procesa el pago (mock legacy).
-    Para Stripe real, usar /public/retas/{id}/checkout-stripe.
 
-    Race condition protegida via `crear_inscripcion_pendiente` (atómico).
+    Adaptado a Fase 2 (soporte parejas):
+      • Reta individual → flujo clásico (1 inscripción, 1 cupo).
+      • Reta parejas + body.pareja_nombre/telefono → 2 inscripciones ligadas
+        con `pareja_grupo_id`, 2 cupos, retorna la inscripción del jugador
+        principal (la del compañero queda en la misma transacción).
+      • Reta parejas + body.es_free_agent + permitir_individual_en_parejas →
+        1 inscripción marcada como free-agent.
+
+    Race condition protegida via reservas atómicas.
     """
     if body.reta_id != reta_id:
         raise HTTPException(400, "reta_id mismatch")
@@ -49,33 +62,86 @@ async def checkout_mock(reta_id: str, body: InscripcionCreate):
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
 
-    insc = await crear_inscripcion_pendiente(reta, body.nombre, body.telefono, minutos_bloqueo=5)
-    return insc
+    es_parejas = _es_reta_de_parejas(reta)
+    permite_indiv = bool(reta.get("permitir_individual_en_parejas", False))
+
+    # --- Reta INDIVIDUAL: rechazar datos de pareja ---
+    if not es_parejas:
+        if body.pareja_nombre or body.es_free_agent:
+            raise HTTPException(
+                400,
+                "Esta reta es individual; no admite inscripción con pareja ni free-agent.",
+            )
+        return await crear_inscripcion_pendiente(
+            reta, body.nombre, body.telefono, minutos_bloqueo=5,
+        )
+
+    # --- Reta de PAREJAS ---
+    # 1) Inscripción con pareja explícita.
+    if body.pareja_nombre and body.pareja_telefono:
+        insc_a, _insc_b = await crear_inscripcion_pareja_pendiente(
+            reta,
+            body.nombre, body.telefono,
+            body.pareja_nombre, body.pareja_telefono,
+            minutos_bloqueo=5,
+        )
+        return insc_a
+
+    # 2) Free-agent (solo si el organizador lo habilitó).
+    if body.es_free_agent:
+        if not permite_indiv:
+            raise HTTPException(
+                400,
+                "Esta reta requiere inscripción en pareja; el organizador no habilitó "
+                "la inscripción individual.",
+            )
+        return await crear_inscripcion_free_agent_pendiente(
+            reta, body.nombre, body.telefono, minutos_bloqueo=5,
+        )
+
+    # 3) Faltan datos.
+    raise HTTPException(
+        400,
+        "Esta reta es de parejas. Debes inscribir a tu pareja o marcar "
+        "'inscribirme solo' (si el organizador lo permite).",
+    )
 
 
 @router.post("/webhooks/payment")
 async def webhook_payment_mock(body: PaymentWebhook):
     """Endpoint mock para confirmar/cancelar pagos (compat con tests legacy).
-    Idempotente: si la inscripción ya no existe, retorna ok.
+    Idempotente y pareja-aware.
 
-    Race-safe: libera el cupo atómico cuando un pago se rechaza.
+    Si la inscripción pertenece a una pareja (tiene `pareja_grupo_id`), la
+    operación se aplica a AMBAS inscripciones simultáneamente.
     """
     insc = await db.inscripciones.find_one({"id": body.inscripcion_id})
     if not insc:
         return {"ok": True, "status": "already_processed"}
 
+    # Resolver el conjunto de inscripciones afectadas (1 individual, o 2 para pareja).
+    grupo_id = insc.get("pareja_grupo_id")
+    if grupo_id:
+        ids = [
+            d["id"] async for d in db.inscripciones.find(
+                {"pareja_grupo_id": grupo_id}, {"id": 1, "_id": 0},
+            )
+        ]
+    else:
+        ids = [body.inscripcion_id]
+
     if body.status == "approved":
-        await db.inscripciones.update_one(
-            {"id": body.inscripcion_id},
+        await db.inscripciones.update_many(
+            {"id": {"$in": ids}},
             {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
         )
-        return {"ok": True, "status": "Aprobado"}
+        return {"ok": True, "status": "Aprobado", "afectadas": len(ids)}
     else:
-        # Borramos la inscripción y liberamos el cupo atómico ANTES de promover.
-        await db.inscripciones.delete_one({"id": body.inscripcion_id})
-        await liberar_lugar(insc["reta_id"], 1)
+        await db.inscripciones.delete_many({"id": {"$in": ids}})
+        await liberar_lugar(insc["reta_id"], len(ids))
+        # Solo promovemos waitlist 1 vez (la próxima persona).
         await promover_lista_espera(insc["reta_id"])
-        return {"ok": True, "status": "Cancelado", "promoted": True}
+        return {"ok": True, "status": "Cancelado", "afectadas": len(ids), "promoted": True}
 
 
 @router.post("/public/retas/{reta_id}/waitlist", response_model=WaitlistEntry)
