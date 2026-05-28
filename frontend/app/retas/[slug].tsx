@@ -120,6 +120,10 @@ export default function RetaDetailScreen() {
   const esRetaParejas = modalidad !== "individual";
   const permiteIndiv = !!reta?.permitir_individual_en_parejas;
 
+  // Flag derivado de cuponState — se declara ANTES de costoTotal para evitar
+  // ReferenceError por TDZ de const.
+  const cuponAplicado = cuponState?.ok === true;
+
   // Costo total estimado a mostrar en el CTA según modo.
   const costoTotal = useMemo(() => {
     if (!reta) return 0;

@@ -64,6 +64,7 @@ class CancelResponse(BaseModel):
     libres_creadas: int = 0
     cupos_liberados: int = 0
     promoted: bool = False
+    cupones_reactivados: int = 0
 
 
 # -------------------- Helpers --------------------
@@ -241,7 +242,39 @@ async def cancelar_inscripcion(
         raise HTTPException(404, "Inscripción no encontrada en esta reta.")
 
     grupo_id = insc.get("pareja_grupo_id")
+
+    async def _reactivar_cupones_de(insc_ids: list[str]) -> int:
+        """Reactiva los cupones asociados a las inscripciones canceladas.
+        Devuelve el número de cupones reactivados (útil para auditoría)."""
+        if not insc_ids:
+            return 0
+        # Buscar inscripciones que tengan cupon_id (cualquiera de las ids).
+        rows = db.inscripciones.find(
+            {"id": {"$in": insc_ids}, "cupon_id": {"$ne": None}},
+            {"_id": 0, "id": 1, "cupon_id": 1},
+        )
+        cnt = 0
+        async for r in rows:
+            cid = r.get("cupon_id")
+            if not cid:
+                continue
+            res = await db.cupones.update_one(
+                {"id": cid, "inscripcion_id_uso": r["id"]},
+                {"$set": {
+                    "usado": False,
+                    "fecha_uso": None,
+                    "inscripcion_id_uso": None,
+                    "jugador_nombre_uso": None,
+                }},
+            )
+            if res.modified_count > 0:
+                cnt += 1
+        return cnt
+
     if not grupo_id or modo == "solo":
+        # Reactivar cupón ANTES de borrar (necesitamos los campos cupon_id).
+        cupones_reactivados = await _reactivar_cupones_de([insc_id])
+
         # Borrado individual.
         await db.inscripciones.delete_one({"id": insc_id})
         # Si era parte de un dúo, el compañero queda libre.
@@ -259,13 +292,17 @@ async def cancelar_inscripcion(
             free_creadas = res.modified_count
         await liberar_lugar(reta_id, 1)
         promoted = bool(await promover_lista_espera(reta_id))
-        return CancelResponse(
+        resp = CancelResponse(
             ok=True,
             eliminadas=1,
             libres_creadas=free_creadas,
             cupos_liberados=1,
             promoted=promoted,
         )
+        # Agregamos el flag manualmente al dict de respuesta para no romper schema.
+        d = resp.model_dump()
+        d["cupones_reactivados"] = cupones_reactivados
+        return d  # type: ignore[return-value]
 
     # modo == "duo" y hay grupo_id → borramos ambos miembros.
     ids = [
@@ -277,15 +314,19 @@ async def cancelar_inscripcion(
     if not ids:
         raise HTTPException(404, "No se encontraron miembros del dúo.")
 
+    cupones_reactivados = await _reactivar_cupones_de(ids)
     await db.inscripciones.delete_many({"id": {"$in": ids}})
     cupos = len(ids)
     await liberar_lugar(reta_id, cupos)
     # Solo promovemos 1 vez (la siguiente entrada de waitlist).
     promoted = bool(await promover_lista_espera(reta_id))
-    return CancelResponse(
+    resp = CancelResponse(
         ok=True,
         eliminadas=len(ids),
         libres_creadas=0,
         cupos_liberados=cupos,
         promoted=promoted,
     )
+    d = resp.model_dump()
+    d["cupones_reactivados"] = cupones_reactivados
+    return d  # type: ignore[return-value]

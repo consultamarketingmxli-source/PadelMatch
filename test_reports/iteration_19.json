@@ -1,0 +1,37 @@
+{
+  "summary": "Iter19 — Backend testing del MÓDULO DE MARKETING (Motor de Cupones). 14/14 tests nuevos PASS + 33/33 regresión PASS. Cubre CRUD admin (crear auto/manual, código duplicado 409, listar, borrar no-usado, reactivar manual) y los 8 EDGE CASES mandatorios: EC1 cross-organizer invalidation, EC2 reta llena no consume, EC3 cancelación reactiva cupón (cupones_reactivados=1 en respuesta de parejas_admin DELETE), EC4 race condition con 5 hilos paralelos (1 ganador, cupo=+1), EC5 reta exclusiva no aplica a otra, EC6 código case-insensitive, EC7 cupón ya usado → 400, EC8 DELETE cupón usado → 409. Race condition validada con 5 threads concurrentes vs el mismo código → exactamente 1 OK (200), resto 409/400, inscritos_lock=1.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cupones_marketing.py",
+    "/app/test_reports/pytest/iter19_cupones.xml",
+    "/app/test_reports/pytest/iter19_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "cupones.py:315-329 canje atómico bien implementado con find_one_and_update filtrando por {codigo, organizador_id, usado:false} — race-safe.",
+    "cupones.py:301-309 reservar_lugar_atomico se ejecuta ANTES de consumir el cupón; si reta está llena se hace HTTPException 409 SIN tocar el cupón. Verificado por EC2.",
+    "cupones.py:330-336 si el cupón ya fue redimido por race-loser, hace liberar_lugar y devuelve 409 — el cupo NO queda inflado. Verificado por EC4 (inscritos_lock final = 1, no 5).",
+    "parejas_admin.py:246-272 _reactivar_cupones_de helper correctamente busca inscripciones con cupon_id y restaura usado=false. Verificado por EC3.",
+    "parejas_admin.py:295-305 respuesta de cancelación incluye cupones_reactivados en el dict serializado (model_dump + asignación manual). Verificado.",
+    "models.py:352-363 _normalize_codigo aplica .strip().upper() — case insensitivity confirmada (EC6).",
+    "cupones.py:204-209 borrar cupón usado → 409 con mensaje claro (EC8).",
+    "Atomicidad MongoDB validada: 5 hilos concurrentes redimieron el mismo código → exactamente 1 obtuvo 200, los demás 409/400, sin race-double-insert."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cupones_marketing.py (nuevo, 14 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 nuevos + 33/33 regresión phase234+iter18)",
+    "frontend": "no testeado (testing_type=backend only)"
+  },
+  "seed_data_creation": "Fixtures crean retas TEST_RETA_* y cupones con descripcion TEST_*; ambos limpiados al final con cleanup activo (DELETE /api/retas + pymongo cleanup directo). EC2 inserta 4 inscripciones filler vía pymongo y luego se borran con la reta.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "El módulo de cupones está 100% verde end-to-end backend. Para EC1 cross-organizer no hay un segundo admin sembrado: el test fuerza el organizador_id distinto vía pymongo update directo sobre la colección cupones — alternativa válida porque la lógica del endpoint compara cupon.organizador_id == reta.organizador_id (cupones.py:248). Acumulado: 164 (prev) + 14 (iter19 nuevos) = 178 tests verdes."
+}
