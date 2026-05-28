@@ -63,6 +63,9 @@ export const colors = {
     default: "#E2E8F0",
     // Borde ultra fino v2 — slate-200/80 (CC = 80% alpha) — para tarjetas Club Pro.
     soft80: "rgba(226, 232, 240, 0.8)",
+    // v3 — Hairline (Director de Arte): slate-200/60 — borde casi imperceptible
+    // para tarjetas premium. Crea separación visual sin ruido.
+    hairline: "rgba(226, 232, 240, 0.6)",
     focus: "#059669",
     subtle: "#F1F5F9",
     strong: "#CBD5E1",
@@ -273,6 +276,21 @@ export const shadows = {
     },
     android: { elevation: 6 },
     web: { boxShadow: "0 6px 14px rgba(5,150,105,0.25)" } as any,
+    default: {},
+  }),
+  // v3 PREMIUM — Spec del Director de Arte:
+  //   shadow-[0_8px_30px_rgb(15,23,42,0.02)]
+  // Sombra ultra difuminada para look de software premium. Casi invisible
+  // pero crea profundidad espacial entre layers.
+  premium: Platform.select({
+    ios: {
+      shadowColor: "#0F172A",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.02,
+      shadowRadius: 30,
+    },
+    android: { elevation: 1 },
+    web: { boxShadow: "0 8px 30px rgba(15,23,42,0.02)" } as any,
     default: {},
   }),
 } as const;

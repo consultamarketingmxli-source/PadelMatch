@@ -1,0 +1,48 @@
+{
+  "summary": "Iter 13 — Validación visual + regresión completa para Director de Arte v3. BACKEND 48/48 PASS sin regresiones: POST /api/auth/login (200, 401 wrong pw), GET /api/retas (200 list), GET /api/retas/{id}/rol (200), PUT /api/retas/{id}/jugadores/orden (todos los casos: válido, duplicados→422, desconocidos→422, sin auth→401, con resultados→409), POST /api/retas/{id}/rol/preview (200 con is_preview=true, validaciones, padding placeholders, no muta DB), POST /api/retas/{id}/inscripciones/import (10 escenarios: válidos, duplicado case-insensitive, cupo_lleno, vacío→422, >1000→422, con resultados→409, sin auth, normalización, vacío post-trim), WS /api/ws/retas/{id} (handshake sin token→403, con token admin→hello). FRONTEND visual 6/6 PASS: (F1) login Split Grid renderiza correctamente — testID admin-login-screen, BrandLogo + 'PadelAppRetas' wordmark con AppRetas en emerald-600, tag '· PANEL ADMIN', formCard con borde hairline, foto Pexels (Wilson clay orange court id 29578736) cargada 1600x1600 en bloque inferior. (F2) email/password pre-rellenados con admin@padelappretas.com/admin123, click admin-login-btn navega a /admin correctamente y carga lista de retas (Test Tiempo 30, Reta MP Test, Reta Demo 8/8 100%). (F3) LinearGradient mask visible — fade slate-50 a transparente en top del bloque inferior. (F4) Cinta footer 'Tournament OS · 2026' con BrandLogo+BrandWordmark visible sobre la foto. (F5) /admin/reta/jugadores/{demoId} renderiza con 'Cancha 1' header (15 SVGs en pantalla incluyendo PadelPalaIcon emerald-600 — sin red screen, sin missing). (F6) /admin/reta/resultados/{demoId} renderiza Mesa de Control con 80 SVGs (CourtLinesBackground sutil opacity 0.02 al fondo, sin errores). NO se rompió ningún flujo previo.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Animated useNativeDriver",
+        "issue": "Warning persistente heredado: 'Animated: `useNativeDriver` is not supported because the native animated module is missing'. No relacionado con esta iteración (drag&drop). Reference: react-native-draggable-flatlist."
+      },
+      {
+        "component": "props.pointerEvents",
+        "issue": "Warning persistente heredado: 'props.pointerEvents is deprecated. Use style.pointerEvents'. No relacionado con esta iteración."
+      },
+      {
+        "component": "React 19 element.ref",
+        "issue": "Error de consola observado: 'Accessing element.ref was removed in React 19. ref is now a regular prop'. Es generado por una dependencia (probablemente react-native-web o un componente con ref forwarding antiguo). No bloquea funcionalidad pero conviene investigar en la próxima iteración técnica."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_smoke.py",
+    "/app/backend/tests/test_drag_drop_jugadores.py",
+    "/app/backend/tests/test_rol_preview.py",
+    "/app/backend/tests/test_import_inscripciones.py",
+    "/app/test_reports/pytest/iter13_regression.xml"
+  ],
+  "action_items": [
+    "Ninguna acción crítica. Cambios visuales validados, sin regresiones de backend ni frontend.",
+    "Opcional: investigar warning 'Accessing element.ref was removed in React 19' (probablemente una dep de react-native-web). Bajo impacto."
+  ],
+  "critical_code_review_comments": [
+    "login.tsx — composición Split Grid limpia: topBlock minHeight:500 + bottomBlock height:380 garantizan espacio en pantallas <600px. Imagen Pexels servida vía CDN comprimida (auto=compress, w=1600). LinearGradient mask con 3 stops (#F8FAFC → 85% → transparente) crea fusión limpia.",
+    "PadelPalaIcon.tsx — viewBox 0..64, geometría diamante con Path d= bien definido (top puntiagudo 32,4 + hombros 50,16 + cintura 49,36 + V cierre). Brazos Y-invertida separados (M 26,45 y M 38,45) con detalle de cierre opacity:0.6. Perforaciones: 4 anillos concéntricos (1+6+10+12=29) — radio máximo 11 respeta márgenes. Soporta filled prop.",
+    "theme.ts — nuevos tokens correctamente añadidos: colors.border.hairline (rgba 226,232,240,0.6) y shadows.premium (0_8px_30px rgba(15,23,42,0.02)). Mantiene retrocompat con border.default, border.soft80, shadows.card.",
+    "CourtLinesBackground.tsx — opacity default reducida a 0.02 (era 0.04). Marco + red dasharray + 4 líneas auxiliares. pointerEvents='none' correcto. Usa preserveAspectRatio xMidYMid meet.",
+    "Iconos y texto del login son completamente decorativos hasta el botón CTA (admin-login-btn). Auth flow no fue alterado."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (48/48 regresión)", "frontend": "100% (6/6 escenarios visuales)" },
+  "seed_data_creation": "Tests de regresión crean/limpian sus propias retas temporales (helper _create_reta + DELETE en finally). La reta demo 6012defc-... permanece intacta con 8/8 aprobados, sin orden manual ni resultados mutados.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 13 fue puramente visual (login Split Grid + PadelPalaIcon v4 + theme tokens hairline/premium + CourtLinesBackground opacity 0.02). Todos los endpoints backend siguen 100% funcionales. Reta demo 6012defc-2e74-4b14-abc2-313787a3d3e7 intacta con Mateo/Sofia/Andres/Camila/Diego/Valentina/Lucas/Isabella aprobados. Para próximas iteraciones reutilizar test_iter9_smoke.py + test_drag_drop_jugadores.py + test_rol_preview.py + test_import_inscripciones.py como suite de regresión rápida (48 tests, ~13s).",
+  "rca_of_issue": "N/A — no se encontraron bugs ni regresiones. Cambios visuales aplicados correctamente."
+}

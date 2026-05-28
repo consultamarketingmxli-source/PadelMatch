@@ -32,7 +32,7 @@ type Props = {
 };
 
 export function CourtLinesBackground({
-  opacity = 0.04,
+  opacity = 0.02,
   color = "#0F172A",
   visible = true,
   style,

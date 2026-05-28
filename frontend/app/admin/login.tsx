@@ -1,23 +1,29 @@
 /**
- * Login Admin — Composición Híbrida de Alto Impacto.
+ * Login Admin — Split Grid 50/50 (Director de Arte v3).
  *
- * Director de Arte spec:
- *   • Split-screen vertical (~50/50 en desktop, 60/40 en mobile).
- *   • Mitad SUPERIOR (Identidad Limpia): bg-slate-50, logo + wordmark "Padel" +
- *     "AppRetas" + formulario minimalista.
- *   • Mitad INFERIOR (Inmersión Fotográfica Real): foto de cancha de pádel
- *     panorámica premium 3/4 con cristales templados, césped texturizado y red.
- *   • TRANSICIÓN: degradado linear `bg-gradient-to-t from-transparent to-slate-50`
- *     en la unión — sin cortes toscos.
+ * Composición precisa según spec:
+ *
+ *   BLOQUE SUPERIOR (50% de la pantalla)
+ *     • bg-slate-50 (#F8FAFC)
+ *     • Isotipo PadelAppRetas centrado (`Padel` font-bold slate-900 +
+ *       `AppRetas` font-black text-emerald-600)
+ *     • Tagline minimalista
+ *     • Formulario express de acceso (Email + Password + CTA)
+ *
+ *   BLOQUE INFERIOR (50% de la pantalla)
+ *     • Foto real Pexels: pista de pádel naranja/arcilla con red negra
+ *       en primer plano y luz dorada (3/4 lateral).
+ *     • Gradient mask: from-slate-50 (top) → transparent (bottom) — 35%
+ *       de la altura del bloque, garantizando fusión limpia con el form.
+ *     • Cinta inferior "PadelAppRetas" sobre la foto.
  */
 import React, { useEffect, useState } from "react";
 import {
   Alert,
-  Dimensions,
   Image,
-  ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -33,18 +39,19 @@ import { BrandLogo } from "@/src/components/BrandLogo";
 import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
-// Foto panorámica premium de cancha de pádel vacía con paredes de cristal.
-// Fuente: Pexels CC0 — vista panorámica ideal para split layout.
-// Pesa <80 KB con compresión automática del CDN.
+/**
+ * Foto Pexels — Cancha de pádel arcilla/naranja a ras de suelo con red negra
+ * en primer plano y luz dorada. Composición 3/4 lateral. Se sirve via CDN
+ * comprimida (<120 KB para 1600w).
+ */
 const COURT_IMAGE_URI =
-  "https://images.pexels.com/photos/32474981/pexels-photo-32474981.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop&v=2";
+  "https://images.pexels.com/photos/29578736/pexels-photo-29578736.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
 
 export default function AdminLogin() {
   const router = useRouter();
   const [email, setEmail] = useState("admin@padelappretas.com");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
-  const { height: screenH } = Dimensions.get("window");
 
   useEffect(() => {
     (async () => {
@@ -66,144 +73,138 @@ export default function AdminLogin() {
   };
 
   return (
-    <View style={styles.root}>
-      {/* --- FONDO INFERIOR: foto cancha pádel (capa 0) --- */}
-      <View style={styles.bgWrap} pointerEvents="none">
-        <ImageBackground
-          source={{ uri: COURT_IMAGE_URI }}
-          style={styles.bgImage}
-          resizeMode="cover"
+    <View style={styles.root} testID="admin-login-screen">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          {/* Velo oscuro sutil para legibilidad si en futuro hay overlays */}
-          <View style={styles.bgVeil} />
-        </ImageBackground>
-        {/* Degradado de unión: from-transparent to-slate-50 */}
-        <LinearGradient
-          colors={["#F8FAFC", "rgba(248, 250, 252, 0.95)", "rgba(248, 250, 252, 0)"]}
-          locations={[0, 0.55, 1]}
-          style={styles.bgGradient}
-        />
-      </View>
+          {/* ================================================================
+              BLOQUE SUPERIOR — 50% pantalla, bg slate-50, formulario.
+              ================================================================ */}
+          <View style={styles.topBlock}>
+            <SafeAreaView edges={["top"]} style={styles.topInner}>
+              {/* Isotipo unificado: Logo + Wordmark Padel / AppRetas */}
+              <View style={styles.brandHeader}>
+                <BrandLogo size={56} />
+                <View style={styles.wordmarkSpace}>
+                  <BrandWordmark size="xl" />
+                </View>
+                <Text style={styles.tag}>· PANEL ADMIN</Text>
+              </View>
 
-      {/* --- CONTENIDO (capa 1) --- */}
-      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          {/* === HERO TOP (identidad limpia) === */}
-          <View style={styles.heroTop}>
-            <View style={styles.brandRow}>
-              <BrandLogo size={64} />
-            </View>
-            <View style={styles.wordmarkWrap}>
-              <BrandWordmark size="xl" />
-            </View>
-            <Text style={styles.tag}>· PANEL ADMIN</Text>
-            <Text style={styles.subtitle}>
-              Acceso para organizadores de clubes de pádel.
-            </Text>
+              {/* Formulario express */}
+              <View style={styles.formCard}>
+                <Text style={styles.formTitle}>Ingresa al panel</Text>
+                <Input
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  testID="admin-email-input"
+                />
+                <Input
+                  label="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  testID="admin-password-input"
+                />
+                <Button
+                  title="Entrar al panel"
+                  onPress={submit}
+                  loading={loading}
+                  testID="admin-login-btn"
+                />
+                <Text style={styles.hint}>
+                  Demo: admin@padelappretas.com / admin123
+                </Text>
+              </View>
+            </SafeAreaView>
           </View>
 
-          {/* === CARD FORM === */}
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Ingresa al panel</Text>
-            <Input
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              testID="admin-email-input"
+          {/* ================================================================
+              BLOQUE INFERIOR — 50% pantalla, foto inmersiva con mask.
+              ================================================================ */}
+          <View style={styles.bottomBlock} pointerEvents="box-none">
+            {/* Foto base */}
+            <Image
+              source={{ uri: COURT_IMAGE_URI }}
+              style={styles.heroPhoto}
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+              accessibilityLabel="Cancha de pádel"
             />
-            <Input
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              testID="admin-password-input"
+            {/* Gradient mask: top → slate-50 que se desvanece a transparente */}
+            <LinearGradient
+              colors={[
+                "#F8FAFC",
+                "rgba(248, 250, 252, 0.85)",
+                "rgba(248, 250, 252, 0)",
+              ]}
+              locations={[0, 0.35, 1]}
+              style={styles.bottomGradient}
+              pointerEvents="none"
             />
-            <Button
-              title="Entrar al panel"
-              onPress={submit}
-              loading={loading}
-              testID="admin-login-btn"
-            />
-            <Text style={styles.hint}>
-              Credenciales demo: admin@padelappretas.com / admin123
-            </Text>
-          </View>
 
-          {/* === FOOTER: brand line sobre la foto === */}
-          <View style={styles.footerBrand}>
-            <View style={styles.footerBadge}>
-              <BrandLogo size={20} />
-              <BrandWordmark size="sm" />
+            {/* Cinta inferior con isotipo */}
+            <View style={styles.footerStrip} pointerEvents="none">
+              <View style={styles.footerBadge}>
+                <BrandLogo size={18} />
+                <BrandWordmark size="sm" />
+              </View>
+              <Text style={styles.footerKicker}>· Tournament OS · 2026</Text>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg.app },
-  bgWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  bgImage: { flex: 1 },
-  bgVeil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.18)",
-  },
-  bgGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    // Cubre los primeros 60% de la pantalla con fade → la foto queda visible
-    // solo en el tramo inferior.
-    height: "60%",
-  },
-  safe: { flex: 1 },
+  root: { flex: 1, backgroundColor: "#F8FAFC" }, // slate-50
 
-  // ===== Hero superior =====
-  heroTop: {
-    paddingTop: spacing.xl,
+  // ===== BLOQUE SUPERIOR 50% =====
+  topBlock: {
+    minHeight: 500, // garantiza espacio para formulario en pantallas chicas
+    backgroundColor: "#F8FAFC",
     paddingHorizontal: spacing.lg,
-    alignItems: "center",
   },
-  brandRow: { marginBottom: spacing.sm },
-  wordmarkWrap: { marginVertical: spacing.xs },
+  topInner: {
+    flex: 1,
+    alignItems: "center",
+    paddingTop: spacing.lg,
+  },
+  brandHeader: {
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  wordmarkSpace: { marginTop: spacing.sm },
   tag: {
     ...typography.label,
     color: colors.brand.primary,
     fontSize: 10,
     marginTop: spacing.xs,
-  },
-  subtitle: {
-    ...typography.bodyRelaxed,
-    color: colors.text.secondary,
-    textAlign: "center",
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.md,
+    letterSpacing: 2,
   },
 
   // ===== Card formulario =====
   formCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
+    width: "100%",
+    maxWidth: 440,
     padding: spacing.lg,
     borderRadius: radii.xl,
-    backgroundColor: colors.bg.card,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: colors.border.soft80,
-    ...(shadows.card as object),
+    borderColor: colors.border.hairline, // slate-200/60 — Director Arte spec
+    ...(shadows.premium as object), // 0_8px_30px rgba(15,23,42,0.02)
   },
   formTitle: {
     ...typography.h3,
@@ -211,18 +212,39 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   hint: {
-    ...typography.caption,
+    ...typography.mono,
+    fontSize: 10,
     color: colors.text.muted,
     textAlign: "center",
     marginTop: spacing.md,
   },
 
-  // ===== Footer brand (sobre la foto) =====
-  footerBrand: {
-    flex: 1,
-    justifyContent: "flex-end",
+  // ===== BLOQUE INFERIOR 50% (foto) =====
+  bottomBlock: {
+    height: 380,
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroPhoto: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  bottomGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 160, // 42% del bloque — fusión limpia con el formulario
+  },
+  footerStrip: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: "center",
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg + 4,
+    gap: 6,
   },
   footerBadge: {
     flexDirection: "row",
@@ -231,8 +253,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
     borderWidth: 1,
-    borderColor: colors.border.soft80,
+    borderColor: colors.border.hairline,
+    ...(shadows.premium as object),
+  },
+  footerKicker: {
+    ...typography.label,
+    fontSize: 9,
+    color: "#FFFFFF",
+    letterSpacing: 2,
+    ...Platform.select({
+      web: { textShadow: "0px 1px 2px rgba(15,23,42,0.4)" } as any,
+      default: {
+        textShadowColor: "rgba(15,23,42,0.4)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+      },
+    }),
   },
 });

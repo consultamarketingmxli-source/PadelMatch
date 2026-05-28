@@ -269,8 +269,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Importación masiva de jugadores (paste CSV)"
-    - "Backend endpoint POST /api/retas/{id}/inscripciones/import"
+    - "UI Director de Arte v3 — Login Split 50/50 + Foto Pexels"
+    - "PadelPalaIcon v4 — geometría refinada"
+    - "Theme tokens v3 — border.hairline + shadows.premium"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

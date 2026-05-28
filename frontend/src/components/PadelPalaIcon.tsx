@@ -1,37 +1,36 @@
 /**
  * PadelPalaIcon — Isotipo vectorial profesional de pala de pádel.
  *
- * Fidelidad estilizada (Flat Design):
- *   • Forma lágrima moderna (LACRIMA): cabeza ancha + cuello que se afina hacia
- *     el puño, igual que palas pro tipo Bullpadel Vertex, Adidas Metalbone.
- *   • Marco con grosor sutil (perfil 38mm sintetizado): doble contorno.
- *   • Puente o "corazón" abierto justo arriba del puño — geometría triangular
- *     invertida (antivibrador / dilatación).
- *   • Patrón de agujeros (drilling pattern) concéntrico: 5 anillos de
- *     perforaciones calados, densidad mayor en el centro óptico (sweet spot).
- *   • Empuñadura con tapón redondeado al final (cap).
- *   • Trazo minimalista limpio — no fotografía, no render.
+ * Reingeniería de fidelidad geométrica (Director de Arte v4):
  *
- * Color por defecto: Slate 900 (#0F172A) — modo claro. Pasa "color" para
- * usarlo blanco sobre botones activos / fondos oscuros.
+ *   1. CABEZA — Silueta DIAMANTE/LÁGRIMA con hombros caídos y cintura
+ *      marcada. NO es un círculo: top puntiagudo, anchos máximos en
+ *      el ecuador (~y=24), cierre en V hacia la base.
  *
- * Diseño escala perfectamente entre 16px y 256px gracias a viewBox 64x64.
+ *   2. PUENTE Y-INVERTIDA (Dual Exoskeleton) — Dos brazos curvos que
+ *      SALEN POR DEBAJO de la cabeza (visualmente separados de ella),
+ *      con un espacio vacío central claramente visible. Forman una
+ *      "Y" invertida que conecta la base de la cabeza con el cuello del
+ *      grip.
+ *
+ *   3. PERFORACIONES — Cuadrícula concéntrica fina exclusivamente en
+ *      el sweet spot. Márgenes limpios.
+ *
+ *   4. GRIP — Cilindro recto + cap redondeado, alineado al centro del
+ *      bridge.
+ *
+ *   5. ESTILO — Líneas finas alto contraste (`stroke-2` auto-escala).
+ *      Soporta versión `filled` para CTA activos.
  */
 import React from "react";
-import Svg, {
-  Circle,
-  G,
-  Line,
-  Path,
-  Rect,
-} from "react-native-svg";
+import Svg, { Circle, G, Path, Rect } from "react-native-svg";
 
 type Props = {
   size?: number;
-  /** Color del trazo principal. Por defecto slate-900. */
   color?: string;
-  /** Stroke width override (auto-escala con el tamaño). */
   strokeWidth?: number;
+  /** Si true, rellena la cabeza con el color (versión activa). */
+  filled?: boolean;
 };
 
 const DEFAULT_COLOR = "#0F172A"; // slate-900
@@ -40,133 +39,142 @@ export function PadelPalaIcon({
   size = 24,
   color = DEFAULT_COLOR,
   strokeWidth,
+  filled = false,
 }: Props) {
-  // El stroke escala al tamaño para mantener proporciones uniformes a 24/48/96.
-  const sw = strokeWidth ?? (size <= 28 ? 2 : 1.8);
-  const fineSW = sw * 0.6;
+  const sw = strokeWidth ?? (size <= 24 ? 2 : size <= 48 ? 1.8 : 1.6);
+  const stroke = color;
+  const fillHead = filled ? color : "none";
+  // Cuando está filled, los agujeros y bridge se dibujan en blanco
+  // para destacar sobre el color sólido.
+  const accent = filled ? "#FFFFFF" : color;
 
   return (
     <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-      {/* --- MARCO EXTERIOR (perfil 38mm sintetizado: doble contorno) ---
-        Forma lágrima/diamante moderno: cabeza ovalada superior + cuello que
-        se cierra hacia el puño en una curva continua. */}
+      {/* =========================================================
+          CABEZA — Diamante / Lágrima aerodinámica.
+          • Top puntiagudo en (32, 3) con curva amplia hacia los hombros.
+          • Hombros caídos en y=14.
+          • Ancho máximo (cintura alta) en y=22.
+          • Cierre en V hacia (32, 44) con concavidad lateral.
+          ========================================================= */}
       <Path
         d="
-          M32 4
-          C 44 4  54 12  54 26
-          C 54 35  50 42  44 46
-          L 38 50
-          L 38 56
-          L 26 56
-          L 26 50
-          L 20 46
-          C 14 42  10 35  10 26
-          C 10 12  20 4  32 4 Z"
-        fill="none"
-        stroke={color}
+          M 32 4
+          C 40 4  47 9  50 16
+          C 52 22  52 30  49 36
+          L 42 43
+          L 38 45
+          L 26 45
+          L 22 43
+          L 15 36
+          C 12 30  12 22  14 16
+          C 17 9  24 4  32 4 Z"
+        fill={fillHead}
+        stroke={stroke}
         strokeWidth={sw}
         strokeLinejoin="round"
+        strokeLinecap="round"
       />
-      {/* Contorno interior — sugiere el grosor del marco (perfil 38mm). */}
+
+      {/* =========================================================
+          PUENTE Y-INVERTIDA (Dual Exoskeleton)
+          Dos brazos curvos calados que conectan la cabeza con el grip,
+          con un espacio central vacío visible (la Y invertida).
+          Salen claramente POR DEBAJO de la cabeza para no solaparse.
+          ========================================================= */}
+      {/* Brazo izquierdo (arco hacia adentro) */}
       <Path
         d="
-          M32 8
-          C 42 8  50 15  50 26
-          C 50 33  47 39  42 43
-          L 36 47
-          L 36 47.5
-          L 28 47.5
-          L 28 47
-          L 22 43
-          C 17 39  14 33  14 26
-          C 14 15  22 8  32 8 Z"
+          M 26 45
+          C 26.5 49  27.5 52  29.5 54.5
+          L 30 56"
         fill="none"
-        stroke={color}
-        strokeWidth={fineSW}
-        opacity={0.55}
+        stroke={accent}
+        strokeWidth={sw}
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
-
-      {/* --- PATRÓN DE AGUJEROS CONCÉNTRICO --- */}
-      {/* Sweet spot central (3 anillos densos) */}
-      <DrillingPattern color={color} sweetSpot />
-
-      {/* --- PUENTE / CORAZÓN ABIERTO (antivibrador geométrico) ---
-        Triángulo invertido justo arriba del puño — un detalle clave de las
-        palas pro. Va dentro del cuello, no en la cara. */}
+      {/* Brazo derecho (arco hacia adentro) */}
       <Path
         d="
-          M27 50.5
-          L 32 56
-          L 37 50.5 Z"
+          M 38 45
+          C 37.5 49  36.5 52  34.5 54.5
+          L 34 56"
         fill="none"
-        stroke={color}
-        strokeWidth={fineSW}
+        stroke={accent}
+        strokeWidth={sw}
+        strokeLinecap="round"
         strokeLinejoin="round"
-        opacity={0.85}
+      />
+      {/* Pequeño detalle: línea inferior cerrando el ojo de la Y */}
+      <Path
+        d="M 30 56 L 34 56"
+        stroke={accent}
+        strokeWidth={Math.max(0.8, sw * 0.55)}
+        strokeLinecap="round"
+        opacity={0.6}
       />
 
-      {/* --- EMPUÑADURA (grip) --- */}
+      {/* =========================================================
+          PERFORACIONES — sweet spot centrado en (32, 24).
+          ========================================================= */}
+      <DrillingPattern color={accent} cx={32} cy={24} filled={filled} />
+
+      {/* =========================================================
+          GRIP — Cilindro recto + cap redondeado.
+          ========================================================= */}
       <Rect
-        x={28}
-        y={56}
-        width={8}
-        height={5}
-        rx={1}
-        fill={color}
-        opacity={0.95}
+        x={28.5}
+        y={55}
+        width={7}
+        height={5.5}
+        rx={1.3}
+        fill={stroke}
       />
-      {/* Tapón del puño (cap) */}
       <Rect
-        x={26.5}
+        x={27}
         y={59.5}
-        width={11}
+        width={10}
         height={2.5}
         rx={1.25}
-        fill={color}
+        fill={stroke}
       />
     </Svg>
   );
 }
 
 /**
- * Patrón de agujeros calados — discos pequeños distribuidos en anillos
- * concéntricos sobre la cara de la pala. Usamos `fill` con el background del
- * SVG (transparente) y un stroke fino para sugerir agujeros perforados.
+ * Patrón de perforaciones — 4 anillos concéntricos en el sweet spot.
+ * Centro + 6 + 10 + 12 = 29 agujeros, todos dentro del core (radio máx 11)
+ * para mantener márgenes limpios como exige el spec.
  */
 function DrillingPattern({
   color,
-  sweetSpot = true,
+  cx,
+  cy,
+  filled = false,
 }: {
   color: string;
-  sweetSpot?: boolean;
+  cx: number;
+  cy: number;
+  filled?: boolean;
 }) {
-  // Coordenadas precomputadas relativas al centro (32, 26) — caras pala.
-  const cx = 32;
-  const cy = 26;
-  const holeR = 1.05;
-  const opAnillo = 0.45;
-  const opCentro = 0.7;
+  const holeR = 0.95;
+  const opCentro = filled ? 1 : 0.75;
+  const opAnillo = filled ? 0.95 : 0.5;
 
-  // Anillo 0 — centro (sweet spot)
   const ring0 = [{ x: 0, y: 0 }];
-
-  // Anillo 1 — 6 agujeros radio 5
   const ring1 = [...Array(6)].map((_, i) => {
     const ang = (i / 6) * Math.PI * 2;
-    return { x: Math.cos(ang) * 5, y: Math.sin(ang) * 5 };
+    return { x: Math.cos(ang) * 4, y: Math.sin(ang) * 4 };
   });
-
-  // Anillo 2 — 10 agujeros radio 10
   const ring2 = [...Array(10)].map((_, i) => {
-    const ang = (i / 10) * Math.PI * 2;
-    return { x: Math.cos(ang) * 10, y: Math.sin(ang) * 10 };
+    const ang = (i / 10) * Math.PI * 2 + Math.PI / 10;
+    return { x: Math.cos(ang) * 7.5, y: Math.sin(ang) * 7.5 };
   });
-
-  // Anillo 3 — 12 agujeros radio 14 (sólo los que caen dentro de la cara)
   const ring3 = [...Array(12)].map((_, i) => {
-    const ang = (i / 12) * Math.PI * 2 + Math.PI / 12;
-    return { x: Math.cos(ang) * 14, y: Math.sin(ang) * 14 };
+    const ang = (i / 12) * Math.PI * 2;
+    return { x: Math.cos(ang) * 11, y: Math.sin(ang) * 11 };
   });
 
   const render = (pts: { x: number; y: number }[], op: number) =>
@@ -183,10 +191,10 @@ function DrillingPattern({
 
   return (
     <G>
-      {sweetSpot && render(ring0, opCentro)}
-      {render(ring1, opCentro)}
+      {render(ring0, opCentro)}
+      {render(ring1, opCentro * 0.9)}
       {render(ring2, opAnillo)}
-      {render(ring3, opAnillo * 0.85)}
+      {render(ring3, opAnillo * 0.8)}
     </G>
   );
 }
