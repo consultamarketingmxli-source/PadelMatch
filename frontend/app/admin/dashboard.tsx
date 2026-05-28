@@ -16,6 +16,7 @@ import {
   BarChart3,
   Calendar,
   DollarSign,
+  Gift,
   Rocket,
   RotateCcw,
   TrendingUp,
@@ -103,6 +104,24 @@ export default function AdminDashboard() {
             <Text style={styles.mpTitle}>Estado de Deployment LIVE</Text>
             <Text style={styles.mpDesc}>
               Verifica credenciales productivas antes de publicar
+            </Text>
+          </View>
+          <Text style={styles.mpArrow}>›</Text>
+        </TouchableOpacity>
+
+        {/* Marketing & Premios — Cupones */}
+        <TouchableOpacity
+          onPress={() => router.push("/admin/marketing" as any)}
+          style={[styles.mpCard, { backgroundColor: "#FEF3C7", borderColor: "#F59E0B40" }]}
+          testID="marketing-banner"
+        >
+          <View style={[styles.mpIcon, { backgroundColor: "#F59E0B" }]}>
+            <Gift size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.mpTitle}>Marketing & Premios</Text>
+            <Text style={styles.mpDesc}>
+              Emite cupones de retas gratis y compártelos por WhatsApp
             </Text>
           </View>
           <Text style={styles.mpArrow}>›</Text>

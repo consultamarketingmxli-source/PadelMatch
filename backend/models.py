@@ -323,3 +323,88 @@ class StripeTransaction(BaseModel):
     currency: str
     payment_status: Literal["initiated", "paid", "failed", "expired"] = "initiated"
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
+
+
+# ============================================================================
+# MÓDULO DE MARKETING — Cupones de descuento (100% gratis).
+# ============================================================================
+# Cada cupón pertenece a UN organizador. Puede ser libre (sirve para cualquier
+# reta del organizador) o exclusivo de una reta concreta. Único uso.
+#
+# La atomicidad se garantiza con `findOneAndUpdate({codigo, usado:false}, ...)`
+# que en MongoDB toma lock per-document. Rollback explícito si falla la
+# reserva de cupo o la creación de la inscripción.
+
+CUPON_CODE_REGEX = r"^[A-Z0-9_-]{4,32}$"
+
+
+class CuponCreate(BaseModel):
+    """Body para crear un cupón desde el panel admin.
+
+    `codigo` es opcional: si se omite se genera uno aleatorio (PRO + 6 chars).
+    `reta_id_exclusivo` opcional: si se setea, solo sirve para esa reta del
+    mismo organizador.
+    """
+    codigo: Optional[str] = Field(default=None, max_length=32)
+    reta_id_exclusivo: Optional[str] = None
+    descripcion: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _normalize_codigo(self) -> "CuponCreate":
+        if self.codigo:
+            normalized = self.codigo.strip().upper().replace(" ", "_")
+            import re
+            if not re.match(CUPON_CODE_REGEX, normalized):
+                raise ValueError(
+                    "Código inválido. Usa 4-32 caracteres alfanuméricos, "
+                    "guion bajo o guion. Ejemplo: PROPLAYER100.",
+                )
+            object.__setattr__(self, "codigo", normalized)
+        return self
+
+
+class Cupon(BaseModel):
+    """Estado persistido de un cupón."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    codigo: str
+    organizador_id: str
+    descripcion: Optional[str] = None
+    reta_id_exclusivo: Optional[str] = None  # None = libre para cualquier reta del organizador
+    usado: bool = False
+    fecha_creacion: datetime = Field(default_factory=lambda: datetime.now())
+    fecha_uso: Optional[datetime] = None
+    inscripcion_id_uso: Optional[str] = None  # ID de la inscripción que lo redimió
+    jugador_nombre_uso: Optional[str] = None  # Snapshot para reporte
+    creado_por_admin_id: Optional[str] = None
+
+
+class CuponValidateRequest(BaseModel):
+    """Pre-validación del cupón antes del checkout (no consume)."""
+    codigo: str = Field(min_length=4, max_length=32)
+
+
+class CuponValidateResponse(BaseModel):
+    """Respuesta del endpoint de validación. Indica si es aplicable a la reta."""
+    valido: bool
+    razon: Optional[str] = None  # explicación si NO válido
+    cupon: Optional[dict] = None  # info pública (codigo, descripcion) si válido
+    monto_descuento: Optional[float] = None  # = costo_inscripcion completa
+    monto_final: Optional[float] = 0.0
+
+
+class CuponCheckoutRequest(BaseModel):
+    """Body del checkout con cupón (canje atómico, sin pasar por pasarela)."""
+    nombre: NombreStr
+    telefono: PhoneStr
+    codigo: str = Field(min_length=4, max_length=32)
+    # Soporte pareja en cupones a futuro — por ahora SOLO individual.
+    # pareja_nombre/telefono se ignoran intencionalmente (un cupón cubre 1 lugar).
+
+
+class CuponCheckoutResponse(BaseModel):
+    inscripcion_id: str
+    estatus_pago: Literal["Aprobado"]
+    monto_final: float = 0.0
+    cupon_codigo: str
+    cupon_id: str
+    creado_en: datetime = Field(default_factory=lambda: datetime.now())

@@ -16,6 +16,9 @@ from core.db import close as close_db
 from core.db import seed_admin_if_needed, setup_indexes
 from core.helpers import cronjob_expirar_bloqueos, cronjob_recordatorios
 from routers.admin_dashboard import router as admin_dashboard_router
+from routers.cupones import router_admin as cupones_admin_router
+from routers.cupones import router_cancel as cupones_cancel_router
+from routers.cupones import router_public as cupones_public_router
 from routers.deploy_readiness import router as deploy_readiness_router
 from routers.auth_router import router as auth_router
 from routers.export_router import router as export_router
@@ -46,6 +49,9 @@ api.include_router(auth_router)
 api.include_router(player_auth_router)
 api.include_router(retas_router)
 api.include_router(admin_dashboard_router)
+api.include_router(cupones_admin_router)
+api.include_router(cupones_cancel_router)
+api.include_router(cupones_public_router)
 api.include_router(deploy_readiness_router)
 api.include_router(public_router)
 api.include_router(inscripciones_router)

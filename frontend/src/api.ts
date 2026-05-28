@@ -194,6 +194,29 @@ export type MpPaymentStatusType = {
   mp_status?: string | null;
 };
 
+// ===== Marketing — Cupones =====
+export type Cupon = {
+  id: string;
+  codigo: string;
+  organizador_id: string;
+  descripcion?: string | null;
+  reta_id_exclusivo?: string | null;
+  usado: boolean;
+  fecha_creacion: string;
+  fecha_uso?: string | null;
+  inscripcion_id_uso?: string | null;
+  jugador_nombre_uso?: string | null;
+  creado_por_admin_id?: string | null;
+};
+
+export type CuponValidateResponse = {
+  valido: boolean;
+  razon?: string | null;
+  cupon?: { codigo: string; descripcion: string } | null;
+  monto_descuento?: number | null;
+  monto_final?: number | null;
+};
+
 export type PlayerInscripcion = {
   id: string;
   reta_id: string;
@@ -631,6 +654,48 @@ export const api = {
       join_code: string | null;
       instructions: string;
     }>("/admin/twilio/sandbox-info", { auth: true }),
+
+  // ===== MARKETING — Cupones de descuento =====
+  /** Crea un cupón. Si `codigo` se omite, genera uno automático tipo PRO-X9K2A7. */
+  crearCupon: (body: { codigo?: string; descripcion?: string; reta_id_exclusivo?: string }) =>
+    request<Cupon>("/admin/cupones", { method: "POST", body, auth: true }),
+  /** Lista cupones del organizador (filtros opc.). */
+  listarCupones: (params?: { reta_id?: string; solo_disponibles?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.reta_id) qs.set("reta_id", params.reta_id);
+    if (params?.solo_disponibles) qs.set("solo_disponibles", "true");
+    const url = `/admin/cupones${qs.toString() ? `?${qs.toString()}` : ""}`;
+    return request<Cupon[]>(url, { auth: true });
+  },
+  borrarCupon: (cuponId: string) =>
+    request<{ ok: boolean; deleted: number }>(`/admin/cupones/${cuponId}`, {
+      method: "DELETE", auth: true,
+    }),
+  reactivarCupon: (cuponId: string) =>
+    request<Cupon>(`/admin/cupones/${cuponId}/reactivar`, { method: "POST", auth: true }),
+  /** Pre-validación del cupón antes del canje (no consume). PÚBLICO. */
+  validarCupon: (retaId: string, codigo: string) =>
+    request<CuponValidateResponse>(`/public/retas/${retaId}/cupon/validar`, {
+      method: "POST", body: { codigo },
+    }),
+  /** Canje ATÓMICO. PÚBLICO. Crea inscripción Aprobada al instante. */
+  canjearCupon: (retaId: string, body: { nombre: string; telefono: string; codigo: string }) =>
+    request<{
+      inscripcion_id: string;
+      estatus_pago: "Aprobado";
+      monto_final: number;
+      cupon_codigo: string;
+      cupon_id: string;
+    }>(`/public/retas/${retaId}/cupon/canjear`, { method: "POST", body }),
+  /** Cancela inscripción INDIVIDUAL (reactiva cupón si aplica). Admin auth. */
+  cancelarInscripcionCuponAware: (inscId: string) =>
+    request<{
+      ok: boolean;
+      eliminadas: number;
+      cupos_liberados: number;
+      cupon_reactivado: boolean;
+      promoted: boolean;
+    }>(`/admin/inscripciones/${inscId}/cancelar`, { method: "DELETE", auth: true }),
 
   // ===== Deploy readiness (LIVE checklist) =====
   /** Verifica el estado de las credenciales productivas antes de publicar. */

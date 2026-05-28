@@ -40,6 +40,14 @@ export default function RetaDetailScreen() {
   const [verifyingPago, setVerifyingPago] = useState(false);
   const [regMode, setRegMode] = useState("solo"); // "solo" | "duo" | "free_agent"
 
+  // ===== Estado del cupón =====
+  // codigo: input del usuario, cuponState: resultado de la validación.
+  const [cuponCodigo, setCuponCodigo] = useState("");
+  const [cuponValidando, setCuponValidando] = useState(false);
+  const [cuponState, setCuponState] = useState<
+    null | { ok: true; codigo: string; descripcion: string } | { ok: false; razon: string }
+  >(null);
+
   const load = useCallback(async () => {
     if (!slug) return;
     setLoading(true);
@@ -115,11 +123,37 @@ export default function RetaDetailScreen() {
   // Costo total estimado a mostrar en el CTA según modo.
   const costoTotal = useMemo(() => {
     if (!reta) return 0;
+    if (cuponAplicado) return 0; // Cupón 100% → muestra $0
     return regMode === "duo" ? reta.costo_inscripcion * 2 : reta.costo_inscripcion;
-  }, [reta, regMode]);
+  }, [reta, regMode, cuponAplicado]);
 
   // Cupos requeridos según modo — informativo (no se usa en validación directa).
   // const cuposRequeridos = regMode === "duo" ? 2 : 1;
+
+  const handleValidateCupon = async () => {
+    if (!reta || !cuponCodigo.trim()) return;
+    setCuponValidando(true);
+    setCuponState(null);
+    try {
+      const res = await api.validarCupon(reta.id, cuponCodigo.trim().toUpperCase());
+      if (res.valido && res.cupon) {
+        setCuponState({ ok: true, codigo: res.cupon.codigo, descripcion: res.cupon.descripcion });
+      } else {
+        setCuponState({ ok: false, razon: res.razon ?? "Cupón no válido" });
+      }
+    } catch (e: any) {
+      setCuponState({ ok: false, razon: e.message ?? "Error validando cupón" });
+    } finally {
+      setCuponValidando(false);
+    }
+  };
+
+  const handleRemoveCupon = () => {
+    setCuponCodigo("");
+    setCuponState(null);
+  };
+
+  const cuponAplicado = cuponState?.ok === true;
 
   const handleAction = async () => {
     if (!reta) return;
@@ -127,6 +161,40 @@ export default function RetaDetailScreen() {
       Alert.alert("Datos incompletos", "Ingresa tu nombre y teléfono");
       return;
     }
+
+    // ===== FLUJO CUPÓN (express, sin pasarela) =====
+    if (cuponAplicado) {
+      setSubmitting(true);
+      try {
+        const res = await api.canjearCupon(reta.id, {
+          nombre: nombre.trim(),
+          telefono: telefono.trim(),
+          codigo: cuponState!.ok ? cuponState!.codigo : cuponCodigo.trim().toUpperCase(),
+        });
+        Alert.alert(
+          "¡Asistencia confirmada! 🎉",
+          `Tu lugar está reservado en ${reta.nombre}. ¡Nos vemos en cancha!`,
+        );
+        // Limpiamos y refrescamos.
+        setNombre("");
+        setTelefono("");
+        setCuponCodigo("");
+        setCuponState(null);
+        await load();
+      } catch (e: any) {
+        // Si la reta se llenó entre apply y canje, mostramos copy específico.
+        const msg = e.message ?? "No se pudo canjear";
+        Alert.alert("No se pudo canjear", msg);
+        // Si el cupón ya no es válido, limpiamos estado.
+        if (/redimid|llen|cupos|otro club|exclusiv/i.test(msg)) {
+          setCuponState({ ok: false, razon: msg });
+        }
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     // Validaciones específicas para dúo.
     if (regMode === "duo") {
       if (!parejaNombre.trim() || !parejaTelefono.trim()) {
@@ -230,9 +298,11 @@ export default function RetaDetailScreen() {
   // Texto del CTA (botón de pago) según modo.
   const ctaText = lleno
     ? "Unirse a Lista de Espera"
-    : regMode === "duo"
-      ? `Pagar $${costoTotal} (2 lugares) e Inscribir Pareja`
-      : `Pagar $${costoTotal} e Inscribirme`;
+    : cuponAplicado
+      ? "Confirmar Asistencia con Cupón Gratis 🎉"
+      : regMode === "duo"
+        ? `Pagar $${costoTotal} (2 lugares) e Inscribir Pareja`
+        : `Pagar $${costoTotal} e Inscribirme`;
 
   // Etiqueta de la modalidad de inscripción para chip informativo.
   const modalidadLabel = modalidad === "parejas_mixtas"
@@ -389,6 +459,71 @@ export default function RetaDetailScreen() {
                 <Text style={styles.duoHint}>
                   Reservamos 2 cupos y cobramos {`$${reta.costo_inscripcion} x 2 = $${reta.costo_inscripcion * 2}`} en un solo pago.
                 </Text>
+              </View>
+            ) : null}
+
+            {/* ===== Card de Cupón (Marketing) — bloqueado si reta llena ===== */}
+            {!lleno ? (
+              <View
+                style={[
+                  styles.cuponCard,
+                  cuponAplicado && styles.cuponCardApplied,
+                ]}
+                testID="cupon-card"
+              >
+                <Text style={styles.cuponLabel}>¿Tienes un cupón de regalo?</Text>
+                <View style={styles.cuponRow}>
+                  <View style={{ flex: 1 }}>
+                    <Input
+                      label=""
+                      placeholder="PROPLAYER100"
+                      value={cuponCodigo}
+                      onChangeText={(t) => {
+                        setCuponCodigo(t.toUpperCase());
+                        if (cuponState) setCuponState(null);
+                      }}
+                      autoCapitalize="characters"
+                      editable={!cuponAplicado && !submitting}
+                      testID="cupon-input"
+                    />
+                  </View>
+                  {cuponAplicado ? (
+                    <TouchableOpacity
+                      onPress={handleRemoveCupon}
+                      style={styles.cuponRemoveBtn}
+                      testID="cupon-remove-btn"
+                    >
+                      <Text style={styles.cuponRemoveTxt}>Quitar</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={handleValidateCupon}
+                      style={[styles.cuponApplyBtn, (!cuponCodigo.trim() || cuponValidando) && { opacity: 0.5 }]}
+                      disabled={!cuponCodigo.trim() || cuponValidando}
+                      testID="cupon-apply-btn"
+                    >
+                      {cuponValidando ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.cuponApplyTxt}>Aplicar</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {cuponState?.ok === true ? (
+                  <View style={styles.cuponSuccessRow} testID="cupon-success">
+                    <Text style={styles.cuponSuccessTxt}>
+                      ✓ Cupón <Text style={styles.cuponSuccessCode}>{cuponState.codigo}</Text> aplicado · {cuponState.descripcion}
+                    </Text>
+                    <Text style={styles.cuponSuccessAmount} testID="cupon-monto">
+                      $0
+                    </Text>
+                  </View>
+                ) : cuponState?.ok === false ? (
+                  <Text style={styles.cuponErrorTxt} testID="cupon-error">
+                    ⚠️ {cuponState.razon}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
 
@@ -569,5 +704,85 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: spacing.sm,
   },
+
+  // ===== Cupón card (Marketing) — Club Pro Clean v2 =====
+  cuponCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border.default, // border-slate-200
+    padding: spacing.sm + 2,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.bg.card,
+  },
+  cuponCardApplied: {
+    backgroundColor: "#ECFDF5",          // bg-emerald-50
+    borderColor: "#10B981" + "60",       // emerald-500 alpha
+  },
+  cuponLabel: {
+    ...typography.label,
+    color: colors.text.secondary,
+    fontSize: 11,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  cuponRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
+  cuponApplyBtn: {
+    backgroundColor: colors.brand.primary,
+    paddingHorizontal: 16,
+    height: 44,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 80,
+    marginBottom: 0,
+  },
+  cuponApplyTxt: { color: "#fff", fontWeight: "800", fontSize: 13 },
+  cuponRemoveBtn: {
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    backgroundColor: colors.bg.card,
+    marginBottom: 0,
+  },
+  cuponRemoveTxt: { color: colors.text.secondary, fontWeight: "700", fontSize: 12 },
+  cuponSuccessRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  cuponSuccessTxt: {
+    color: "#047857",                     // text-emerald-700
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+  },
+  cuponSuccessCode: {
+    fontFamily: "monospace",
+    fontSize: 13,
+    letterSpacing: 1,
+    fontWeight: "900",
+  },
+  cuponSuccessAmount: {
+    fontFamily: "monospace",
+    color: "#047857",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  cuponErrorTxt: {
+    color: colors.status.red,
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: "600",
+  },
+
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

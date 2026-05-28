@@ -37,6 +37,12 @@ async def setup_indexes() -> None:
     # OTPs de jugadores con auto-expiración por TTL (Mongo limpia automáticamente)
     await db.player_otps.create_index("expires_at_dt", expireAfterSeconds=0)
     await db.player_otps.create_index("telefono", unique=True)
+    # === Cupones (motor de marketing) ===
+    # codigo único en TODA la DB (no colisiona entre organizadores).
+    await db.cupones.create_index("codigo", unique=True)
+    await db.cupones.create_index("organizador_id")
+    await db.cupones.create_index([("organizador_id", ASCENDING), ("usado", ASCENDING)])
+    await db.cupones.create_index("reta_id_exclusivo")
 
     # === Motor de búsqueda híbrido ===
     # Índice de texto sobre nombre + club para búsqueda por coincidencia parcial.
