@@ -119,3 +119,92 @@ def compute_individual_standings(
         stats.values(),
         key=lambda e: (-e.partidos_ganados, -e.diferencia, -e.juegos_a_favor, e.nombre.lower()),
     )
+
+
+# =============================================================================
+# Tabla de Clasificación por DÚOS FIJOS (Fase 3 — Retas de Parejas).
+# =============================================================================
+def compute_duo_standings(
+    resultados: Iterable[dict],
+    ordenar: bool = True,
+) -> List[TablaPosicionEntry]:
+    """Calcula la tabla agrupando por dúo FIJO.
+
+    Cada partido es un enfrentamiento dúo vs dúo. Acumulamos PG/PE/PP/GF/GC
+    a nivel de dúo. El `nombre` resultante es "JugadorA & JugadorB"
+    (ordenado alfabéticamente para que la misma pareja produzca SIEMPRE
+    el mismo key independientemente de cómo lleguen pareja_a/pareja_b).
+
+    Args:
+        resultados: iterable de docs con pareja_a/pareja_b/score_a/score_b/ganador.
+        ordenar: si False, devuelve sin orden (útil en tests).
+
+    Returns:
+        Lista de TablaPosicionEntry. Una fila POR dúo (no por jugador).
+    """
+    stats: dict[tuple, TablaPosicionEntry] = {}
+
+    def _duo_key(par: list) -> tuple:
+        return tuple(sorted([str(n).strip() for n in par if str(n).strip()]))
+
+    def _duo_name(par: list) -> str:
+        return " & ".join(_duo_key(par))
+
+    for r in resultados:
+        pareja_a = r.get("pareja_a") or []
+        pareja_b = r.get("pareja_b") or []
+        if len(pareja_a) != 2 or len(pareja_b) != 2:
+            continue
+        try:
+            score_a = int(r.get("score_a", 0))
+            score_b = int(r.get("score_b", 0))
+        except (TypeError, ValueError):
+            continue
+        ganador = r.get("ganador", "")
+        empate = _is_empate(ganador, score_a, score_b)
+
+        ka = _duo_key(pareja_a)
+        kb = _duo_key(pareja_b)
+
+        if ka not in stats:
+            stats[ka] = TablaPosicionEntry(nombre=_duo_name(pareja_a))
+        if kb not in stats:
+            stats[kb] = TablaPosicionEntry(nombre=_duo_name(pareja_b))
+
+        ea = stats[ka]
+        eb = stats[kb]
+        ea.partidos_jugados += 1
+        eb.partidos_jugados += 1
+        ea.juegos_a_favor += score_a
+        ea.juegos_en_contra += score_b
+        eb.juegos_a_favor += score_b
+        eb.juegos_en_contra += score_a
+
+        if empate:
+            ea.partidos_empatados += 1
+            eb.partidos_empatados += 1
+            ea.puntos += 1
+            eb.puntos += 1
+        elif ganador == "A" or (ganador not in _VALID_GANADOR and score_a > score_b):
+            ea.partidos_ganados += 1
+            ea.puntos += 3
+            eb.partidos_perdidos += 1
+        else:
+            eb.partidos_ganados += 1
+            eb.puntos += 3
+            ea.partidos_perdidos += 1
+
+    for e in stats.values():
+        e.diferencia = e.juegos_a_favor - e.juegos_en_contra
+        e.efectividad = (
+            round(e.partidos_ganados / e.partidos_jugados * 100, 1)
+            if e.partidos_jugados else 0.0
+        )
+
+    if not ordenar:
+        return list(stats.values())
+
+    return sorted(
+        stats.values(),
+        key=lambda e: (-e.partidos_ganados, -e.diferencia, -e.juegos_a_favor, e.nombre.lower()),
+    )

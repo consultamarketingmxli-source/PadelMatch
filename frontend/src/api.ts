@@ -338,7 +338,17 @@ export const api = {
   getRetaBySlug: (slug: string) => request<Reta>(`/public/retas/${slug}`),
 
   // ===== inscripciones =====
-  checkout: (retaId: string, body: { reta_id: string; nombre: string; telefono: string }) =>
+  checkout: (
+    retaId: string,
+    body: {
+      reta_id: string;
+      nombre: string;
+      telefono: string;
+      pareja_nombre?: string;
+      pareja_telefono?: string;
+      es_free_agent?: boolean;
+    },
+  ) =>
     request<Inscripcion>(`/public/retas/${retaId}/checkout`, {
       method: "POST",
       body,
@@ -444,7 +454,15 @@ export const api = {
   // ===== stripe checkout =====
   checkoutStripe: (
     retaId: string,
-    body: { nombre: string; telefono: string; success_url?: string; cancel_url?: string },
+    body: {
+      nombre: string;
+      telefono: string;
+      success_url?: string;
+      cancel_url?: string;
+      pareja_nombre?: string;
+      pareja_telefono?: string;
+      es_free_agent?: boolean;
+    },
   ) =>
     request<StripeCheckoutResponse>(`/public/retas/${retaId}/checkout-stripe`, {
       method: "POST",
@@ -480,6 +498,9 @@ export const api = {
       payer_email?: string;
       success_url?: string;
       cancel_url?: string;
+      pareja_nombre?: string;
+      pareja_telefono?: string;
+      es_free_agent?: boolean;
     },
   ) =>
     request<MpCheckoutResponse>(`/public/retas/${retaId}/checkout-mercadopago`, {
@@ -550,6 +571,32 @@ export const api = {
   async exportClasificacionPdfUrl(retaId: string) {
     return _downloadBlob(`/retas/${retaId}/clasificacion/pdf`, "application/pdf");
   },
+
+  // ===== Fase 4 — Retas de Parejas (Admin) =====
+  /** Lista jugadores aprobados sin pareja (free-agents). */
+  listFreeAgents: (retaId: string) =>
+    request<{ inscripcion_id: string; nombre: string; telefono: string; creado_en?: string | null }[]>(
+      `/retas/${retaId}/free-agents`,
+      { auth: true },
+    ),
+  /** Lista todos los dúos con sus miembros (para Mesa de Control / UI). */
+  listDuos: (retaId: string) =>
+    request<{ pareja_grupo_id: string; miembros: { inscripcion_id: string; nombre: string; telefono: string; estatus_pago: string }[] }[]>(
+      `/retas/${retaId}/duos`,
+      { auth: true },
+    ),
+  /** Empareja DOS free-agents en un dúo nuevo. */
+  matchFreeAgents: (retaId: string, inscripcion_a_id: string, inscripcion_b_id: string) =>
+    request<{ ok: boolean; pareja_grupo_id: string; miembros: { inscripcion_id: string; nombre: string }[] }>(
+      `/retas/${retaId}/free-agents/match`,
+      { method: "POST", body: { inscripcion_a_id, inscripcion_b_id }, auth: true },
+    ),
+  /** Cancela inscripción. modo='duo' borra ambos, 'solo' deja al otro como free-agent. */
+  cancelInscripcionPareja: (retaId: string, insc_id: string, modo: "duo" | "solo" = "duo") =>
+    request<{ ok: boolean; eliminadas: number; libres_creadas: number; cupos_liberados: number; promoted: boolean }>(
+      `/retas/${retaId}/inscripciones/${insc_id}?modo=${modo}`,
+      { method: "DELETE", auth: true },
+    ),
 };
 
 /**

@@ -292,3 +292,141 @@ def generar_rol_multi_cancha(
         cancha_num += 1
 
     return resultado
+
+
+# =============================================================================
+# Round Robin de PAREJAS FIJAS (Fase 3 — Retas de Parejas).
+# =============================================================================
+# Para retas de parejas, los dúos son la UNIDAD competitiva: cada partido
+# enfrenta a 2 dúos completos (4 jugadores ya pre-agrupados).
+#
+# Matriz canónica para 4 dúos en 3 rondas (cada dúo juega contra los otros 3):
+#   R1: D1 vs D2, D3 vs D4
+#   R2: D1 vs D3, D2 vs D4
+#   R3: D1 vs D4, D2 vs D3
+# -----------------------------------------------------------------------------
+ROUND_ROBIN_4_DUOS: List[List[Tuple[int, int]]] = [
+    [(1, 2), (3, 4)],
+    [(1, 3), (2, 4)],
+    [(1, 4), (2, 3)],
+]
+
+# Para 2 dúos: solo hay 1 enfrentamiento posible. Si se piden más rondas
+# se repiten (rematch).
+ROUND_ROBIN_2_DUOS: List[List[Tuple[int, int]]] = [
+    [(1, 2)],
+]
+
+
+def generar_rol_filtrado_4_duos(
+    duos: List[List[str]],
+    num_rondas: int = 3,
+) -> List[Dict]:
+    """Rol Round Robin para 4 dúos (8 jugadores) en 1 cancha.
+
+    Args:
+        duos: lista de 4 dúos. Cada dúo es [nombreA, nombreB].
+        num_rondas: cuántas rondas generar. Por defecto 3 (todos vs todos).
+            Si se piden más, se ciclan en orden.
+
+    Retorna lista de rondas con `partidos` (pareja_a, pareja_b).
+    """
+    if len(duos) != 4:
+        raise ValueError(f"Se requieren exactamente 4 dúos, recibidos: {len(duos)}")
+    if not all(len(d) == 2 for d in duos):
+        raise ValueError("Cada dúo debe tener exactamente 2 jugadores.")
+    if num_rondas < 1:
+        raise ValueError("num_rondas debe ser >= 1")
+
+    rol = []
+    for idx in range(num_rondas):
+        ronda_def = ROUND_ROBIN_4_DUOS[idx % 3]
+        partidos = []
+        for (a, b) in ronda_def:
+            partidos.append({
+                "pareja_a": list(duos[a - 1]),
+                "pareja_b": list(duos[b - 1]),
+            })
+        rol.append({"ronda": idx + 1, "partidos": partidos})
+    return rol
+
+
+def generar_rol_filtrado_2_duos(
+    duos: List[List[str]],
+    num_rondas: int = 1,
+) -> List[Dict]:
+    """Rol para 2 dúos (4 jugadores) — solo 1 enfrentamiento posible.
+    Si num_rondas > 1, se hacen rematches (D1 vs D2 repetido)."""
+    if len(duos) != 2:
+        raise ValueError(f"Se requieren exactamente 2 dúos, recibidos: {len(duos)}")
+    rol = []
+    for idx in range(max(1, num_rondas)):
+        rol.append({"ronda": idx + 1, "partidos": [{
+            "pareja_a": list(duos[0]),
+            "pareja_b": list(duos[1]),
+        }]})
+    return rol
+
+
+def generar_rol_multi_cancha_parejas(
+    duos: List[List[str]],
+    canchas: int,
+    num_rondas: int = 3,
+) -> List[Dict]:
+    """Generador de rol Round Robin ELÁSTICO para PAREJAS FIJAS.
+
+    Asignación a canchas:
+      • Bloques de 4 dúos → 1 cancha de 8 jugadores (3 rondas RR perfecto).
+      • Bloque remanente de 2 dúos → 1 cancha de 4 jugadores (1+ rematches).
+
+    Combinaciones soportadas (D = #duos):
+        D=2  -> 1 cancha de 4    (1+ rondas con rematch)
+        D=4  -> 1 cancha de 8    (3 rondas perfectas)
+        D=6  -> 1 cancha de 8 + 1 cancha de 4
+        D=8  -> 2 canchas de 8
+        ...
+
+    Args:
+        duos: lista de N dúos (cada uno = [nombreA, nombreB]).
+        canchas: hint informativo (se ignora; se recalcula).
+        num_rondas: 1..7. Default 3 (RR perfecto de 4 dúos).
+
+    Retorna estructura idéntica a `generar_rol_multi_cancha`:
+        [{"cancha": int, "rondas": [{ronda, partidos: [...]}, ...]}, ...]
+    """
+    n = len(duos)
+    if n < 2:
+        raise ValueError(f"Se requieren al menos 2 dúos para una reta de parejas (recibidos: {n}).")
+
+    grupos_4d = n // 4   # cuántos bloques de 4 dúos
+    grupos_2d = (n % 4) // 2  # 0 o 1 bloque de 2 dúos remanente
+    sobrantes = n - (grupos_4d * 4 + grupos_2d * 2)
+    if sobrantes != 0:
+        raise ValueError(
+            f"Número de dúos inválido ({n}). Usa cantidades pares (2, 4, 6, 8, ...)."
+        )
+
+    resultado: List[Dict] = []
+    idx = 0
+    cancha_num = 1
+
+    # Asignar bloques de 4 dúos primero (cancha de 8 jugadores).
+    for _ in range(grupos_4d):
+        bloque = duos[idx:idx + 4]
+        rondas_4d = min(max(num_rondas, 1), 7)
+        rol = generar_rol_filtrado_4_duos(bloque, num_rondas=rondas_4d)
+        resultado.append({"cancha": cancha_num, "rondas": rol})
+        idx += 4
+        cancha_num += 1
+
+    # Asignar bloque de 2 dúos remanente (cancha de 4 jugadores).
+    for _ in range(grupos_2d):
+        bloque = duos[idx:idx + 2]
+        # Para 2 dúos solo hay 1 partido posible — toleramos rematches.
+        rondas_2d = min(max(num_rondas, 1), 3)
+        rol = generar_rol_filtrado_2_duos(bloque, num_rondas=rondas_2d)
+        resultado.append({"cancha": cancha_num, "rondas": rol})
+        idx += 2
+        cancha_num += 1
+
+    return resultado

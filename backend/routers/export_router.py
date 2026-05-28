@@ -21,11 +21,15 @@ from fastapi.responses import StreamingResponse
 
 from auth import get_current_admin
 from core.db import db
-from core.standings import compute_individual_standings
-from logica_torneo import generar_rol_multi_cancha
+from core.standings import compute_duo_standings, compute_individual_standings
+from logica_torneo import generar_rol_multi_cancha, generar_rol_multi_cancha_parejas
 from pdf_generator import generar_pdf_clasificacion
 
 router = APIRouter(prefix="/retas", tags=["export"])
+
+
+def _es_reta_de_parejas(reta: dict) -> bool:
+    return reta.get("modalidad_registro", "individual") != "individual"
 
 
 # ----------------------- helpers -----------------------
@@ -52,6 +56,21 @@ async def _get_jugadores_aprobados(reta_id: str, required: int) -> List[str]:
     return jugadores[:required]
 
 
+async def _get_duos_aprobados(reta_id: str) -> List[List[str]]:
+    """Agrupa inscripciones aprobadas por `pareja_grupo_id` y devuelve dúos completos."""
+    cursor = db.inscripciones.find(
+        {"reta_id": reta_id, "estatus_pago": "Aprobado"},
+        {"_id": 0, "nombre": 1, "pareja_grupo_id": 1, "creado_en": 1},
+    ).sort("creado_en", 1).limit(500)
+    grupos: dict[str, list[str]] = {}
+    async for ins in cursor:
+        gid = ins.get("pareja_grupo_id")
+        if not gid:
+            continue
+        grupos.setdefault(gid, []).append(ins["nombre"])
+    return [m for m in grupos.values() if len(m) == 2]
+
+
 def _safe_slug(reta: dict) -> str:
     return (reta.get("url_slug") or reta.get("id") or "reta").replace("/", "-")
 
@@ -76,15 +95,31 @@ def _csv_response(rows: List[List[str]], filename: str) -> StreamingResponse:
 
 @router.get("/{reta_id}/rol/csv")
 async def export_rol_csv(reta_id: str, current=Depends(get_current_admin)):
-    """CSV con el rol Round Robin completo (cancha, ronda, partido, parejas)."""
+    """CSV con el rol Round Robin completo (cancha, ronda, partido, parejas).
+    Detecta si la reta es de parejas y usa el motor de dúos fijos."""
     reta = await _get_reta_or_404(reta_id)
 
     num_rondas = reta.get("num_rondas", 7)
     canchas = reta.get("canchas_disponibles", 1)
-    required = canchas * 8
 
-    jugadores = await _get_jugadores_aprobados(reta_id, required)
-    rol_canchas = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
+    if _es_reta_de_parejas(reta):
+        duos = await _get_duos_aprobados(reta_id)
+        # Rellenamos con dúos placeholder si faltan, en pares.
+        max_jug = int(reta.get("max_jugadores") or canchas * 8)
+        max_duos = max_jug // 2
+        while len(duos) + 2 <= max_duos:
+            duos.append([f"Pareja {len(duos)+1}A", f"Pareja {len(duos)+1}B"])
+        if len(duos) < 2:
+            raise HTTPException(
+                409,
+                "Aún no hay dúos completos para exportar. Inscribe parejas o "
+                "empareja free-agents antes de exportar el rol.",
+            )
+        rol_canchas = generar_rol_multi_cancha_parejas(duos, canchas, num_rondas)
+    else:
+        required = canchas * 8
+        jugadores = await _get_jugadores_aprobados(reta_id, required)
+        rol_canchas = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
 
     rows: List[List[str]] = [[
         "Cancha", "Ronda", "Partido",
@@ -98,7 +133,6 @@ async def export_rol_csv(reta_id: str, current=Depends(get_current_admin)):
             for p_idx, partido in enumerate(ronda["partidos"], start=1):
                 pa = partido.get("pareja_a", ["—", "—"])
                 pb = partido.get("pareja_b", ["—", "—"])
-                # Defensa: padear a longitud 2 si vino corto.
                 pa = (pa + ["—", "—"])[:2]
                 pb = (pb + ["—", "—"])[:2]
                 rows.append([
@@ -124,10 +158,15 @@ async def export_clasificacion_csv(
 
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
-    standings = compute_individual_standings(docs, ordenar=True)
+    if _es_reta_de_parejas(reta):
+        standings = compute_duo_standings(docs, ordenar=True)
+        col_titulo = "Pareja"
+    else:
+        standings = compute_individual_standings(docs, ordenar=True)
+        col_titulo = "Jugador"
 
     rows: List[List[str]] = [[
-        "Posición", "Jugador",
+        "Posición", col_titulo,
         "PJ", "PG", "PE", "PP",
         "GF", "GC", "DG",
         "Efectividad (%)", "Puntos",
@@ -163,7 +202,10 @@ async def export_clasificacion_pdf(
 
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
-    standings_entries = compute_individual_standings(docs, ordenar=True)
+    if _es_reta_de_parejas(reta):
+        standings_entries = compute_duo_standings(docs, ordenar=True)
+    else:
+        standings_entries = compute_individual_standings(docs, ordenar=True)
 
     # Convertir a dicts simples para el generador (evita pydantic en pdf).
     standings = [

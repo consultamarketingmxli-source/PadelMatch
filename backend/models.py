@@ -280,6 +280,20 @@ class StripeCheckoutCreate(BaseModel):
     telefono: PhoneStr
     success_url: Optional[str] = None  # URL absoluta a la que volver tras pago OK
     cancel_url: Optional[str] = None
+    # Soporte parejas (Fase 2) — opcionales para retrocompat.
+    pareja_nombre: Optional[NombreStr] = None
+    pareja_telefono: Optional[PhoneStr] = None
+    es_free_agent: bool = False
+
+    @model_validator(mode="after")
+    def _coherencia_pareja_stripe(self) -> "StripeCheckoutCreate":
+        if self.es_free_agent and (self.pareja_nombre or self.pareja_telefono):
+            raise ValueError("'es_free_agent' no admite datos de pareja.")
+        if bool(self.pareja_nombre) ^ bool(self.pareja_telefono):
+            raise ValueError("Debes proporcionar nombre Y teléfono de la pareja, o ninguno.")
+        if self.pareja_nombre:
+            object.__setattr__(self, "pareja_nombre", self.pareja_nombre.strip())
+        return self
 
 
 class StripeCheckoutResponse(BaseModel):

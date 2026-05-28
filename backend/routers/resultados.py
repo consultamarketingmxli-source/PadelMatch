@@ -19,11 +19,48 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from auth import decode_token, get_current_admin
 from core.db import db
 from core.realtime import manager
-from core.standings import compute_individual_standings
-from logica_torneo import generar_rol_multi_cancha
+from core.standings import compute_duo_standings, compute_individual_standings
+from logica_torneo import generar_rol_multi_cancha, generar_rol_multi_cancha_parejas
 from models import PartidoResultado, PartidoResultadoCreate, TablaPosicionEntry
 
 router = APIRouter(tags=["resultados"])
+
+
+def _es_reta_de_parejas(reta: dict) -> bool:
+    return reta.get("modalidad_registro", "individual") != "individual"
+
+
+async def _resolver_duos_de_reta(reta: dict) -> List[List[str]]:
+    """Devuelve lista de dúos (lista de [nombreA, nombreB]) de una reta de parejas.
+
+    Agrupa inscripciones aprobadas por `pareja_grupo_id`. Las inscripciones
+    sin pareja (es_free_agent=True sin emparejar, o jugadores legacy sin
+    pareja_grupo_id) se omiten — el organizador debe emparejarlas en Fase 4
+    desde la bolsa de free-agents para que aparezcan en el rol.
+
+    El orden de los dúos respeta `creado_en` ASC del PRIMER miembro de cada
+    pareja, salvo que exista `reta.duos_orden_manual` consistente (futuro).
+    """
+    reta_id = reta["id"]
+    cursor = db.inscripciones.find(
+        {"reta_id": reta_id, "estatus_pago": "Aprobado"},
+        {"_id": 0, "id": 1, "nombre": 1, "pareja_grupo_id": 1, "creado_en": 1, "es_free_agent": 1},
+    ).sort("creado_en", 1).limit(500)
+
+    grupos: dict[str, list[dict]] = {}
+    async for ins in cursor:
+        gid = ins.get("pareja_grupo_id")
+        if not gid:
+            # Sin pareja_grupo_id → no participa en el rol de parejas todavía.
+            continue
+        grupos.setdefault(gid, []).append(ins)
+
+    # Solo aceptamos dúos COMPLETOS (exactamente 2 inscritos aprobados).
+    duos: List[List[str]] = []
+    for gid, miembros in grupos.items():
+        if len(miembros) == 2:
+            duos.append([miembros[0]["nombre"], miembros[1]["nombre"]])
+    return duos
 
 
 # ---------- helpers ----------
@@ -132,16 +169,61 @@ async def _resolver_jugadores_de_reta(reta: dict) -> List[str]:
 
 @router.get("/retas/{reta_id}/rol")
 async def get_rol(reta_id: str, current=Depends(get_current_admin)):
-    """Genera el rol Round Robin del torneo con los jugadores inscritos Aprobados.
-    Rellena con placeholders si faltan jugadores."""
+    """Genera el rol Round Robin del torneo.
+
+    • Reta INDIVIDUAL → Round Robin tradicional 8 jugadores/cancha.
+    • Reta de PAREJAS → Round Robin de dúos fijos (4 dúos = 8 jugadores/cancha).
+      Solo se incluyen dúos COMPLETOS (con `pareja_grupo_id` y 2 inscritos
+      aprobados). Free-agents sin emparejar se quedan fuera hasta que el
+      organizador los empareje (Fase 4).
+    """
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
 
     canchas = reta["canchas_disponibles"]
     num_rondas = reta.get("num_rondas", 7)
-    jugadores = await _resolver_jugadores_de_reta(reta)
 
+    if _es_reta_de_parejas(reta):
+        duos = await _resolver_duos_de_reta(reta)
+        # Si no hay aún suficientes dúos completos, devolvemos rol vacío con
+        # info útil para que el organizador sepa qué falta. No fallamos.
+        if len(duos) < 2:
+            return {
+                "reta_id": reta_id,
+                "canchas": canchas,
+                "num_rondas": num_rondas,
+                "jugadores": [p for d in duos for p in d],
+                "duos": duos,
+                "rol": [],
+                "es_parejas": True,
+                "mensaje": (
+                    "Aún no hay suficientes dúos completos para generar el rol. "
+                    "Empareja a los free-agents desde el panel de administración."
+                ),
+            }
+        # Rellenamos con dúos placeholder si faltan (mantener simetría visual).
+        max_jug = int(reta.get("max_jugadores") or canchas * 8)
+        max_duos = max_jug // 2
+        # Aseguramos un # par (mínimo 2 dúos) para que el generador no falle.
+        while len(duos) < max_duos and len(duos) % 2 != 0:
+            duos.append([f"Pareja {len(duos)+1}A", f"Pareja {len(duos)+1}B"])
+        # Si aún quedan plazas, rellenamos de a 2 dúos hasta cubrir.
+        while len(duos) + 2 <= max_duos:
+            duos.append([f"Pareja {len(duos)+1}A", f"Pareja {len(duos)+1}B"])
+        rol = generar_rol_multi_cancha_parejas(duos, canchas, num_rondas)
+        return {
+            "reta_id": reta_id,
+            "canchas": canchas,
+            "num_rondas": num_rondas,
+            "jugadores": [p for d in duos for p in d],
+            "duos": duos,
+            "rol": rol,
+            "es_parejas": True,
+        }
+
+    # Flujo INDIVIDUAL clásico.
+    jugadores = await _resolver_jugadores_de_reta(reta)
     rol = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
     return {
         "reta_id": reta_id,
@@ -149,6 +231,7 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
         "num_rondas": num_rondas,
         "jugadores": jugadores,
         "rol": rol,
+        "es_parejas": False,
     }
 
 
@@ -358,8 +441,14 @@ async def listar_resultados_admin(reta_id: str, current=Depends(get_current_admi
 
 # ---------- Tabla pública (compat) y clasificación con auth ----------
 async def _build_standings(reta_id: str) -> List[TablaPosicionEntry]:
+    """Construye standings. Si la reta es de parejas, agrupa por dúo fijo
+    ("PlayerA & PlayerB"). Si es individual, agrupa por jugador.
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
+    if reta and _es_reta_de_parejas(reta):
+        return compute_duo_standings(docs, ordenar=True)
     return compute_individual_standings(docs, ordenar=True)
 
 
