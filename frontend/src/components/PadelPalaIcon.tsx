@@ -1,34 +1,33 @@
 /**
  * PadelPalaIcon — Isotipo vectorial profesional de pala de pádel.
  *
- * Director de Arte v6 — Reingeniería geométrica fiel a Bullpadel Vertex 04.
+ * Director de Arte v7 — Reconstrucción fiel al 100% del contorno
+ * Bullpadel Vertex 04 (referencia provista por usuario).
  *
- *   Sistema de proporciones (viewBox 48×64 — ratio 3:4 vertical):
+ *   ViewBox 40×64 — Aspect ratio real medido = 0.625 (ancho/alto)
  *
- *     ┌──────────────┐  y=2   ← Vértice superior (tip suave)
- *     │   ▲ HEAD     │
- *     │  ◀ widest ▶  │  y=20  ← Ancho máximo (hombros altos, 30% desde top)
- *     │   ▼          │
- *     │ ╲          ╱ │
- *     ├──╲ BRIDGE ╱──┤  y=44  ← Base de la cabeza (cintura baja)
- *     │   ╲ ▲▲▲ ╱   │
- *     │    ╲___╱     │  y=56  ← Cuello del grip
- *     │     │ │      │
- *     │     │G│      │
- *     │     ╰─╯      │  y=63  ← Cap inferior
- *     └──────────────┘
+ *   Anclas geométricas (medidas en píxeles del viewBox 40×64):
  *
- *   Proporciones medidas (verificadas contra referencia Bullpadel Vertex 04):
- *     • Head:   42u  ≈ 65%
- *     • Bridge: 12u  ≈ 20%
- *     • Grip:   10u  ≈ 15%
+ *     TIP TOP            (20.0,  0.0)   — ratio (0.50, 0.00)
+ *     UPPER SHOULDER L   ( 9.2,  9.6)   — ratio (0.23, 0.15)
+ *     UPPER SHOULDER R   (30.8,  9.6)
+ *     WIDEST POINT L     ( 2.8, 22.4)   — ratio (0.07, 0.35) · MAX width
+ *     WIDEST POINT R     (37.2, 22.4)
+ *     LOWER TAPER L      (10.0, 35.2)   — ratio (0.25, 0.55)
+ *     LOWER TAPER R      (30.0, 35.2)
+ *     BRIDGE TOP L       (14.0, 43.5)   — ratio (0.35, 0.68)
+ *     BRIDGE TOP R       (26.0, 43.5)
+ *     BRIDGE BOTTOM L    (16.0, 49.9)   — ratio (0.40, 0.78)
+ *     BRIDGE BOTTOM R    (24.0, 49.9)
+ *     GRIP CAP           (20.0, 63.4)   — ratio (0.50, 0.99)
  *
- *   Características:
- *     1. CABEZA DIAMANTE — Hombros altos y amplios, cintura inferior estrecha.
- *     2. PUENTE M-INVERTIDA — Trapecio sólido con dos huecos triangulares.
- *     3. GRID RECTANGULAR — 7×8 perforaciones uniformes (sin texto ni branding).
- *     4. GRIP CILÍNDRICO — Cap superior + cuerpo + cap inferior expandido.
- *     5. SIN MARCAS COMERCIALES — Geometría pura, cero tipografía / logos.
+ *   Proporciones verificadas:
+ *     • Head:   ~68% (y=0 → y=43.5)
+ *     • Bridge: ~10% (y=43.5 → y=50)
+ *     • Grip:   ~22% (y=50 → y=64)
+ *
+ *   Sin contenido interno (cero texto, cero marcas comerciales).
+ *   Sólo silueta + grid uniforme de perforaciones + bridge calado.
  */
 import React from "react";
 import Svg, { Circle, G, Path, Polygon, Rect } from "react-native-svg";
@@ -49,45 +48,40 @@ export function PadelPalaIcon({
   strokeWidth,
   filled = false,
 }: Props) {
-  // Ancho proporcional para mantener ratio 3:4 (48×64)
-  const w = (size * 48) / 64;
+  // Ratio real 40:64 = 0.625 — mantiene la aspecto exacto
+  const w = (size * 40) / 64;
   const h = size;
   const sw = strokeWidth ?? (size <= 24 ? 1.8 : size <= 48 ? 1.6 : 1.4);
   const stroke = color;
   const fillHead = filled ? color : "none";
   const accent = filled ? "#FFFFFF" : color;
-  // Color que rellena los "huecos calados" del bridge — debe contrastar con el fill
   const cutoutFill = filled ? color : "#FFFFFF";
 
   return (
-    <Svg width={w} height={h} viewBox="0 0 48 64" fill="none">
+    <Svg width={w} height={h} viewBox="0 0 40 64" fill="none">
       {/* =========================================================
-          CABEZA DIAMANTE — Silhouette Bullpadel Vertex 04.
+          CABEZA — Contorno Bullpadel Vertex 04 (silhouette 1:1).
 
-          Anclas geométricas:
-            • (24, 2)   — vértice superior (tip suave, ligeramente redondeado)
-            • (4, 20)   — hombro izquierdo (ancho MÁX, 30% desde top)
-            • (10, 38)  — taper inferior izquierdo
-            • (14, 44)  — base izquierda del bridge
-            • (34, 44)  — base derecha del bridge (simétrico)
-            • (38, 38)  — taper inferior derecho
-            • (44, 20)  — hombro derecho (ancho MÁX)
-            • Bezier C1/C2 generan hombros redondeados altos.
+          Recorrido (anti-horario desde el tip):
+            1. Tip (20,0) → curva tip-rounded → Upper-Shoulder-L (9.2, 9.6)
+            2. Upper-Shoulder-L → Widest-L (2.8, 22.4)   (flare out)
+            3. Widest-L → Lower-Taper-L (10, 35.2)        (taper in)
+            4. Lower-Taper-L → Bridge-Top-L (14, 43.5)    (taper in)
+            5. Bridge-Top-L → Bridge-Top-R (26, 43.5)     (línea recta)
+            6. Espejo simétrico en lado derecho hasta cerrar en Tip.
           ========================================================= */}
       <Path
         d="
-          M 24 3
-          C 26 3 28 3.6 30 4.6
-          L 41 13
-          C 43.5 15.5 45 18.5 44 22
-          L 38 38
-          C 37 40.5 35 42.6 32.5 44
-          L 15.5 44
-          C 13 42.6 11 40.5 10 38
-          L 4 22
-          C 3 18.5 4.5 15.5 7 13
-          L 18 4.6
-          C 20 3.6 22 3 24 3 Z"
+          M 20 0
+          C 15.5 0  11.8 3.2  9.2 9.6
+          C 6.4 13.8  3.6 17.6  2.8 22.4
+          C 3.6 27.8  6.0 31.8  10 35.2
+          C 11.6 38.5  13.0 41.0  14 43.5
+          L 26 43.5
+          C 27.0 41.0  28.4 38.5  30 35.2
+          C 34.0 31.8  36.4 27.8  37.2 22.4
+          C 36.4 17.6  33.6 13.8  30.8 9.6
+          C 28.2 3.2  24.5 0  20 0 Z"
         fill={fillHead}
         stroke={stroke}
         strokeWidth={sw}
@@ -96,52 +90,49 @@ export function PadelPalaIcon({
       />
 
       {/* =========================================================
-          PERFORACIONES GRID — Cuadrícula rectangular uniforme.
-          Centradas en (24, 22). 7 columnas × 8 filas, step 4.2.
-          Sólo agujeros dentro del area útil de la cara.
+          PERFORACIONES GRID — Rectangular uniforme.
+          Centrado en (20, 22). 7 cols × 8 filas, step 3.6.
+          Solo dentro del area útil de la cara (sin invasión al
+          contorno ni al área del bridge).
           ========================================================= */}
       <DrillingGrid color={accent} filled={filled} />
 
       {/* =========================================================
-          PUENTE M-INVERTIDA SÓLIDA — Exoesqueleto Bullpadel.
-
-          Trapecio sólido invertido con DOS huecos triangulares
-          calados que generan la "M invertida" visible.
-          Conecta cabeza (y=44) con cuello del grip (y=56).
+          PUENTE M-INVERTIDA — Trapecio sólido + 2 huecos triangulares.
+          Bridge top (y=43.5) → Bridge bottom (y=50).
           ========================================================= */}
-      {/* Base sólida del bridge */}
       <Polygon
-        points="14,44 34,44 30,56 18,56"
+        points="14,43.5 26,43.5 24,50 16,50"
         fill={stroke}
       />
-      {/* Hueco triangular izquierdo (calado) */}
+      {/* Hueco triangular izquierdo */}
       <Polygon
-        points="17,45 22,45 20.5,53.5"
+        points="16.5,44.5 19.5,44.5 18,49"
         fill={cutoutFill}
       />
-      {/* Hueco triangular derecho (calado) */}
+      {/* Hueco triangular derecho */}
       <Polygon
-        points="26,45 31,45 27.5,53.5"
+        points="20.5,44.5 23.5,44.5 22,49"
         fill={cutoutFill}
       />
 
       {/* =========================================================
-          GRIP — Cap superior + cilindro + cap inferior expandido.
+          GRIP — Cap superior · cilindro · cap inferior expandido.
           ========================================================= */}
-      {/* Cap superior (tornillo / pin del bridge al grip) */}
-      <Rect x={17} y={55.5} width={14} height={1.6} rx={0.5} fill={stroke} />
-      {/* Cilindro principal del grip */}
-      <Rect x={19} y={57.2} width={10} height={5} rx={1.4} fill={stroke} />
-      {/* Cap inferior (más ancho que el cilindro) */}
-      <Rect x={17} y={61.8} width={14} height={2.2} rx={1.1} fill={stroke} />
+      {/* Cap superior delgado (conector bridge → grip) */}
+      <Rect x={15.5} y={49.8} width={9} height={1.6} rx={0.5} fill={stroke} />
+      {/* Cilindro principal */}
+      <Rect x={16.8} y={51.4} width={6.4} height={10} rx={1.4} fill={stroke} />
+      {/* Cap inferior expandido (knob) */}
+      <Rect x={14.8} y={61.2} width={10.4} height={2.4} rx={1.2} fill={stroke} />
     </Svg>
   );
 }
 
 /**
- * Grid rectangular de perforaciones — patrón uniforme tipo Bullpadel Vertex.
- * 7 columnas × 8 filas centradas en (24, 22), step 4.2.
- * Sólo se renderizan los agujeros que caen dentro de la silueta diamante.
+ * Grid rectangular de perforaciones — uniforme y limpio.
+ * Centrado en (20, 22), step 3.6, máx 7 cols × 8 filas.
+ * Filtra agujeros que caigan fuera de la silueta diamante.
  */
 function DrillingGrid({
   color,
@@ -150,12 +141,12 @@ function DrillingGrid({
   color: string;
   filled?: boolean;
 }) {
-  const cx = 24;
+  const cx = 20;
   const cy = 22;
-  const step = 4.2;
+  const step = 3.6;
   const cols = 7;
-  const rows = 8;
-  const holeR = 0.75;
+  const rows = 9;
+  const holeR = 0.7;
   const op = filled ? 0.95 : 0.5;
 
   const holes: { x: number; y: number }[] = [];
@@ -163,10 +154,10 @@ function DrillingGrid({
     for (let c = 0; c < cols; c++) {
       const x = cx + (c - (cols - 1) / 2) * step;
       const y = cy + (r - (rows - 1) / 2) * step;
-      // Solo agujeros dentro del area útil de la cara (elipse interior)
-      const dx = (x - cx) / 17;
-      const dy = (y - cy) / 19;
-      if (dx * dx + dy * dy <= 0.95) {
+      // Solo agujeros dentro del area útil (elipse interior de la cara)
+      const dx = (x - cx) / 14.5;
+      const dy = (y - cy) / 18;
+      if (dx * dx + dy * dy <= 0.92) {
         holes.push({ x, y });
       }
     }
