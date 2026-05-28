@@ -158,18 +158,54 @@ frontend:
           agent: "main"
           comment: "Toast minimalista con fade-in/translate, autodismiss a 2.5s, tres tonos: info/warn/error."
 
+  - task: "Live Leaderboard /retas/[slug]/tabla (Fase C)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/retas/[slug]/tabla.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "Bug crítico encontrado: usaba `ppStorage.getItem` (undefined). Corregido a `storage.secureGet<string>(ADMIN_TOKEN_KEY, '')` para usar SecureStore correctamente."
+        - working: true
+          agent: "main"
+          comment: "Fix aplicado. Empty state + indicador EN VIVO + WebSocket Conectado renderean correctamente. Pantalla carga sin errores en preview web."
+  - task: "Mesa de Control en Vivo /admin/reta/resultados/[id] (Fase C)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/reta/resultados/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "UI con tabs por cancha, ScoreStepper +/-, Empate (TIEMPO), banner ámbar de validación, guardar/eliminar. CourtLinesBackground + PadelPalaIcon aplicados."
+  - task: "Club Pro Clean v2 login split-screen /admin/login"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/login.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Hero layout con foto premium de raqueta + cancha, card login flotante, credenciales demo visibles. Screenshots mobile y desktop validan diseño."
+
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Hybrid Search endpoint /api/public/retas/buscar"
-    - "Hybrid Search UI integration in index.tsx"
-    - "SearchBar component with pulse animation"
-    - "Toast component cross-platform"
+    - "Live Leaderboard /retas/[slug]/tabla (Fase C)"
+    - "Mesa de Control en Vivo /admin/reta/resultados/[id] (Fase C)"
+    - "Club Pro Clean v2 login split-screen /admin/login"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

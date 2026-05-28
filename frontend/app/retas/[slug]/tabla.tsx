@@ -90,7 +90,7 @@ export default function TablaEnVivo() {
   useEffect(() => {
     if (!reta) return;
     (async () => {
-      const adminToken = await ppStorage.getItem(ADMIN_TOKEN_KEY);
+      const adminToken = await storage.secureGet<string>(ADMIN_TOKEN_KEY, "");
       const playerToken = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
 
       // Prioridad: si hay admin token, prueba ese (siempre concede acceso).

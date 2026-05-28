@@ -1,0 +1,54 @@
+{
+  "summary": "Iter9 smoke + E2E validation Fases A-D + 'Club Pro Clean v2' rediseño Elite. BACKEND: 12/12 smoke tests pass (auth, retas list, public buscar, public reta by slug, clasificacion admin+401, resultados list, rol, WS handshake con/sin token). FRONTEND CRÍTICO 1-4 todos PASS: (1) /admin/login renderiza split-screen con foto de cancha de padel, credenciales pre-rellenadas, botón 'ENTRAR AL PANEL' clickable navega a /admin OK. (2) /admin/reta/resultados/{id} 'Mesa de Control' muestra 7 rondas × 2 partidos = 14 partidos con parejas A/B, steppers +/-, botones 'Guardar marcador' OK. (3) /retas/{slug}/tabla con admin token NO produce 'ppStorage is not defined' — header 'Clasificación', badge verde 'EN VIVO', empty-state 'Aún no hay partidos jugados', badge 'Conectado en vivo' (testID ws-open) presentes. BUG FIX VALIDADO. (4) E2E broadcast WS confirmado: POST /resultados (200) en Mesa de Control → tabla en otra ventana se actualiza vía WebSocket sin recargar (Jugador 1,2: 9-5 +4 / Jugador 3,4: 5-9 -4). Issue menor detectado: console warning 'Unexpected text node: . A text node cannot be a child of a <View>' en Mesa de Control (15+ occurrencias).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/app/frontend/app/admin/reta/resultados/[id].tsx",
+        "issue": "Console error repetido (~15 veces al cargar la pantalla): 'Unexpected text node: . A text node cannot be a child of a <View>'. Es un whitespace/text node suelto entre JSX siblings dentro de un <View>. No bloquea funcionalidad pero ensucia logs y es un warning de React Native que debe limpiarse (probablemente entre <View>...{condicional}...   <View>... hay un espacio/salto que el render trata como text node).",
+        "testID": "n/a",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "props.pointerEvents deprecation",
+        "issue": "Warning repetido 'props.pointerEvents is deprecated. Use style.pointerEvents' — proviene probablemente de librerías externas (react-native-web/expo-router). Verificar en próxima actualización de expo si persiste; si proviene de código propio, migrar a style.pointerEvents. No bloquea."
+      },
+      {
+        "component": "Animated useNativeDriver",
+        "issue": "Warning 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' — esperado en web preview (no hay RCTAnimation). Si la animación se siente lenta en web, considerar `useNativeDriver: false` explícito o desactivar en plataforma web. No es bug en builds nativos."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_smoke.py",
+    "/app/test_reports/pytest/iter9_smoke.xml"
+  ],
+  "action_items": [
+    "(LOW) Limpiar el text-node warning en /app/frontend/app/admin/reta/resultados/[id].tsx — buscar whitespace literal entre componentes hijos de <View> o expresiones tipo `{cond && ' '}`/condicionales que renderizan strings.",
+    "(OPCIONAL) Considerar endpoint admin DELETE /api/retas/{id}/resultados/{result_id} o RESET para limpiar datos de prueba de la reta demo (el test E2E dejó un resultado 0-0 upserted; queda visible como partido jugado en clasificación con 0 GF/GC). Reseteable manualmente."
+  ],
+  "critical_code_review_comments": [
+    "Bug fix en /app/frontend/app/retas/[slug]/tabla.tsx línea 93 verificado: `storage.secureGet<string>(ADMIN_TOKEN_KEY, '')` resuelve correctamente y deja al fallback de teléfono cuando no hay token. WebSocket abre como admin (ws-open visible) y recibe broadcast (eventos 'result.upserted' → refetch clasificación).",
+    "useRetaRealtime + standings.py: ranking se actualiza correctamente vía broadcast al guardar resultado. WS handshake con token devuelve hello+role=admin. Conexión sin token rechazada 403. Lógica de seguridad correcta.",
+    "Testing reveló que el flujo Mesa de Control → Tabla en Vivo funciona end-to-end con un único WebSocket reta_id y eventos refrescando GET /clasificacion."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_smoke.py (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12)",
+    "frontend": "100% (4/4 critical flows)"
+  },
+  "seed_data_creation": "No se creó seed nueva. Se guardó un marcador de prueba (9-5) en reta demo y se sobrescribió a 0-0 al finalizar (queda 1 registro upserted con score 0-0, partido_jugado=true). Main agent puede limpiar manualmente vía Mongo o nuevo endpoint si lo requiere.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "El flujo E2E completo (login admin → mesa de control → guardar marcador → tabla en vivo recibe broadcast WS) está funcionando correctamente al cierre de iter9. El bug crítico 'ppStorage is not defined' en /app/frontend/app/retas/[slug]/tabla.tsx fue corregido en esta sesión y validado: la línea 93 ahora usa `storage.secureGet<string>(ADMIN_TOKEN_KEY, '')`. Backend con 12/12 smoke tests pasando. La única observación pendiente es un warning de React Native Web sobre text node huérfano dentro de un View en /admin/reta/resultados/[id].tsx (no bloquea pero ensucia consola).",
+  "rca_of_issue": "El bug original 'ppStorage is not defined' ocurría porque tabla.tsx referenciaba una variable inexistente. El admin_token se persiste vía SecureStore en api.ts:277 (storage.secureSet), por lo que la lectura correcta es storage.secureGet. El fix está aplicado y validado E2E."
+}
