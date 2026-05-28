@@ -420,7 +420,8 @@ export default function CapturarResultados() {
               })}
             </View>
           ))}
-        </ScrollView>      </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
