@@ -16,6 +16,7 @@ import {
   BarChart3,
   Calendar,
   DollarSign,
+  Rocket,
   RotateCcw,
   TrendingUp,
   Trophy,
@@ -84,6 +85,24 @@ export default function AdminDashboard() {
             <Text style={styles.mpTitle}>Mercado Pago</Text>
             <Text style={styles.mpDesc}>
               Vincula tu cuenta para recibir pagos · 100% del cobro a ti
+            </Text>
+          </View>
+          <Text style={styles.mpArrow}>›</Text>
+        </TouchableOpacity>
+
+        {/* Acceso a verificación pre-deployment (LIVE) */}
+        <TouchableOpacity
+          onPress={() => router.push("/admin/deploy-readiness" as any)}
+          style={[styles.mpCard, { backgroundColor: colors.brand.primarySoft, borderColor: colors.brand.primaryBorder }]}
+          testID="deploy-banner"
+        >
+          <View style={[styles.mpIcon, { backgroundColor: colors.brand.primary }]}>
+            <Rocket size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.mpTitle}>Estado de Deployment LIVE</Text>
+            <Text style={styles.mpDesc}>
+              Verifica credenciales productivas antes de publicar
             </Text>
           </View>
           <Text style={styles.mpArrow}>›</Text>

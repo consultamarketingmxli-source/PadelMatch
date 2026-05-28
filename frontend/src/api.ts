@@ -597,6 +597,48 @@ export const api = {
       `/retas/${retaId}/inscripciones/${insc_id}?modo=${modo}`,
       { method: "DELETE", auth: true },
     ),
+
+  // ===== Notificaciones admin (Twilio WhatsApp) =====
+  /** Manda recordatorio "2h antes" a todos los inscritos Aprobados. */
+  notifyRecordatorioGeneral: (retaId: string) =>
+    request<{
+      sent: number; mocked: number; failed: number; total_targets: number;
+      configured: boolean;
+      items: { nombre: string; telefono: string; status: string; needs_sandbox_join?: boolean }[];
+    }>(`/retas/${retaId}/notify/recordatorio-general`, { method: "POST", auth: true }),
+  /** Manda aviso "te toca AHORA" a los jugadores de una ronda concreta. */
+  notifyProximoPartido: (retaId: string, ronda: number, cancha?: number) => {
+    const qs = `ronda=${ronda}${cancha != null ? `&cancha=${cancha}` : ""}`;
+    return request<{
+      sent: number; mocked: number; failed: number; skipped: number;
+      total_targets: number; partidos_procesados: number; configured: boolean;
+      items: { nombre: string; telefono?: string; cancha?: number; ronda?: number; partido?: number; status: string }[];
+    }>(`/retas/${retaId}/notify/proximo-partido?${qs}`, { method: "POST", auth: true });
+  },
+  /** Manda link público a TODOS los que están en lista de espera. */
+  notifyListaEspera: (retaId: string) =>
+    request<{
+      sent: number; mocked: number; failed: number; total_targets: number; configured: boolean;
+      items: { nombre?: string; telefono?: string; status: string }[];
+    }>(`/retas/${retaId}/notify/lista-espera`, { method: "POST", auth: true }),
+
+  // ===== Deploy readiness (LIVE checklist) =====
+  /** Verifica el estado de las credenciales productivas antes de publicar. */
+  getDeployReadiness: () =>
+    request<{
+      overall: "ready" | "test" | "missing";
+      ready_for_live: boolean;
+      integrations: {
+        name: string; env: string; configured: boolean;
+        mode: "live" | "test" | "missing" | "unknown";
+        severity: "ok" | "warning" | "critical";
+        advice: string;
+        extra?: Record<string, unknown>;
+      }[];
+      missing_critical: string[];
+      summary: { total: number; ok: number; warning: number; critical: number };
+      doc_url: string;
+    }>("/admin/deploy-readiness", { auth: true }),
 };
 
 /**

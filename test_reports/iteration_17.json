@@ -1,0 +1,42 @@
+{
+  "summary": "Validación de Action Items #1-#3 en PadelappRetas OS. Backend: 13/13 nuevos tests PASS en test_action_items_2_3.py (notify endpoints + deploy-readiness). Regresión: 47/47 PASS (phase1 12 + phase234 25 + logic_modules 10). Twilio NO está en FORCE_MOCK: credenciales reales activas (sandbox), por lo que en preview los envíos pueden devolver status='error' con twilio_code=63038 (5 daily msg limit) o 63015 (no joined sandbox) — el endpoint maneja gracefully manteniendo status code 200 y conteos sent/mocked/failed consistentes. Frontend: verificación estática de testIDs y estructura JSX confirmada para todos los puntos (1-7, 15-16, 23-24). Browser automation no pudo cargar la preview de forma estable (tunnel ngrok intermitente — conflicto ERR_NGROK_334 por restarts), pero los testIDs y la lógica condicional (modalidadRegistro !== 'individual', empty hero, 7 integration cards, banner en dashboard) están todos presentes en código fuente. Se añadió testID 'parejas-empty-hero' y 'parejas-empty-back-btn' al empty state del screen parejas para futuros tests E2E.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/retas/{id}/notify/*", "issue": "Twilio cuenta sandbox alcanza límite 5 msg/día (63038). No es bug — backend reporta status='error' + twilio_code=63038 en items[]. Sugerencia: documentar limit en /admin/reta/notificaciones (UI ya muestra conteos)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_action_items_2_3.py",
+    "/app/test_reports/pytest/iter17_action_items.xml",
+    "/app/test_reports/pytest/iter17_regression.xml"
+  ],
+  "action_items": [
+    "Considerar agregar UI hint en /admin/reta/notificaciones cuando todos los envíos devuelven twilio_code=63038 (límite diario) o 63015 (sandbox sin join), explicando al admin que active Twilio production keys vía /admin/deploy-readiness.",
+    "Browser automation no pudo validar UI en vivo por inestabilidad del tunnel ngrok del preview (ERR_NGROK_334 tras restarts). Recomendado: validación visual manual en navegador local de /admin/dashboard, /admin/deploy-readiness, /admin/reta/notificaciones/{id} y /admin/reta/parejas/{id}.",
+    "Opcional: añadir testIDs faltantes en notif screen (botones de envío ya tienen testID; falta input/selector de cancha-chip-all/[c] que sí existe; falta etiqueta 'twilio-mock-banner' que sí existe). Todo OK."
+  ],
+  "critical_code_review_comments": [
+    "deploy_readiness.py: el modo de Stripe Webhook Secret puede ser sólo 'live'|'missing' (subset OK, validado).",
+    "notify_admin.py: validar que con 0 inscritos aprobados, recordatorio-general retorne total_targets=0 y arrays vacíos — no testeado explícitamente pero lógica respeta query filter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_action_items_2_3.py (NUEVO — 13 tests pasando)",
+    "/app/frontend/app/admin/reta/parejas/[id].tsx (minor: añadidos testIDs parejas-empty-hero y parejas-empty-back-btn)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 nuevos + 47/47 regresión)",
+    "frontend": "verificación estática 100% (testIDs y lógica condicional confirmados en código fuente); E2E playwright no completado por inestabilidad del tunnel del preview"
+  },
+  "seed_data_creation": "El test crea retas y inscripciones con prefijo TEST_/TEST y las elimina en teardown del módulo via DELETE /api/retas/{id}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Si futuras iteraciones requieren E2E UI, esperar a que el tunnel ngrok del preview esté estable (curl https://padel-tournament-hub-9.preview.emergentagent.com/ → 200) antes de invocar browser_automation. El tunnel quedó en estado ERR_NGROK_334 tras múltiples 'sudo supervisorctl restart expo'. Twilio sandbox limit (5 msg/día) seguirá causando twilio_code=63038 — los tests del lado backend ya toleran este caso (acepta 'sent'/'mocked'/'error').",
+  "rca_of_issue": "Browser automation no pudo cargar la preview por colisión de tunneles ngrok (ERR_NGROK_334: 'The endpoint https://padel-tournament-hub-9.ngrok.io is already online'). Causa: múltiples restart consecutivos de supervisor 'expo' dejaron tuneles colgados. Mitigación: pkill -f ngrok && sudo supervisorctl restart expo (o esperar ~5 min para timeout del tunel previo). El bundle web sí compila OK (verificado con curl que devolvió HTML completo de ~100KB) — no es bug del código."
+}

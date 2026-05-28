@@ -29,6 +29,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  MessageCircle,
   Share2,
   Shuffle,
   Trophy,
@@ -601,6 +602,18 @@ export default function RetaForm() {
                 icon={<BarChart2 size={14} color={colors.brand.primary} />}
                 testID="form-resultados-btn"
               />
+              {modalidadRegistro !== "individual" ? (
+                <>
+                  <View style={{ height: spacing.md }} />
+                  <Button
+                    title="Gestionar parejas y free-agents"
+                    onPress={() => router.push(`/admin/reta/parejas/${retaIdReal}` as any)}
+                    variant="secondary"
+                    icon={<Users size={14} color={colors.brand.primary} />}
+                    testID="form-parejas-btn"
+                  />
+                </>
+              ) : null}
               <View style={{ height: spacing.md }} />
               <Button
                 title="Generar Rol & Descargar PDF A4"
@@ -608,6 +621,14 @@ export default function RetaForm() {
                 variant="secondary"
                 icon={<ImageIcon size={14} color={colors.brand.primary} />}
                 testID="form-pdf-btn"
+              />
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Notificaciones WhatsApp (Twilio)"
+                onPress={() => router.push(`/admin/reta/notificaciones/${retaIdReal}` as any)}
+                variant="secondary"
+                icon={<MessageCircle size={14} color={colors.brand.primary} />}
+                testID="form-notify-btn"
               />
               <View style={{ height: spacing.md }} />
               <Button
