@@ -43,6 +43,7 @@ import {
 } from "lucide-react-native";
 
 import { Reta, TablaPosicionEntry, api } from "@/src/api";
+import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { useRetaRealtime } from "@/src/hooks/useRetaRealtime";
 import { storage } from "@/src/utils/storage";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -192,6 +193,7 @@ export default function TablaEnVivo() {
   // ============== Tabla principal ==============
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <CourtLinesBackground opacity={0.035} />
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="tabla-back">
           <ArrowLeft size={18} color={colors.text.primary} />

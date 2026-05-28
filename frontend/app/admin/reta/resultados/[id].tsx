@@ -41,10 +41,11 @@ import {
   Minus,
   Plus,
   Trash2,
-  Trophy,
 } from "lucide-react-native";
 
 import { PartidoResultado, Reta, RolResponse, api } from "@/src/api";
+import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
+import { PadelPalaIcon } from "@/src/components/PadelPalaIcon";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Slot = {
@@ -258,6 +259,7 @@ export default function CapturarResultados() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <CourtLinesBackground opacity={0.035} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
@@ -307,7 +309,7 @@ export default function CapturarResultados() {
           {canchaData.rondas.map((ronda) => (
             <View key={ronda.ronda} style={styles.rondaWrap}>
               <View style={styles.rondaHead}>
-                <Trophy size={14} color={colors.brand.primary} />
+                <PadelPalaIcon size={14} color={colors.brand.primary} />
                 <Text style={styles.rondaTitle}>RONDA {ronda.ronda}</Text>
               </View>
               {ronda.partidos.map((p, idx) => {
@@ -418,8 +420,7 @@ export default function CapturarResultados() {
               })}
             </View>
           ))}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </ScrollView>      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

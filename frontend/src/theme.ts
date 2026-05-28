@@ -61,6 +61,8 @@ export const colors = {
   },
   border: {
     default: "#E2E8F0",
+    // Borde ultra fino v2 — slate-200/80 (CC = 80% alpha) — para tarjetas Club Pro.
+    soft80: "rgba(226, 232, 240, 0.8)",
     focus: "#059669",
     subtle: "#F1F5F9",
     strong: "#CBD5E1",
@@ -237,15 +239,18 @@ export const typography: Record<string, TextStyle> = {
 };
 
 export const shadows = {
+  // v2 — micro-sombra de dispersión suave (spec del Director de Arte):
+  //   "shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]"
+  // Genera efecto de capas limpias sin ensuciar la pantalla.
   card: Platform.select({
     ios: {
       shadowColor: "#0F172A",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.04,
-      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.05,
+      shadowRadius: 20,
     },
-    android: { elevation: 1 },
-    web: { boxShadow: "0 1px 6px rgba(15,23,42,0.04)" } as any,
+    android: { elevation: 2 },
+    web: { boxShadow: "0 4px 20px -4px rgba(15,23,42,0.05)" } as any,
     default: {},
   }),
   cardHover: Platform.select({
