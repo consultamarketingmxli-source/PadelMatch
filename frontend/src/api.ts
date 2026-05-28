@@ -362,6 +362,16 @@ export const api = {
       `/retas/${retaId}/jugadores/orden`,
       { method: "PUT", body: { jugadores }, auth: true },
     ),
+  /**
+   * Preview del rol Round Robin con un orden tentativo de jugadores.
+   * No persiste nada — solo simula. Usado en UX de drag & drop para
+   * que el organizador vea cómo quedará la distribución de partidos.
+   */
+  previewRol: (retaId: string, jugadores: string[]) =>
+    request<RolResponse & { is_preview: true }>(
+      `/retas/${retaId}/rol/preview`,
+      { method: "POST", body: { jugadores }, auth: true },
+    ),
   listResultados: (retaId: string) =>
     request<PartidoResultado[]>(`/retas/${retaId}/resultados`, { auth: true }),
   upsertResultado: (

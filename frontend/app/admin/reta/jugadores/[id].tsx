@@ -21,11 +21,12 @@
  *   • Indicadores separadores entre canchas (header sticky por grupo).
  *   • Si el rol tiene un grupo de 4 (mini-rota), se respeta el último.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -39,9 +40,9 @@ import DraggableFlatList, {
 } from "react-native-draggable-flatlist";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  Eye,
   GripVertical,
   Lock,
   RotateCcw,
@@ -80,6 +81,14 @@ export default function DistribucionJugadores() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bloqueado, setBloqueado] = useState(false); // si hay resultados ya capturados
+
+  // === Preview del rol Round Robin ===
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<
+    Array<{ cancha: number; rondas: Array<{ ronda: number; partidos: Array<{ pareja_a: string[]; pareja_b: string[] }> }> }>
+  >([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewReqIdRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -145,6 +154,43 @@ export default function DistribucionJugadores() {
   );
 
   const reset = () => setJugadores(originalSnapshot);
+
+  /** Solicita el preview del rol con el orden actual (incluye placeholders).
+   *  Se ejecuta cuando el modal abre o cuando cambia el orden con modal abierto.
+   *  Usa req-id pattern para descartar respuestas obsoletas (race conditions). */
+  const fetchPreview = useCallback(async () => {
+    if (!id) return;
+    const reqId = ++previewReqIdRef.current;
+    setPreviewLoading(true);
+    try {
+      const data = await api.previewRol(
+        id,
+        jugadores.map((j) => j.nombre),
+      );
+      if (reqId === previewReqIdRef.current) {
+        setPreviewData(data.rol as any);
+      }
+    } catch (e: any) {
+      if (reqId === previewReqIdRef.current) {
+        setPreviewData([]);
+      }
+    } finally {
+      if (reqId === previewReqIdRef.current) {
+        setPreviewLoading(false);
+      }
+    }
+  }, [id, jugadores]);
+
+  // Auto-refresh del preview cuando se abre el modal o cambia el orden.
+  useEffect(() => {
+    if (previewOpen) {
+      const t = setTimeout(() => void fetchPreview(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [previewOpen, fetchPreview]);
+
+  const abrirPreview = () => setPreviewOpen(true);
+  const cerrarPreview = () => setPreviewOpen(false);
 
   const guardar = async () => {
     if (!id || saving || bloqueado) return;
@@ -326,6 +372,15 @@ export default function DistribucionJugadores() {
             <Text style={styles.resetBtnText}>Deshacer</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            onPress={abrirPreview}
+            disabled={saving}
+            style={[styles.previewBtn, saving && { opacity: 0.4 }]}
+            testID="jugadores-preview"
+          >
+            <Eye size={14} color={colors.brand.primary} />
+            <Text style={styles.previewBtnText}>Vista previa</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={guardar}
             disabled={!hayCambios || saving || bloqueado}
             style={[
@@ -350,6 +405,84 @@ export default function DistribucionJugadores() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* ============ Modal de Vista Previa del Rol Round Robin ============ */}
+        {previewOpen ? (
+          <View style={styles.modalBackdrop} pointerEvents="auto">
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Eye size={16} color={colors.brand.primary} />
+                <Text style={styles.modalTitle}>Vista previa del rol</Text>
+                <TouchableOpacity
+                  onPress={cerrarPreview}
+                  style={styles.modalCloseBtn}
+                  testID="preview-close"
+                >
+                  <Text style={styles.modalCloseTxt}>Cerrar</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalSubtitle}>
+                Round Robin generado con la distribución actual ·{" "}
+                {hayCambios ? "Sin guardar" : "Guardado"}
+              </Text>
+
+              {previewLoading ? (
+                <View style={{ paddingVertical: spacing.xl }}>
+                  <ActivityIndicator color={colors.brand.primary} />
+                </View>
+              ) : (
+                <ScrollView
+                  style={{ maxHeight: 480 }}
+                  contentContainerStyle={{ paddingBottom: spacing.lg }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {previewData.length === 0 ? (
+                    <Text style={styles.modalEmpty}>
+                      No se pudo generar el preview.
+                    </Text>
+                  ) : (
+                    previewData.map((cancha) => (
+                      <View key={`pc-${cancha.cancha}`} style={styles.previewCanchaBlock}>
+                        <View style={styles.previewCanchaHeader}>
+                          <Text style={styles.previewCanchaTitle}>
+                            Cancha {cancha.cancha}
+                          </Text>
+                          <Text style={styles.previewCanchaMeta}>
+                            {cancha.rondas.length} rondas
+                          </Text>
+                        </View>
+                        {cancha.rondas.map((r) => (
+                          <View key={`pr-${cancha.cancha}-${r.ronda}`} style={styles.previewRonda}>
+                            <Text style={styles.previewRondaLabel}>
+                              Ronda {r.ronda}
+                            </Text>
+                            {r.partidos.map((p, idx) => (
+                              <View
+                                key={`pp-${cancha.cancha}-${r.ronda}-${idx}`}
+                                style={styles.previewPartido}
+                              >
+                                <Text style={styles.previewPair} numberOfLines={1}>
+                                  {p.pareja_a.join(" + ")}
+                                </Text>
+                                <Text style={styles.previewVs}>VS</Text>
+                                <Text
+                                  style={styles.previewPair}
+                                  numberOfLines={1}
+                                >
+                                  {p.pareja_b.join(" + ")}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        ) : null}
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -527,5 +660,139 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.text.inverse,
     fontSize: 14,
+  },
+  // ===== Botón "Vista previa" en el footer =====
+  previewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.brand.primary + "40",
+    backgroundColor: colors.brand.primary + "10",
+  },
+  previewBtnText: {
+    ...typography.button,
+    fontSize: 13,
+    color: colors.brand.primary,
+  },
+  // ===== Modal de Vista Previa =====
+  modalBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(15,23,42,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg,
+    zIndex: 1000,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 500,
+    backgroundColor: colors.bg.card,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    ...Platform.select({
+      web: { boxShadow: "0 20px 50px rgba(0,0,0,0.25)" as any },
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 12 },
+      },
+      android: { elevation: 12 },
+    }),
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  modalTitle: {
+    ...typography.h3,
+    flex: 1,
+  },
+  modalSubtitle: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginTop: 2,
+    marginBottom: spacing.md,
+  },
+  modalCloseBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.bg.elevated,
+  },
+  modalCloseTxt: {
+    ...typography.label,
+    fontSize: 11,
+    color: colors.text.primary,
+  },
+  modalEmpty: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: "center",
+    paddingVertical: spacing.lg,
+  },
+  previewCanchaBlock: {
+    marginBottom: spacing.md,
+  },
+  previewCanchaHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.subtle,
+    marginBottom: spacing.sm,
+  },
+  previewCanchaTitle: {
+    ...typography.label,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: colors.brand.primary,
+    fontWeight: "800",
+  },
+  previewCanchaMeta: {
+    ...typography.caption,
+    color: colors.text.muted,
+  },
+  previewRonda: {
+    marginBottom: spacing.sm,
+    backgroundColor: colors.bg.elevated,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+  },
+  previewRondaLabel: {
+    ...typography.label,
+    fontSize: 10,
+    color: colors.text.secondary,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  previewPartido: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: 4,
+  },
+  previewPair: {
+    ...typography.caption,
+    fontSize: 13,
+    flex: 1,
+    color: colors.text.primary,
+    fontWeight: "600",
+  },
+  previewVs: {
+    ...typography.label,
+    fontSize: 9,
+    color: colors.text.muted,
+    paddingHorizontal: 4,
   },
 });

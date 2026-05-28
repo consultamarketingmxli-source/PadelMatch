@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 11 — Vista Previa del Rol Round Robin. Backend 16/16 PASS en /app/backend/tests/test_rol_preview.py (BACKEND 1-7 cubiertos: lista válida is_preview=true, reorder cambia rol, duplicados→422, no-array→422, missing→422, elemento no-string→422, sin auth→401, token inválido→401, lista corta→placeholders, lista vacía→placeholders, NO persiste jugadores_orden_manual (before==after), 404 reta inexistente, preview funciona aún con resultados presentes). Regresión 31/31 PASS en test_drag_drop_jugadores.py + test_phase_c_realtime.py (PUT /jugadores/orden, GET /rol, captura resultado, WS hello/broadcast/ping-pong, auth roles). Frontend 6/6 PASS: testIDs jugadores-preview y preview-close presentes, modal abre con título 'Vista previa del rol', subtítulo 'Round Robin generado con la distribución actual · Guardado', muestra Cancha 1 + 7 rondas (Ronda 1..7) + 14 partidos VS con los 8 nombres reales (Mateo Garcia, Sofia Lopez, etc.), botón Cerrar funciona, botón Vista previa habilitado sin hayCambios. Estructura del rol coincide con backend.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "React 19 element.ref",
+        "issue": "Warning persistente en consola: 'Accessing element.ref was removed in React 19. ref is now a regular prop' — proviene de react-native-draggable-flatlist al renderizar la lista. Ya reportado en iter10. Reference: /app/frontend/app/admin/reta/jugadores/[id].tsx:350 (DraggableFlatList)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rol_preview.py",
+    "/app/test_reports/pytest/iter11_rol_preview.xml"
+  ],
+  "action_items": [
+    "Ninguna acción crítica. Feature completa y validada E2E.",
+    "Opcional (heredado iter10): silenciar warnings de draggable-flatlist (React 19 ref / pointerEvents / useNativeDriver) vía LogBox.ignoreLogs en _layout.tsx."
+  ],
+  "critical_code_review_comments": [
+    "resultados.py:156-200 — endpoint POST /rol/preview bien aislado: NO toca db.retas.update_one ni inscripciones; solo lee la reta para sacar canchas/num_rondas/max_jugadores y aplica la misma lógica de relleno que get_rol. Confirmado por test test_preview_does_not_mutate_rol_persisted.",
+    "Validaciones simétricas con PUT /jugadores/orden: mismo 422 para duplicados y tipo incorrecto. Diferencia intencional: preview NO valida 1:1 contra aprobados (permite UX exploratoria) ni bloquea por resultados (no persiste).",
+    "Frontend [id].tsx:161-190 — fetchPreview usa pattern req-id (previewReqIdRef) para descartar respuestas obsoletas en races; correcto. useEffect dispara fetch en 200ms tras abrir modal o cambiar jugadores.",
+    "Modal con zIndex=1000 y backdrop rgba(15,23,42,0.5); botón Cerrar accesible. ScrollView con maxHeight=480 previene overflow en mobile."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rol_preview.py (nuevo, 16 tests)"
+  ],
+  "success_rate": { "backend": "100% (16/16 nuevos + 31/31 regresión)", "frontend": "100% (6/6 escenarios)" },
+  "seed_data_creation": "El test test_preview_works_even_with_resultados_present seed-ea un resultado y lo borra en el finally. El test test_capturar_resultado_y_borrar también limpia. Estado final de la reta demo: sin resultados; jugadores_orden_manual probablemente quedó en el orden post-iter10 (orden alfabético) tras el test test_put_orden_still_works que swap-ea y restaura.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reta demo 6012defc-2e74-4b14-abc2-313787a3d3e7 sigue con 8 aprobados. Tests son idempotentes: cualquier seed se borra en finally/teardown. WS broadcast no se ve afectado por preview (no emite eventos, lo cual es correcto porque no hay cambio de estado). Endpoint /rol/preview también puede usarse por terceros sin riesgo de mutación.",
+  "rca_of_issue": "N/A — feature pasa todos los checks definidos por el main agent. Único warning conocido: React 19 element.ref de draggable-flatlist (heredado iter10, no relacionado con esta feature)."
+}

@@ -216,6 +216,28 @@ frontend:
         - working: true
           agent: "main"
           comment: "Persiste jugadores_orden_manual en reta. Helper _resolver_jugadores_de_reta refactorizado del get_rol. Validaciones: lista debe ser strings (422), sin duplicados (422), 1:1 con aprobados (422), 409 si hay resultados capturados. Tests curl 100% OK."
+  - task: "Backend endpoint POST /api/retas/{id}/rol/preview"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/resultados.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Genera rol Round Robin para un orden tentativo SIN persistir. Validaciones: strings, sin duplicados. Rellena con placeholders si faltan plazas. Devuelve is_preview=true. Tests curl OK."
+  - task: "Vista Previa del Rol (Modal en pantalla de Drag & Drop)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/reta/jugadores/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Modal full-screen con ScrollView muestra Cancha → Rondas → Partidos (Pareja A vs Pareja B). Auto-refresh con debounce 200ms cuando se abre o cambia jugadores. Race-condition guard con previewReqIdRef. Subtítulo dinámico: 'Sin guardar' vs 'Guardado'. Screenshot mostró rondas 1-5 perfectamente con 8 jugadores reales. Botón testID jugadores-preview en footer."
 
 metadata:
   created_by: "main_agent"
@@ -225,8 +247,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Drag & Drop Distribución de Jugadores por Cancha"
-    - "Backend endpoint PUT /api/retas/{id}/jugadores/orden"
+    - "Backend endpoint POST /api/retas/{id}/rol/preview"
+    - "Vista Previa del Rol (Modal en pantalla de Drag & Drop)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

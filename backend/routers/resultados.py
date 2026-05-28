@@ -152,6 +152,54 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
     }
 
 
+# ---------- PREVIEW del rol sin persistir (drag & drop UX) ----------
+@router.post("/retas/{reta_id}/rol/preview")
+async def preview_rol(
+    reta_id: str,
+    body: dict,
+    current=Depends(get_current_admin),
+):
+    """Calcula el rol Round Robin para un orden tentativo de jugadores
+    SIN persistirlo. Usado por la pantalla de drag & drop para mostrar
+    al organizador cómo quedará la distribución de partidos antes de
+    guardar el reorden.
+
+    Body: { "jugadores": ["Nombre A", "Nombre B", ...] }
+      • Si la lista coincide 1:1 con los aprobados se usa tal cual.
+      • Si la lista es más corta se rellena con placeholders.
+      • Si la lista contiene duplicados → 422.
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+
+    canchas = reta["canchas_disponibles"]
+    num_rondas = reta.get("num_rondas", 7)
+    required = int(reta.get("max_jugadores") or canchas * 8)
+
+    nuevos = body.get("jugadores")
+    if not isinstance(nuevos, list) or not all(isinstance(n, str) for n in nuevos):
+        raise HTTPException(422, "El campo 'jugadores' debe ser una lista de strings")
+    if len(set(nuevos)) != len(nuevos):
+        raise HTTPException(422, "La lista contiene nombres duplicados")
+
+    jugadores = list(nuevos)
+    # Relleno con placeholders si faltan plazas (mismo patrón que get_rol)
+    while len(jugadores) < required:
+        jugadores.append(f"Jugador {len(jugadores)+1}")
+    jugadores = jugadores[:required]
+
+    rol = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
+    return {
+        "reta_id": reta_id,
+        "canchas": canchas,
+        "num_rondas": num_rondas,
+        "jugadores": jugadores,
+        "rol": rol,
+        "is_preview": True,
+    }
+
+
 # ---------- Reasignar jugadores entre canchas (Drag & Drop) ----------
 @router.put("/retas/{reta_id}/jugadores/orden")
 async def actualizar_orden_jugadores(
