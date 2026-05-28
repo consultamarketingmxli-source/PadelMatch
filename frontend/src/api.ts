@@ -352,6 +352,16 @@ export const api = {
   // ===== resultados =====
   getRol: (retaId: string) =>
     request<RolResponse>(`/retas/${retaId}/rol`, { auth: true }),
+  /**
+   * Persiste el orden manual de jugadores (drag & drop entre canchas).
+   * Body: lista ordenada de nombres — debe coincidir 1:1 con inscritos aprobados.
+   * Reglas: 409 si ya existen resultados capturados; 422 si nombres no coinciden.
+   */
+  updateJugadoresOrden: (retaId: string, jugadores: string[]) =>
+    request<{ ok: boolean; jugadores: string[] }>(
+      `/retas/${retaId}/jugadores/orden`,
+      { method: "PUT", body: { jugadores }, auth: true },
+    ),
   listResultados: (retaId: string) =>
     request<PartidoResultado[]>(`/retas/${retaId}/resultados`, { auth: true }),
   upsertResultado: (

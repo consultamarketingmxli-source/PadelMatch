@@ -1,0 +1,44 @@
+{
+  "summary": "Validación de la feature Drag & Drop de distribución de jugadores por cancha. Backend 9/9 tests PASS (pytest), incluyendo orden cronológico, persistencia de orden manual, validaciones (duplicados, nombres inexistentes, count mismatch, tipos), auth y 409 Conflict cuando hay resultados. Frontend 6/6 escenarios PASS: pantalla /admin/reta/jugadores/[id] carga título 'Distribución por Cancha', subtítulo con reta name + canchas, header sticky 'Cancha 1 · 8 jug.', 8 jugadores reales listados sin VACANTE, drag-item testIDs presentes (8), botones save/reset con 'Sin cambios', banner info por defecto. Lock state validado seedeando un resultado y confirmando banner ámbar 'Distribución bloqueada' + items con opacity reducida + info banner reemplazado. Navegación FE6 desde /admin/reta/{id} via form-jugadores-btn → /admin/reta/jugadores/{id} OK. Regresión: smoke test previo (iter9) 12/12 sigue pasando.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "useNativeDriver warning",
+        "issue": "Warning console: 'Animated: useNativeDriver is not supported because the native animated module is missing' al cargar la pantalla. Es esperado en web preview (no hay módulo nativo de animaciones), no afecta funcionalidad pero contamina la consola. Reference: react-native-draggable-flatlist usa Animated con useNativeDriver=true."
+      },
+      {
+        "component": "props.pointerEvents deprecated",
+        "issue": "Warning repetido en consola: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Viene de librerías internas (probablemente react-native-gesture-handler o draggable-flatlist), no es código del proyecto pero ensucia logs."
+      },
+      {
+        "component": "React 19 element.ref",
+        "issue": "Warning: 'Accessing element.ref was removed in React 19. ref is now a regular prop.' — se dispara al renderizar la lista. Posible incompatibilidad futura de react-native-draggable-flatlist con React 19."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_drag_drop_jugadores.py",
+    "/app/test_reports/pytest/iter10_drag_drop.xml"
+  ],
+  "action_items": [
+    "Ninguna acción crítica requerida — feature funciona E2E. Opcional: silenciar warning de useNativeDriver vía LogBox.ignoreLogs en _layout.tsx para web preview limpia."
+  ],
+  "critical_code_review_comments": [
+    "resultados.py (97-220): helper _resolver_jugadores_de_reta refactorizado correctamente; respeta jugadores_orden_manual si existe y valida 1:1 contra aprobados.",
+    "PUT /jugadores/orden: validaciones 422 (duplicados, count, nombres desconocidos), 409 (resultados existentes) y 401 (sin token) funcionan correctamente.",
+    "Frontend [id].tsx (532 líneas): cerca del límite recomendado de 700 pero aceptable; bien comentado, separación clara entre lógica y UI. Optimistic UI con revert implementado vía originalSnapshot."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_drag_drop_jugadores.py (nuevo)"
+  ],
+  "success_rate": { "backend": "100% (9/9 + 12/12 regression)", "frontend": "100% (6/6 scenarios)" },
+  "seed_data_creation": "Se creó y eliminó temporalmente un resultado (ronda=1,cancha=1,partido_idx=0, 9-5) para validar FE4 lock banner. Estado final de la reta: sin resultados, con jugadores_orden_manual = orden alfabético (test_put_restore_chronological_via_resync) — el siguiente agent debe ser consciente que la reta demo NO está ya en orden cronológico original; usar PUT /jugadores/orden con null o reset si se requiere.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "La reta demo (6012defc-2e74-4b14-abc2-313787a3d3e7) quedó con jugadores_orden_manual = orden alfabético (Andres Perez, Camila Ruiz, Diego Torres, Isabella Vargas, Lucas Mendez, Mateo Garcia, Sofia Lopez, Valentina Diaz). No hay resultados pendientes (cleanup ejecutado). El test backend test_drag_drop_jugadores.py es idempotente: limpia resultados al inicio del módulo y al final del test 409. Para volver a orden cronológico original: se necesitaría un endpoint o setter manual a null en Mongo.",
+  "rca_of_issue": "N/A — feature pasa todos los checks. Único hallazgo informativo: react-native-draggable-flatlist emite warnings de React 19 / useNativeDriver / pointerEvents que son de librerías internas y no afectan la funcionalidad."
+}

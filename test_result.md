@@ -194,6 +194,28 @@ frontend:
         - working: true
           agent: "main"
           comment: "Hero layout con foto premium de raqueta + cancha, card login flotante, credenciales demo visibles. Screenshots mobile y desktop validan diseño."
+  - task: "Drag & Drop Distribución de Jugadores por Cancha"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/reta/jugadores/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Pantalla con react-native-draggable-flatlist. Long-press + arrastrar mueve jugadores entre canchas. Headers sticky por cancha (Cancha 1, Cancha 2, etc). Banner amber de bloqueo cuando hay resultados ya capturados. Footer fijo con Deshacer y Guardar distribución. Optimistic UI con revert ante error. Validado E2E: 5/5 tests pasaron (orden cronológico, PUT con orden manual, GET respeta orden, captura resultado, PUT 409 cuando hay resultados)."
+  - task: "Backend endpoint PUT /api/retas/{id}/jugadores/orden"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/resultados.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Persiste jugadores_orden_manual en reta. Helper _resolver_jugadores_de_reta refactorizado del get_rol. Validaciones: lista debe ser strings (422), sin duplicados (422), 1:1 con aprobados (422), 409 si hay resultados capturados. Tests curl 100% OK."
 
 metadata:
   created_by: "main_agent"
@@ -203,9 +225,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Live Leaderboard /retas/[slug]/tabla (Fase C)"
-    - "Mesa de Control en Vivo /admin/reta/resultados/[id] (Fase C)"
-    - "Club Pro Clean v2 login split-screen /admin/login"
+    - "Drag & Drop Distribución de Jugadores por Cancha"
+    - "Backend endpoint PUT /api/retas/{id}/jugadores/orden"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

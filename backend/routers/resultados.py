@@ -94,6 +94,42 @@ async def _ensure_player_can_view(reta_id: str, auth_header: Optional[str]) -> d
 
 
 # ---------- ROL Round Robin ----------
+async def _resolver_jugadores_de_reta(reta: dict) -> List[str]:
+    """Devuelve la lista ordenada de jugadores de una reta.
+
+    Prioridad:
+      1. `reta.jugadores_orden_manual` si existe Y todos los nombres están
+         entre los inscritos aprobados (asegura consistencia tras
+         reasignación manual del organizador, p.ej. drag & drop de canchas).
+      2. Orden cronológico de inscripción (creado_en ASC) — comportamiento legado.
+
+    Siempre rellena con placeholders `Jugador N` hasta `max_jugadores`.
+    """
+    reta_id = reta["id"]
+    canchas = reta["canchas_disponibles"]
+    required = int(reta.get("max_jugadores") or canchas * 8)
+
+    cursor = db.inscripciones.find(
+        {"reta_id": reta_id, "estatus_pago": "Aprobado"}, {"_id": 0},
+    ).sort("creado_en", 1).limit(required)
+    aprobados = [d["nombre"] async for d in cursor]
+
+    orden_manual = reta.get("jugadores_orden_manual")
+    if orden_manual and isinstance(orden_manual, list):
+        # Validación estricta: el orden manual debe contener exactamente
+        # los mismos nombres aprobados (mismo set). Si difiere → fallback.
+        if set(orden_manual) == set(aprobados) and len(orden_manual) == len(aprobados):
+            jugadores = list(orden_manual)
+        else:
+            jugadores = list(aprobados)
+    else:
+        jugadores = list(aprobados)
+
+    while len(jugadores) < required:
+        jugadores.append(f"Jugador {len(jugadores)+1}")
+    return jugadores[:required]
+
+
 @router.get("/retas/{reta_id}/rol")
 async def get_rol(reta_id: str, current=Depends(get_current_admin)):
     """Genera el rol Round Robin del torneo con los jugadores inscritos Aprobados.
@@ -104,17 +140,7 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
 
     canchas = reta["canchas_disponibles"]
     num_rondas = reta.get("num_rondas", 7)
-    # Importante: el rol respeta `max_jugadores` (Fase A). Si no está definido,
-    # fallback a canchas*8 (legado).
-    required = int(reta.get("max_jugadores") or canchas * 8)
-
-    cursor = db.inscripciones.find(
-        {"reta_id": reta_id, "estatus_pago": "Aprobado"}, {"_id": 0},
-    ).sort("creado_en", 1).limit(required)
-    jugadores = [d["nombre"] async for d in cursor]
-    while len(jugadores) < required:
-        jugadores.append(f"Jugador {len(jugadores)+1}")
-    jugadores = jugadores[:required]
+    jugadores = await _resolver_jugadores_de_reta(reta)
 
     rol = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
     return {
@@ -124,6 +150,65 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
         "jugadores": jugadores,
         "rol": rol,
     }
+
+
+# ---------- Reasignar jugadores entre canchas (Drag & Drop) ----------
+@router.put("/retas/{reta_id}/jugadores/orden")
+async def actualizar_orden_jugadores(
+    reta_id: str,
+    body: dict,
+    current=Depends(get_current_admin),
+):
+    """Persiste el orden manual de jugadores (drag & drop entre canchas).
+
+    Reglas de seguridad:
+      • Solo admin.
+      • Si ya existen resultados capturados → 409 Conflict (no se puede
+        reorganizar canchas con partidos en curso porque romperíamos la
+        trazabilidad histórica).
+      • La lista debe contener exactamente los mismos nombres que los
+        inscritos aprobados (1:1, sin duplicados ni faltantes).
+
+    Body: { "jugadores": ["Nombre A", "Nombre B", ...] }
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+
+    nuevos = body.get("jugadores")
+    if not isinstance(nuevos, list) or not all(isinstance(n, str) for n in nuevos):
+        raise HTTPException(422, "El campo 'jugadores' debe ser una lista de strings")
+
+    # Validar que no hay duplicados
+    if len(set(nuevos)) != len(nuevos):
+        raise HTTPException(422, "La lista contiene nombres duplicados")
+
+    # Validar que no hay resultados capturados aún (safety)
+    tiene_resultados = await db.resultados.count_documents({"reta_id": reta_id})
+    if tiene_resultados > 0:
+        raise HTTPException(
+            409,
+            "No se puede reorganizar las canchas: ya hay resultados capturados. "
+            "Elimina los resultados antes de cambiar la distribución.",
+        )
+
+    # Validar que los nombres coinciden con los inscritos aprobados
+    cursor = db.inscripciones.find(
+        {"reta_id": reta_id, "estatus_pago": "Aprobado"}, {"_id": 0, "nombre": 1},
+    )
+    aprobados = {d["nombre"] async for d in cursor}
+    if set(nuevos) != aprobados:
+        raise HTTPException(
+            422,
+            "La lista de jugadores no coincide con los inscritos aprobados.",
+        )
+
+    await db.retas.update_one(
+        {"id": reta_id},
+        {"$set": {"jugadores_orden_manual": list(nuevos)}},
+    )
+    return {"ok": True, "jugadores": list(nuevos)}
+
 
 
 # ---------- Upsert / Delete (admin) ----------

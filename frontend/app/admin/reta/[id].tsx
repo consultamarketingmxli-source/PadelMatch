@@ -28,6 +28,7 @@ import {
   Clock,
   Image as ImageIcon,
   Share2,
+  Shuffle,
   Trophy,
   Users,
 } from "lucide-react-native";
@@ -456,6 +457,14 @@ export default function RetaForm() {
                 variant="secondary"
                 icon={<Share2 size={14} color={colors.brand.primary} />}
                 testID="form-share-btn"
+              />
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Distribuir jugadores por cancha"
+                onPress={() => router.push(`/admin/reta/jugadores/${retaIdReal}` as any)}
+                variant="secondary"
+                icon={<Shuffle size={14} color={colors.brand.primary} />}
+                testID="form-jugadores-btn"
               />
               <View style={{ height: spacing.md }} />
               <Button
