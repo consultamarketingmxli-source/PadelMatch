@@ -238,3 +238,255 @@ def generar_pdf_rol(
 
     doc.build(story)
     return buf.getvalue()
+
+
+
+# =====================================================================
+# CLASIFICACIÓN FINAL — PDF A4 (top podium + tabla completa).
+# =====================================================================
+
+def _podium_row(top3: List[Dict], styles) -> Optional[Table]:
+    """Tarjetas top-3 (oro/plata/bronce) si hay al menos 1 jugador."""
+    if not top3:
+        return None
+
+    cell_style = ParagraphStyle(
+        "PodCell",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=12,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    name_style = ParagraphStyle(
+        "PodName",
+        parent=styles["Normal"],
+        fontSize=12,
+        leading=14,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    medal_style = ParagraphStyle(
+        "Medal",
+        parent=styles["Normal"],
+        fontSize=22,
+        leading=24,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    medals = ["1°", "2°", "3°"]
+    bg = [
+        colors.HexColor("#0F172A"),
+        colors.HexColor("#1E293B"),
+        colors.HexColor("#334155"),
+    ]
+    accent = [
+        colors.HexColor("#FACC15"),  # oro
+        colors.HexColor("#CBD5E1"),  # plata
+        colors.HexColor("#FB923C"),  # bronce
+    ]
+
+    cells = []
+    for i in range(3):
+        if i < len(top3):
+            p = top3[i]
+            inner = [
+                Paragraph(f"<b>{medals[i]}</b>", medal_style),
+                Spacer(1, 2),
+                Paragraph(f"<b>{p.get('nombre','—')}</b>", name_style),
+                Spacer(1, 2),
+                Paragraph(
+                    f"PG {p.get('partidos_ganados',0)} · "
+                    f"DG {p.get('diferencia',0)} · "
+                    f"GF {p.get('juegos_a_favor',0)}",
+                    cell_style,
+                ),
+            ]
+            cells.append(inner)
+        else:
+            cells.append([Paragraph("—", cell_style)])
+
+    tbl = Table([cells], colWidths=[60 * mm, 60 * mm, 60 * mm], rowHeights=[36 * mm])
+    style_cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]
+    for i in range(min(3, len(top3))):
+        style_cmds.append(("BACKGROUND", (i, 0), (i, 0), bg[i]))
+        style_cmds.append(("LINEABOVE", (i, 0), (i, 0), 3, accent[i]))
+    tbl.setStyle(TableStyle(style_cmds))
+    return tbl
+
+
+def _classif_table(standings: List[Dict], styles) -> Table:
+    """Tabla completa de clasificación."""
+    head_style = ParagraphStyle(
+        "ClsHead",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    cell_style = ParagraphStyle(
+        "ClsCell",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        alignment=TA_CENTER,
+        wordWrap="CJK",
+    )
+    name_style = ParagraphStyle(
+        "ClsName",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        alignment=TA_LEFT,
+        wordWrap="CJK",
+    )
+
+    data = [[
+        Paragraph("<b>#</b>", head_style),
+        Paragraph("<b>JUGADOR</b>", head_style),
+        Paragraph("<b>PJ</b>", head_style),
+        Paragraph("<b>PG</b>", head_style),
+        Paragraph("<b>PE</b>", head_style),
+        Paragraph("<b>PP</b>", head_style),
+        Paragraph("<b>GF</b>", head_style),
+        Paragraph("<b>GC</b>", head_style),
+        Paragraph("<b>DG</b>", head_style),
+        Paragraph("<b>%</b>", head_style),
+        Paragraph("<b>PTS</b>", head_style),
+    ]]
+    for idx, p in enumerate(standings, start=1):
+        data.append([
+            Paragraph(f"<b>{idx}</b>", cell_style),
+            Paragraph(p.get("nombre", "—"), name_style),
+            Paragraph(str(p.get("partidos_jugados", 0)), cell_style),
+            Paragraph(f"<b>{p.get('partidos_ganados', 0)}</b>", cell_style),
+            Paragraph(str(p.get("partidos_empatados", 0)), cell_style),
+            Paragraph(str(p.get("partidos_perdidos", 0)), cell_style),
+            Paragraph(str(p.get("juegos_a_favor", 0)), cell_style),
+            Paragraph(str(p.get("juegos_en_contra", 0)), cell_style),
+            Paragraph(f"<b>{p.get('diferencia', 0):+d}</b>", cell_style),
+            Paragraph(f"{p.get('efectividad', 0)}%", cell_style),
+            Paragraph(f"<b>{p.get('puntos', 0)}</b>", cell_style),
+        ])
+
+    tbl = Table(
+        data,
+        colWidths=[
+            10 * mm, 56 * mm, 12 * mm, 12 * mm, 12 * mm, 12 * mm,
+            14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm,
+        ],
+        repeatRows=1,
+    )
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), DARK_BG),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F4F4F5")]),
+    ]))
+    return tbl
+
+
+def generar_pdf_clasificacion(
+    reta: Dict,
+    standings: List[Dict],
+    logo_bytes: Optional[bytes] = None,
+) -> bytes:
+    """
+    Genera PDF A4 con la Clasificación Final.
+
+    reta: dict con metadatos (nombre, club, fecha_evento, ...).
+    standings: lista de dicts con stats por jugador (ver core.standings).
+    logo_bytes: bytes del logo del organizador (opcional).
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Clasificacion - {reta.get('nombre','Reta')}",
+    )
+    styles = getSampleStyleSheet()
+    section_style = ParagraphStyle(
+        "SectionCls",
+        parent=styles["Heading2"],
+        fontSize=14,
+        leading=16,
+        textColor=DARK_BG,
+        spaceAfter=4,
+        spaceBefore=10,
+    )
+    sub_style = ParagraphStyle(
+        "SubCls",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=12,
+        textColor=LIGHT_TEXT,
+    )
+    footer_style = ParagraphStyle(
+        "FooterCls",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=LIGHT_TEXT,
+        alignment=TA_CENTER,
+        spaceBefore=8,
+    )
+
+    story = []
+    story.append(_build_header(reta, logo_bytes))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph(
+        "<b>Clasificación Final</b> — orden por PG (desc) · DG (desc) · GF (desc).",
+        sub_style,
+    ))
+    story.append(Spacer(1, 4 * mm))
+
+    podium = _podium_row(standings[:3], styles)
+    if podium:
+        story.append(podium)
+        story.append(Spacer(1, 6 * mm))
+
+    story.append(Paragraph("Tabla completa", section_style))
+    if standings:
+        story.append(_classif_table(standings, styles))
+    else:
+        empty_style = ParagraphStyle(
+            "Empty",
+            parent=styles["Normal"],
+            fontSize=11,
+            textColor=LIGHT_TEXT,
+            alignment=TA_CENTER,
+            spaceBefore=10,
+            spaceAfter=10,
+        )
+        story.append(Paragraph(
+            "Aún no hay resultados capturados para esta reta.",
+            empty_style,
+        ))
+
+    story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph(
+        "Generado con PadelappRetas OS · Cascada: PG → DG → GF → Nombre.",
+        footer_style,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()

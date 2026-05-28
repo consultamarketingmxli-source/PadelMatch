@@ -26,6 +26,8 @@ import {
   ArrowLeft,
   BarChart2,
   Clock,
+  Download,
+  FileText,
   Image as ImageIcon,
   Share2,
   Shuffle,
@@ -252,6 +254,58 @@ export default function RetaForm() {
       Alert.alert("Error", e.message ?? "No se pudo generar el PDF");
     }
   };
+
+  /**
+   * Descarga genérica de blobs (CSV / PDF clasificación / CSV rol).
+   * En web abre directo la descarga; en mobile muestra alerta + abre URL.
+   */
+  const triggerBlobDownload = async (
+    fetcher: () => Promise<string>,
+    filename: string,
+    successMsg = "Archivo generado",
+  ) => {
+    if (isNew || !retaIdReal) {
+      Alert.alert("Guarda primero", "Crea la reta antes de exportar");
+      return;
+    }
+    try {
+      const url = await fetcher();
+      if (Platform.OS === "web") {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.target = "_blank";
+        a.click();
+      } else {
+        Alert.alert(successMsg, "Abre el archivo desde el navegador para descargarlo.");
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "No se pudo descargar");
+    }
+  };
+
+  const slug = nombre.replace(/\s+/g, "-").toLowerCase() || "reta";
+
+  const downloadRolCsv = () =>
+    triggerBlobDownload(
+      () => api.exportRolCsvUrl(retaIdReal!),
+      `rol-${slug}.csv`,
+      "CSV del rol generado",
+    );
+
+  const downloadClasificacionCsv = () =>
+    triggerBlobDownload(
+      () => api.exportClasificacionCsvUrl(retaIdReal!),
+      `clasificacion-${slug}.csv`,
+      "CSV de clasificación generado",
+    );
+
+  const downloadClasificacionPdf = () =>
+    triggerBlobDownload(
+      () => api.exportClasificacionPdfUrl(retaIdReal!),
+      `clasificacion-${slug}.pdf`,
+      "PDF de clasificación generado",
+    );
 
   if (loading) {
     return (
@@ -481,6 +535,30 @@ export default function RetaForm() {
                 variant="secondary"
                 icon={<ImageIcon size={14} color={colors.brand.primary} />}
                 testID="form-pdf-btn"
+              />
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Descargar Rol (CSV)"
+                onPress={downloadRolCsv}
+                variant="secondary"
+                icon={<Download size={14} color={colors.brand.primary} />}
+                testID="form-rol-csv-btn"
+              />
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Descargar Clasificación (CSV)"
+                onPress={downloadClasificacionCsv}
+                variant="secondary"
+                icon={<Download size={14} color={colors.brand.primary} />}
+                testID="form-clasif-csv-btn"
+              />
+              <View style={{ height: spacing.md }} />
+              <Button
+                title="Descargar Clasificación (PDF A4)"
+                onPress={downloadClasificacionPdf}
+                variant="secondary"
+                icon={<FileText size={14} color={colors.brand.primary} />}
+                testID="form-clasif-pdf-btn"
               />
               <View style={{ height: spacing.md }} />
               <Button title="Eliminar reta" onPress={deleteReta} variant="danger" testID="form-delete-btn" />

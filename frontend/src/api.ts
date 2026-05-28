@@ -530,4 +530,38 @@ export const api = {
     const blob = await res.blob();
     return URL.createObjectURL(blob);
   },
+
+  // ===== exports CSV / PDF clasificación =====
+  async exportRolCsvUrl(retaId: string) {
+    return _downloadBlob(`/retas/${retaId}/rol/csv`, "text/csv");
+  },
+  async exportClasificacionCsvUrl(retaId: string) {
+    return _downloadBlob(`/retas/${retaId}/clasificacion/csv`, "text/csv");
+  },
+  async exportClasificacionPdfUrl(retaId: string) {
+    return _downloadBlob(`/retas/${retaId}/clasificacion/pdf`, "application/pdf");
+  },
 };
+
+/**
+ * Helper privado: descarga un blob autenticado y devuelve un blob URL listo
+ * para abrir/descargar desde el browser.
+ */
+async function _downloadBlob(path: string, expectedMime: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  Object.assign(headers, await tokenHeader());
+  const res = await fetch(`${BASE}/api${path}`, { method: "GET", headers });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.text()).slice(0, 200);
+    } catch {
+      /* noop */
+    }
+    throw new Error(`Descarga error ${res.status}: ${detail}`);
+  }
+  const blob = await res.blob();
+  // Forzar el MIME esperado si el browser lo perdió
+  const typedBlob = blob.type ? blob : new Blob([blob], { type: expectedMime });
+  return URL.createObjectURL(typedBlob);
+}
