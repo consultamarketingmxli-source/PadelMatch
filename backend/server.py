@@ -23,6 +23,7 @@ from routers.payments_router import router as payments_router
 from routers.pdf_router import router as pdf_router
 from routers.player_auth import router as player_auth_router
 from routers.public import router as public_router
+from routers.realtime_ws import router as realtime_ws_router
 from routers.resultados import router as resultados_router
 from routers.retas import router as retas_router
 
@@ -45,6 +46,7 @@ api.include_router(inscripciones_router)
 api.include_router(payments_router)
 api.include_router(mercadopago_router)
 api.include_router(resultados_router)
+api.include_router(realtime_ws_router)
 api.include_router(pdf_router)
 
 

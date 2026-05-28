@@ -1,16 +1,32 @@
-"""Rol Round Robin + captura de resultados + tabla de posiciones."""
-from typing import List
+"""Rol Round Robin + captura de resultados + tabla de posiciones.
 
-from fastapi import APIRouter, Depends, HTTPException
+Fase C — Mesa de Control en Vivo:
+    - POST /api/retas/{id}/resultados → upsert atómico (admin only).
+    - DELETE /api/retas/{id}/resultados/{result_id} → corregir error tipográfico.
+    - GET /api/retas/{id}/resultados → admin: todos.
+    - GET /api/public/retas/{id}/tabla → tabla pública (compat retrocompat).
+    - GET /api/retas/{id}/clasificacion → tabla individual con auth admin
+      o player aprobado (PG→DG→GF). Si el caller no está aprobado: 403.
 
-from auth import get_current_admin
+Cualquier escritura (upsert / delete) emite un broadcast WS en el canal
+`reta_id` con `{type:"standings_updated"}` para que la tabla viva se refresque
+en TODOS los dispositivos conectados (jugadores aprobados + admin).
+"""
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from auth import decode_token, get_current_admin
 from core.db import db
+from core.realtime import manager
+from core.standings import compute_individual_standings
 from logica_torneo import generar_rol_multi_cancha
 from models import PartidoResultado, PartidoResultadoCreate, TablaPosicionEntry
 
 router = APIRouter(tags=["resultados"])
 
 
+# ---------- helpers ----------
 def _calcular_ganador(score_a: int, score_b: int) -> str:
     if score_a > score_b:
         return "A"
@@ -19,6 +35,65 @@ def _calcular_ganador(score_a: int, score_b: int) -> str:
     return "EMPATE"
 
 
+async def _broadcast_standings(reta_id: str, **extra) -> None:
+    """Empuja un evento al canal de la reta. Nunca lanza."""
+    try:
+        await manager.broadcast(
+            reta_id,
+            {"type": "standings_updated", "reta_id": reta_id, **extra},
+        )
+    except Exception:
+        # Defensivo: si el WS falla por cualquier razón, no rompemos el write.
+        pass
+
+
+async def _ensure_player_can_view(reta_id: str, auth_header: Optional[str]) -> dict:
+    """Verifica que el caller tenga permiso para ver tabla en vivo.
+
+    Permite:
+        - Admin (cualquier admin) → token bearer admin estándar.
+        - Player con inscripción 'Aprobado' en esta reta (token player JWT).
+
+    Lanza:
+        - 401 si no hay token.
+        - 403 si el token es válido pero el caller no es admin ni player aprobado.
+    """
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        raise HTTPException(401, "Token requerido para ver la tabla en vivo.")
+    token = auth_header.split(" ", 1)[1]
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(401, "Token inválido o expirado.")
+
+    role = payload.get("role")
+    if role == "admin":
+        return payload
+
+    if role == "player":
+        telefono = payload.get("sub")
+        if not telefono:
+            raise HTTPException(401, "Token de jugador inválido.")
+        ins = await db.inscripciones.find_one(
+            {"reta_id": reta_id, "telefono": telefono},
+            {"_id": 0, "estatus_pago": 1},
+        )
+        if not ins:
+            raise HTTPException(
+                403,
+                "No estás inscrito en esta reta. Solo los jugadores aprobados pueden ver la tabla en vivo.",
+            )
+        if ins.get("estatus_pago") != "Aprobado":
+            raise HTTPException(
+                403,
+                "Tu pago aún no está aprobado. Cuando se confirme verás la tabla en vivo.",
+            )
+        return payload
+
+    raise HTTPException(403, "No autorizado para ver la tabla.")
+
+
+# ---------- ROL Round Robin ----------
 @router.get("/retas/{reta_id}/rol")
 async def get_rol(reta_id: str, current=Depends(get_current_admin)):
     """Genera el rol Round Robin del torneo con los jugadores inscritos Aprobados.
@@ -29,7 +104,9 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
 
     canchas = reta["canchas_disponibles"]
     num_rondas = reta.get("num_rondas", 7)
-    required = canchas * 8
+    # Importante: el rol respeta `max_jugadores` (Fase A). Si no está definido,
+    # fallback a canchas*8 (legado).
+    required = int(reta.get("max_jugadores") or canchas * 8)
 
     cursor = db.inscripciones.find(
         {"reta_id": reta_id, "estatus_pago": "Aprobado"}, {"_id": 0},
@@ -49,6 +126,7 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
     }
 
 
+# ---------- Upsert / Delete (admin) ----------
 @router.post("/retas/{reta_id}/resultados", response_model=PartidoResultado)
 async def registrar_resultado(
     reta_id: str,
@@ -56,7 +134,7 @@ async def registrar_resultado(
     current=Depends(get_current_admin),
 ):
     """Registra o actualiza el score de un partido. Idempotente por
-    (reta_id, cancha, ronda, partido_idx)."""
+    (reta_id, cancha, ronda, partido_idx). Solo admin."""
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
@@ -65,8 +143,6 @@ async def registrar_resultado(
         raise HTTPException(400, "Cancha fuera de rango")
     if body.ronda < 1 or body.ronda > reta.get("num_rondas", 7):
         raise HTTPException(400, "Ronda fuera de rango")
-    if len(body.pareja_a) != 2 or len(body.pareja_b) != 2:
-        raise HTTPException(400, "Cada pareja debe tener exactamente 2 jugadores")
 
     ganador = _calcular_ganador(body.score_a, body.score_b)
 
@@ -84,12 +160,18 @@ async def registrar_resultado(
             "score_a": body.score_a,
             "score_b": body.score_b,
             "ganador": ganador,
+            "partido_jugado": True,
         }
-        await db.resultados.update_one(
-            {"id": existing["id"]}, {"$set": update}
-        )
+        await db.resultados.update_one({"id": existing["id"]}, {"$set": update})
         existing.pop("_id", None)
         existing.update(update)
+        await _broadcast_standings(
+            reta_id,
+            event="match_updated",
+            match_id=existing["id"],
+            ronda=body.ronda,
+            cancha=body.cancha,
+        )
         return PartidoResultado(**existing)
 
     res = PartidoResultado(
@@ -102,11 +184,35 @@ async def registrar_resultado(
         score_a=body.score_a,
         score_b=body.score_b,
         ganador=ganador,
+        partido_jugado=True,
     )
     doc = res.model_dump()
     doc["creado_en"] = doc["creado_en"].isoformat()
     await db.resultados.insert_one(doc)
+    await _broadcast_standings(
+        reta_id,
+        event="match_saved",
+        match_id=res.id,
+        ronda=body.ronda,
+        cancha=body.cancha,
+    )
     return res
+
+
+@router.delete("/retas/{reta_id}/resultados/{result_id}")
+async def borrar_resultado(
+    reta_id: str,
+    result_id: str,
+    current=Depends(get_current_admin),
+):
+    """Borra un resultado por error tipográfico. Tras eliminar, recalcula y
+    notifica a los suscriptores WS."""
+    r = await db.resultados.find_one({"id": result_id, "reta_id": reta_id})
+    if not r:
+        raise HTTPException(404, "Resultado no encontrado")
+    await db.resultados.delete_one({"id": result_id, "reta_id": reta_id})
+    await _broadcast_standings(reta_id, event="match_deleted", match_id=result_id)
+    return {"ok": True, "deleted": result_id}
 
 
 @router.get("/retas/{reta_id}/resultados", response_model=List[PartidoResultado])
@@ -117,58 +223,41 @@ async def listar_resultados_admin(reta_id: str, current=Depends(get_current_admi
     return [PartidoResultado(**d) async for d in cursor]
 
 
+# ---------- Tabla pública (compat) y clasificación con auth ----------
+async def _build_standings(reta_id: str) -> List[TablaPosicionEntry]:
+    cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
+    docs = [d async for d in cursor]
+    return compute_individual_standings(docs, ordenar=True)
+
+
 @router.get("/public/retas/{reta_id}/tabla", response_model=List[TablaPosicionEntry])
 async def tabla_posiciones(reta_id: str):
-    """Tabla de posiciones individual del torneo basada en resultados capturados."""
+    """Tabla pública (retrocompat con la versión original). No requiere auth.
+
+    Nota: La privacidad estricta vive en `/retas/{id}/clasificacion`. Este
+    endpoint se mantiene por retrocompat con QR antiguos / clientes externos.
+    """
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
+    return await _build_standings(reta_id)
 
-    stats: dict[str, TablaPosicionEntry] = {}
 
-    def _get(name: str) -> TablaPosicionEntry:
-        if name not in stats:
-            stats[name] = TablaPosicionEntry(nombre=name)
-        return stats[name]
+@router.get("/retas/{reta_id}/clasificacion", response_model=List[TablaPosicionEntry])
+async def clasificacion_individual(
+    reta_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    """Clasificación individual con privacidad estricta.
 
-    cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(500)
-    async for r in cursor:
-        for n in r["pareja_a"]:
-            e = _get(n)
-            e.partidos_jugados += 1
-            e.juegos_a_favor += r["score_a"]
-            e.juegos_en_contra += r["score_b"]
-            if r["ganador"] == "A":
-                e.partidos_ganados += 1
-                e.puntos += 3
-            elif r["ganador"] == "EMPATE":
-                e.partidos_empatados += 1
-                e.puntos += 1
-            else:
-                e.partidos_perdidos += 1
-        for n in r["pareja_b"]:
-            e = _get(n)
-            e.partidos_jugados += 1
-            e.juegos_a_favor += r["score_b"]
-            e.juegos_en_contra += r["score_a"]
-            if r["ganador"] == "B":
-                e.partidos_ganados += 1
-                e.puntos += 3
-            elif r["ganador"] == "EMPATE":
-                e.partidos_empatados += 1
-                e.puntos += 1
-            else:
-                e.partidos_perdidos += 1
+    Visible solo para:
+        - Admin (cualquier admin con token bearer).
+        - Player con inscripción 'Aprobado' en esta reta.
 
-    for e in stats.values():
-        e.diferencia = e.juegos_a_favor - e.juegos_en_contra
-        e.efectividad = (
-            round(e.partidos_ganados / e.partidos_jugados * 100, 1)
-            if e.partidos_jugados else 0.0
-        )
-
-    ordenado = sorted(
-        stats.values(),
-        key=lambda e: (-e.puntos, -e.diferencia, -e.juegos_a_favor, e.nombre),
-    )
-    return ordenado
+    Cualquier otro → 403.
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    await _ensure_player_can_view(reta_id, authorization)
+    return await _build_standings(reta_id)

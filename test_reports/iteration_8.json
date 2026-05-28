@@ -1,0 +1,46 @@
+{
+  "summary": "Validación HTTP + WebSocket end-to-end de Fase C (Mesa de Control Live + Tabla individual + Realtime). Resultado: 22/22 tests originales (test_phase_c_realtime.py) PASAN contra el backend desplegado vía la URL pública. Adicionalmente escribí 8 tests suplementarios (test_phase_c_supplement.py) que cubren los gaps del set original: (a) broadcast WS event:'match_deleted' tras DELETE, (b) WS player APROBADO conecta OK con role='player' en el hello, (c) WS player con inscripción PENDIENTE → cierre 403, (d) WS player SIN inscripción → cierre 403, y (e) regresión de endpoints existentes (radar, retas CRUD, share-info, QR admin, checkout público, /me/waitlist). Los 8 suplementarios también PASAN (8/8). Total Fase C: 30/30 end-to-end ✅. Suite completa: 218/224 (97.3%) — los 6 fallos restantes son TODOS pre-existentes documentados en iteration_7.json (fixtures con teléfonos '+521TEST...' que el validador rechaza), NO son regresión introducida por Fase C. Verifiqué que el fix de JWT_SECRET (cargar .env en auth.py antes de leer la variable) sigue vigente y operando: las firmas con el secret del .env son aceptadas por el servidor real. Las reglas de Fase C se cumplen estrictamente: cascada PG→DG→GF→nombre, empates técnicos (PE=1), upsert idempotente por (cancha,ronda,partido_idx), no-self-play 422, captura admin atómica con broadcast, tabla privada (403 a no-inscritos y a Pendientes), WS cierra 403 a no autorizados, ping/pong funcional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "tests/test_api_padelappretas.py + test_dashboard_refund_player_auth.py",
+        "issue": "6 tests pre-existentes (heredados de iteraciones previas, ya reportados en iteration_7.json) fallan con 422 porque siguen usando teléfonos formato '+521TEST...' que el validador estricto de telefono rechaza. NO es regresión de Fase C — son los mismos fallos detectados en iter7. Acción: actualizar fixtures a '+5215512345678' style."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_c_realtime.py (22 tests originales — PASS 22/22)",
+    "/app/backend/tests/test_phase_c_supplement.py (8 tests nuevos cubriendo gaps — PASS 8/8)",
+    "/app/test_reports/pytest/iter8_phase_c.xml",
+    "/app/test_reports/pytest/iter8_phase_c_sup.xml",
+    "/app/test_reports/pytest/iter8_full.xml"
+  ],
+  "action_items": [
+    "(OPCIONAL / MINOR) Actualizar fixtures pre-existentes (test_api_padelappretas.py, test_dashboard_refund_player_auth.py) reemplazando '+521TEST...' por teléfonos digit-only tipo '+52155' + 8 dígitos. Ya estaba en iteration_7 action items; no bloquea Fase C."
+  ],
+  "critical_code_review_comments": [
+    "core/realtime.py — ConnectionManager mantiene `dict[reta_id, set[WebSocket]]` en memoria del proceso. En despliegue multi-pod, los eventos broadcast NO se propagarán entre instancias. Para producción considerar pub/sub (Redis) o sticky sessions. Hoy hay 1 worker → funciona, pero documentar la restricción.",
+    "routers/resultados.py — POST hace upsert por (reta_id, cancha, ronda, partido_idx). Bien. Validación no-self-play y pareja-duplicada se ejecutan a nivel Pydantic (_no_self_play) → 422 limpio. ✅",
+    "core/standings.py — Empate técnico maneja tanto ganador='EMPATE'/'E' como score_a==score_b sin ganador explícito → ambos casos asignan PE=1. ✅ Cobertura de defensa contra resultados malformados (sin pareja_a o sin scores) → ignorados sin crash. ✅",
+    "routers/realtime_ws.py — Lee token de query param `?token=`. Cierra con code 4403 antes de aceptar el handshake si auth falla → comportamiento correcto observado en logs ('connection rejected (403 Forbidden)'). Verifica inscripcion.estado == 'Aprobado' para players antes de aceptar. ✅"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_c_supplement.py (nuevo — 8 tests cubriendo: WS DELETE broadcast, WS player aprobado/pendiente/sin inscripción, regresión radar+retas CRUD+share-info+QR+checkout+/me/waitlist)"
+  ],
+  "success_rate": {
+    "backend": "100% en Fase C (30/30: 22 originales + 8 suplementarios). Suite global 218/224 (97.3%); los 6 fallos son pre-existentes (fixtures con teléfonos inválidos), no son regresión.",
+    "frontend": "N/A (sólo backend solicitado)"
+  },
+  "seed_data_creation": "Cada test crea retas TEST_FaseC* y las borra en teardown. Inscripciones efímeras con teléfonos +52155XXXXXXXX random; quedan ligadas a la reta y se eliminan en cascada al borrar la reta. No deja residuos tras corrida limpia.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Para correr la suite Fase C contra el público: `cd /app/backend && export EXPO_BACKEND_URL=https://padel-tournament-hub-9.preview.emergentagent.com && pytest tests/test_phase_c_realtime.py tests/test_phase_c_supplement.py -v`. JWT player tokens se firman con HS256 usando JWT_SECRET de /app/backend/.env (helper `make_player_token` en ambos archivos lo lee con dotenv_values). El WS endpoint vive en /api/ws/retas/{reta_id}?token=<JWT>. Mensajes esperados: hello {type:'hello', role:'admin'|'player'}, broadcast {type:'standings_updated', event:'match_saved'|'match_deleted', reta_id, match_id?}, ping/pong. Cierre 403 se manifiesta como InvalidStatus(403) o ConnectionClosed(code in {4403, 1011}).",
+  "rca_of_issue": "No issues — Fase C validada end-to-end."
+}

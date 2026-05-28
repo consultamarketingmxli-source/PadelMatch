@@ -181,11 +181,25 @@ class PartidoResultadoCreate(BaseModel):
     score_a: int = Field(ge=0, le=99)
     score_b: int = Field(ge=0, le=99)
 
+    @model_validator(mode="after")
+    def _no_self_play(self) -> "PartidoResultadoCreate":
+        # Cada pareja debe tener exactamente 2 jugadores distintos.
+        if len(set(self.pareja_a)) != 2:
+            raise ValueError("La pareja A debe tener 2 jugadores distintos.")
+        if len(set(self.pareja_b)) != 2:
+            raise ValueError("La pareja B debe tener 2 jugadores distintos.")
+        # Ningún jugador puede estar en ambas parejas (self-play imposible).
+        if set(self.pareja_a) & set(self.pareja_b):
+            raise ValueError("Un mismo jugador no puede estar en ambas parejas.")
+        return self
+
 
 class PartidoResultado(PartidoResultadoCreate):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     reta_id: str
-    ganador: Literal["A", "B", "EMPATE"] = "A"
+    # "A" gana, "B" gana, "EMPATE" o "E" → tabla individual los maneja como empate
+    ganador: Literal["A", "B", "EMPATE", "E"] = "A"
+    partido_jugado: bool = True  # flag explícito — false si admin lo "des-cierra"
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 
 

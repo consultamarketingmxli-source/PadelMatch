@@ -371,8 +371,27 @@ export const api = {
       body,
       auth: true,
     }),
+  deleteResultado: (retaId: string, resultId: string) =>
+    request<{ ok: boolean; deleted: string }>(
+      `/retas/${retaId}/resultados/${resultId}`,
+      { method: "DELETE", auth: true },
+    ),
   tablaPosiciones: (retaId: string) =>
     request<TablaPosicionEntry[]>(`/public/retas/${retaId}/tabla`),
+  /** Clasificación privada — admin (auth:true) o player (header Authorization). */
+  getClasificacionAdmin: (retaId: string) =>
+    request<TablaPosicionEntry[]>(`/retas/${retaId}/clasificacion`, { auth: true }),
+  getClasificacionPlayer: (retaId: string, playerToken: string) =>
+    request<TablaPosicionEntry[]>(`/retas/${retaId}/clasificacion`, {
+      headers: { Authorization: `Bearer ${playerToken}` },
+    }),
+  /** URL completa del WebSocket realtime. token opcional (admin o player). */
+  getRealtimeWsUrl: (retaId: string, token: string): string => {
+    const httpBase = (BASE || "").replace(/\/$/, "");
+    const wsBase = httpBase.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+    const encoded = encodeURIComponent(token);
+    return `${wsBase}/api/ws/retas/${encodeURIComponent(retaId)}?token=${encoded}`;
+  },
 
   // ===== stripe checkout =====
   checkoutStripe: (

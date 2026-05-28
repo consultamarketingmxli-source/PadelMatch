@@ -1,7 +1,21 @@
 /**
- * Pantalla admin para capturar resultados de partidos del torneo.
- * Carga el rol Round Robin generado y permite ingresar el score por partido.
- * Cada update es un upsert atómico por (reta_id, cancha, ronda, partido_idx).
+ * Mesa de Control en Vivo (Fase C).
+ *
+ * UX para captura rápida en cancha:
+ *   • Tarjetas grandes por partido — 1 por pareja con TouchTarget 44px+.
+ *   • Inputs numéricos centrales con botones (−) y (+) gigantes (56px),
+ *     pensados para dedos húmedos / con grip de raqueta.
+ *   • Banner ámbar si el organizador intenta guardar con un input vacío:
+ *     "Ingresa la puntuación de ambas parejas para procesar la ronda".
+ *   • Botón "Empate" sólo visible en modalidad TIEMPO (formato_score.tipo === "TIEMPO").
+ *   • Chip ✓ verde cuando el partido está cerrado, con opción a editar o
+ *     eliminar (corregir error tipográfico).
+ *   • Tabs por cancha + contador global "X / N partidos capturados".
+ *
+ * Robustez:
+ *   • La UI nunca dispara la API si falta algún score (frontend gating).
+ *   • Tras guardar, actualiza el state local optimista; si la API falla,
+ *     revierte y muestra error específico.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -18,41 +32,71 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, BarChart2, Check, Trophy } from "lucide-react-native";
+import {
+  AlertCircle,
+  ArrowLeft,
+  BarChart2,
+  Check,
+  Equal,
+  Minus,
+  Plus,
+  Trash2,
+  Trophy,
+} from "lucide-react-native";
 
-import { api, PartidoResultado, RolResponse } from "@/src/api";
+import { PartidoResultado, Reta, RolResponse, api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
-type ScoreState = Record<string, { a: string; b: string; saving?: boolean; saved?: boolean }>;
+type Slot = {
+  a: string;
+  b: string;
+  resultId?: string;
+  saved?: boolean;
+  saving?: boolean;
+  dirty?: boolean;
+  error?: string | null;
+};
 
 const keyFor = (cancha: number, ronda: number, idx: number) => `${cancha}:${ronda}:${idx}`;
+
+function snapInt(value: string, max = 99): string {
+  const cleaned = value.replace(/[^0-9]/g, "").slice(0, 3);
+  if (!cleaned) return "";
+  const n = parseInt(cleaned, 10);
+  if (Number.isNaN(n)) return "";
+  return String(Math.max(0, Math.min(max, n)));
+}
 
 export default function CapturarResultados() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [reta, setReta] = useState<Reta | null>(null);
   const [rol, setRol] = useState<RolResponse | null>(null);
-  const [scores, setScores] = useState<ScoreState>({});
+  const [slots, setSlots] = useState<Record<string, Slot>>({});
   const [loading, setLoading] = useState(true);
   const [canchaActiva, setCanchaActiva] = useState(1);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [rolData, existing] = await Promise.all([
+      const [retaData, rolData, existing] = await Promise.all([
+        api.getRetaAdmin(id),
         api.getRol(id),
         api.listResultados(id),
       ]);
+      setReta(retaData);
       setRol(rolData);
-      // Hidratar scores guardados
-      const initial: ScoreState = {};
+      const initial: Record<string, Slot> = {};
       existing.forEach((r: PartidoResultado) => {
         initial[keyFor(r.cancha, r.ronda, r.partido_idx)] = {
           a: String(r.score_a),
           b: String(r.score_b),
+          resultId: r.id,
           saved: true,
+          dirty: false,
         };
       });
-      setScores(initial);
+      setSlots(initial);
     } catch (e: any) {
       Alert.alert("Error", e.message ?? "No se pudo cargar el rol");
     } finally {
@@ -64,56 +108,142 @@ export default function CapturarResultados() {
     void load();
   }, [load]);
 
-  const updateScore = (k: string, field: "a" | "b", value: string) => {
-    const cleaned = value.replace(/[^0-9]/g, "").slice(0, 2);
-    setScores((s) => ({
-      ...s,
-      [k]: { ...(s[k] ?? { a: "", b: "" }), [field]: cleaned, saved: false },
-    }));
+  const isTiempo = reta?.formato_score?.tipo === "TIEMPO" || reta?.modalidad_juego === "TIEMPO";
+  const maxScore = isTiempo ? 99 : Math.max(20, (reta?.formato_score?.valor ?? 9) + 5);
+
+  const setField = (k: string, field: "a" | "b", value: string) => {
+    setSlots((s) => {
+      const prev = s[k] ?? { a: "", b: "" };
+      return {
+        ...s,
+        [k]: {
+          ...prev,
+          [field]: snapInt(value, maxScore),
+          saved: false,
+          dirty: true,
+          error: null,
+        },
+      };
+    });
+  };
+
+  const bump = (k: string, field: "a" | "b", delta: number) => {
+    setSlots((s) => {
+      const prev = s[k] ?? { a: "", b: "" };
+      const cur = parseInt(prev[field] || "0", 10);
+      const next = Math.max(0, Math.min(maxScore, cur + delta));
+      return {
+        ...s,
+        [k]: {
+          ...prev,
+          [field]: String(next),
+          saved: false,
+          dirty: true,
+          error: null,
+        },
+      };
+    });
+  };
+
+  const setEmpate = (k: string) => {
+    setSlots((s) => {
+      const prev = s[k] ?? { a: "", b: "" };
+      const cur = parseInt(prev.a || prev.b || "1", 10) || 1;
+      return {
+        ...s,
+        [k]: { ...prev, a: String(cur), b: String(cur), saved: false, dirty: true, error: null },
+      };
+    });
   };
 
   const saveScore = async (
     cancha: number,
     ronda: number,
     idx: number,
-    parejaA: [string, string],
-    parejaB: [string, string],
+    parejaA: string[],
+    parejaB: string[],
   ) => {
     if (!id) return;
     const k = keyFor(cancha, ronda, idx);
-    const cur = scores[k];
+    const cur = slots[k];
     if (!cur || cur.a === "" || cur.b === "") {
-      Alert.alert("Captura incompleta", "Ingresa el marcador de ambas parejas.");
+      setSlots((s) => ({
+        ...s,
+        [k]: {
+          ...(s[k] ?? { a: "", b: "" }),
+          error: "Ingresa la puntuación de ambas parejas para procesar la ronda",
+        },
+      }));
       return;
     }
-    const sa = parseInt(cur.a, 10);
-    const sb = parseInt(cur.b, 10);
-    setScores((s) => ({ ...s, [k]: { ...cur, saving: true } }));
+    setSlots((s) => ({ ...s, [k]: { ...cur, saving: true, error: null } }));
     try {
-      await api.upsertResultado(id, {
+      const res = await api.upsertResultado(id, {
         cancha,
         ronda,
         partido_idx: idx,
         pareja_a: parejaA,
         pareja_b: parejaB,
-        score_a: sa,
-        score_b: sb,
+        score_a: parseInt(cur.a, 10),
+        score_b: parseInt(cur.b, 10),
       });
-      setScores((s) => ({ ...s, [k]: { a: String(sa), b: String(sb), saved: true } }));
+      setSlots((s) => ({
+        ...s,
+        [k]: {
+          a: String(res.score_a),
+          b: String(res.score_b),
+          resultId: res.id,
+          saved: true,
+          saving: false,
+          dirty: false,
+          error: null,
+        },
+      }));
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo guardar");
-      setScores((s) => ({ ...s, [k]: { ...cur, saving: false, saved: false } }));
+      setSlots((s) => ({
+        ...s,
+        [k]: { ...cur, saving: false, error: e.message ?? "No se pudo guardar" },
+      }));
     }
+  };
+
+  const deleteScore = async (k: string) => {
+    if (!id) return;
+    const slot = slots[k];
+    if (!slot?.resultId) return;
+    Alert.alert(
+      "¿Eliminar marcador?",
+      "Esto borrará el resultado y recalculará la tabla. ¿Continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api.deleteResultado(id, slot.resultId!);
+              setSlots((s) => {
+                const next = { ...s };
+                delete next[k];
+                return next;
+              });
+            } catch (e: any) {
+              Alert.alert("Error", e.message ?? "No se pudo eliminar");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const totalPartidos = useMemo(() => {
     if (!rol) return 0;
-    return rol.rol.reduce((acc, c) => acc + c.rondas.reduce((a2, r) => a2 + r.partidos.length, 0), 0);
+    return rol.rol.reduce(
+      (acc, c) => acc + c.rondas.reduce((a2, r) => a2 + r.partidos.length, 0),
+      0,
+    );
   }, [rol]);
-  const guardados = useMemo(
-    () => Object.values(scores).filter((s) => s.saved).length,
-    [scores],
-  );
+  const guardados = useMemo(() => Object.values(slots).filter((s) => s.saved).length, [slots]);
 
   if (loading) {
     return (
@@ -128,17 +258,23 @@ export default function CapturarResultados() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="resultados-back">
             <ArrowLeft size={18} color={colors.text.primary} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={styles.title}>Resultados</Text>
-            <Text style={styles.subtle}>{guardados} / {totalPartidos} partidos capturados</Text>
+            <Text style={styles.title}>Mesa de Control</Text>
+            <Text style={styles.subtle}>
+              {guardados} / {totalPartidos} partidos
+              {reta ? ` · ${reta.formato_score?.tipo === "TIEMPO" ? `${reta.formato_score?.valor}min` : `a ${reta.formato_score?.valor} ${reta.formato_score?.unidad ?? "juegos"}`}` : ""}
+            </Text>
           </View>
           <TouchableOpacity
-            onPress={() => router.push(`/retas/tabla/${id}` as any)}
+            onPress={() => reta && router.push(`/retas/${reta.url_slug}/tabla` as any)}
             style={styles.iconBtn}
             testID="resultados-tabla"
           >
@@ -147,19 +283,24 @@ export default function CapturarResultados() {
         </View>
 
         {rol.canchas > 1 ? (
-          <View style={styles.canchasBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.canchasBar}
+          >
             {rol.rol.map((c) => (
               <TouchableOpacity
                 key={c.cancha}
                 onPress={() => setCanchaActiva(c.cancha)}
                 style={[styles.canchaTab, canchaActiva === c.cancha && styles.canchaTabActive]}
+                testID={`cancha-tab-${c.cancha}`}
               >
                 <Text style={[styles.canchaTabText, canchaActiva === c.cancha && styles.canchaTabTextActive]}>
                   Cancha {c.cancha}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         ) : null}
 
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -167,61 +308,111 @@ export default function CapturarResultados() {
             <View key={ronda.ronda} style={styles.rondaWrap}>
               <View style={styles.rondaHead}>
                 <Trophy size={14} color={colors.brand.primary} />
-                <Text style={styles.rondaTitle}>Ronda {ronda.ronda}</Text>
+                <Text style={styles.rondaTitle}>RONDA {ronda.ronda}</Text>
               </View>
               {ronda.partidos.map((p, idx) => {
                 const k = keyFor(canchaData.cancha, ronda.ronda, idx);
-                const st = scores[k] ?? { a: "", b: "" };
-                const saving = st.saving;
-                const saved = st.saved;
+                const st = slots[k] ?? { a: "", b: "" };
+                const hasError = !!st.error;
                 return (
-                  <View key={k} style={[styles.partidoCard, saved && styles.partidoCardSaved]}>
+                  <View
+                    key={k}
+                    style={[
+                      styles.partidoCard,
+                      st.saved && !st.dirty && styles.partidoCardSaved,
+                      hasError && styles.partidoCardError,
+                    ]}
+                  >
+                    {/* Pareja A */}
                     <View style={styles.parejaRow}>
-                      <Text style={styles.parejaText} numberOfLines={1}>
-                        {p.pareja_a.join(" + ")}
-                      </Text>
-                      <TextInput
-                        testID={`score-${k}-a`}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.parejaLabel}>PAREJA A</Text>
+                        <Text style={styles.parejaText} numberOfLines={1}>
+                          {p.pareja_a.join(" + ")}
+                        </Text>
+                      </View>
+                      <ScoreStepper
                         value={st.a}
-                        onChangeText={(v) => updateScore(k, "a", v)}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        style={styles.scoreInput}
-                        placeholder="—"
-                        placeholderTextColor={colors.text.muted}
+                        onChange={(v) => setField(k, "a", v)}
+                        onMinus={() => bump(k, "a", -1)}
+                        onPlus={() => bump(k, "a", +1)}
+                        invalid={hasError && st.a === ""}
+                        testID={`stepper-${k}-a`}
                       />
                     </View>
-                    <View style={styles.vsRow}><Text style={styles.vsText}>vs</Text></View>
-                    <View style={styles.parejaRow}>
-                      <Text style={styles.parejaText} numberOfLines={1}>
-                        {p.pareja_b.join(" + ")}
-                      </Text>
-                      <TextInput
-                        testID={`score-${k}-b`}
-                        value={st.b}
-                        onChangeText={(v) => updateScore(k, "b", v)}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        style={styles.scoreInput}
-                        placeholder="—"
-                        placeholderTextColor={colors.text.muted}
-                      />
-                    </View>
-                    <TouchableOpacity
-                      testID={`save-${k}`}
-                      onPress={() => saveScore(canchaData.cancha, ronda.ronda, idx, p.pareja_a, p.pareja_b)}
-                      disabled={!!saving}
-                      style={[styles.saveBtn, saved && styles.saveBtnDone, saving && { opacity: 0.6 }]}
-                    >
-                      {saving ? (
-                        <ActivityIndicator color={colors.text.inverse} size="small" />
+
+                    <View style={styles.vsRow}>
+                      {isTiempo ? (
+                        <TouchableOpacity
+                          onPress={() => setEmpate(k)}
+                          style={styles.empateBtn}
+                          testID={`empate-${k}`}
+                        >
+                          <Equal size={12} color={colors.brand.primary} />
+                          <Text style={styles.empateText}>Empate</Text>
+                        </TouchableOpacity>
                       ) : (
-                        <>
-                          <Check size={14} color={colors.text.inverse} />
-                          <Text style={styles.saveBtnText}>{saved ? "Guardado" : "Guardar"}</Text>
-                        </>
+                        <Text style={styles.vsText}>VS</Text>
                       )}
-                    </TouchableOpacity>
+                    </View>
+
+                    {/* Pareja B */}
+                    <View style={styles.parejaRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.parejaLabel}>PAREJA B</Text>
+                        <Text style={styles.parejaText} numberOfLines={1}>
+                          {p.pareja_b.join(" + ")}
+                        </Text>
+                      </View>
+                      <ScoreStepper
+                        value={st.b}
+                        onChange={(v) => setField(k, "b", v)}
+                        onMinus={() => bump(k, "b", -1)}
+                        onPlus={() => bump(k, "b", +1)}
+                        invalid={hasError && st.b === ""}
+                        testID={`stepper-${k}-b`}
+                      />
+                    </View>
+
+                    {hasError ? (
+                      <View style={styles.errorBanner}>
+                        <AlertCircle size={14} color={colors.status.amber} />
+                        <Text style={styles.errorText}>{st.error}</Text>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.actionRow}>
+                      <TouchableOpacity
+                        testID={`save-${k}`}
+                        onPress={() => saveScore(canchaData.cancha, ronda.ronda, idx, p.pareja_a, p.pareja_b)}
+                        disabled={!!st.saving || (st.saved === true && !st.dirty)}
+                        style={[
+                          styles.saveBtn,
+                          st.saved && !st.dirty && styles.saveBtnDone,
+                          st.saving && { opacity: 0.6 },
+                        ]}
+                      >
+                        {st.saving ? (
+                          <ActivityIndicator color={colors.text.inverse} size="small" />
+                        ) : (
+                          <>
+                            <Check size={14} color={colors.text.inverse} />
+                            <Text style={styles.saveBtnText}>
+                              {st.saved && !st.dirty ? "✓ Guardado" : st.dirty && st.saved ? "Actualizar" : "Guardar marcador"}
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      {st.saved && st.resultId ? (
+                        <TouchableOpacity
+                          onPress={() => deleteScore(k)}
+                          style={styles.deleteBtn}
+                          testID={`delete-${k}`}
+                        >
+                          <Trash2 size={14} color={colors.status.red} />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   </View>
                 );
               })}
@@ -230,6 +421,46 @@ export default function CapturarResultados() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function ScoreStepper(props: {
+  value: string;
+  onChange: (v: string) => void;
+  onMinus: () => void;
+  onPlus: () => void;
+  invalid?: boolean;
+  testID?: string;
+}) {
+  return (
+    <View style={styles.stepper}>
+      <TouchableOpacity
+        onPress={props.onMinus}
+        style={styles.stepBtn}
+        activeOpacity={0.6}
+        testID={props.testID ? `${props.testID}-minus` : undefined}
+      >
+        <Minus size={20} color={colors.text.primary} />
+      </TouchableOpacity>
+      <TextInput
+        value={props.value}
+        onChangeText={props.onChange}
+        keyboardType="number-pad"
+        maxLength={2}
+        style={[styles.scoreInput, props.invalid && styles.scoreInputInvalid]}
+        placeholder="—"
+        placeholderTextColor={colors.text.muted}
+        testID={props.testID}
+      />
+      <TouchableOpacity
+        onPress={props.onPlus}
+        style={styles.stepBtn}
+        activeOpacity={0.6}
+        testID={props.testID ? `${props.testID}-plus` : undefined}
+      >
+        <Plus size={20} color={colors.text.primary} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -245,12 +476,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
     alignItems: "center", justifyContent: "center",
   },
-  title: { ...typography.h2, color: colors.text.primary },
-  subtle: { color: colors.text.secondary, fontSize: 12, marginTop: 2 },
-  canchasBar: {
-    flexDirection: "row", gap: spacing.sm,
-    paddingHorizontal: spacing.lg, paddingBottom: spacing.sm,
-  },
+  title: { ...typography.h2, color: colors.text.primary, fontSize: 17 },
+  subtle: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
+  canchasBar: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   canchaTab: {
     paddingHorizontal: spacing.md, paddingVertical: 8,
     borderRadius: radii.pill, borderWidth: 1, borderColor: colors.border.default,
@@ -262,32 +490,85 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
   rondaWrap: { marginBottom: spacing.lg },
   rondaHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: spacing.sm },
-  rondaTitle: { ...typography.label, color: colors.brand.primary, fontSize: 12 },
+  rondaTitle: {
+    ...typography.label,
+    color: colors.brand.primary,
+    fontSize: 11,
+    letterSpacing: 1.2,
+  },
   partidoCard: {
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
     gap: spacing.sm,
   },
   partidoCardSaved: {
     borderColor: colors.status.green,
     backgroundColor: "rgba(22, 163, 74, 0.04)",
   },
+  partidoCardError: {
+    borderColor: colors.status.amber,
+    borderWidth: 2,
+  },
   parejaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  parejaText: { flex: 1, color: colors.text.primary, fontWeight: "600", fontSize: 14 },
+  parejaLabel: {
+    color: colors.text.muted,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  parejaText: { color: colors.text.primary, fontWeight: "700", fontSize: 14 },
+  vsRow: { alignItems: "center", paddingVertical: 2 },
+  vsText: {
+    color: colors.text.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1.5,
+  },
+  empateBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: "rgba(5, 150, 105, 0.08)",
+    borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.brand.primaryBorder,
+  },
+  empateText: { color: colors.brand.primary, fontSize: 11, fontWeight: "700" },
+  stepper: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+  },
+  stepBtn: {
+    width: 44, height: 44, borderRadius: radii.md,
+    backgroundColor: colors.bg.app,
+    borderWidth: 1, borderColor: colors.border.default,
+    alignItems: "center", justifyContent: "center",
+  },
   scoreInput: {
-    width: 56, height: 44, textAlign: "center",
-    borderWidth: 1, borderColor: colors.border.default, borderRadius: radii.md,
-    fontSize: 18, fontWeight: "800", color: colors.text.primary,
+    width: 56, height: 56, textAlign: "center",
+    borderWidth: 2, borderColor: colors.border.default, borderRadius: radii.md,
+    fontSize: 24, fontWeight: "900", color: colors.text.primary,
     backgroundColor: colors.bg.elevated,
   },
-  vsRow: { alignItems: "center" },
-  vsText: { color: colors.text.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  scoreInputInvalid: { borderColor: colors.status.amber, backgroundColor: "#FFF8E1" },
+  errorBanner: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "#FFF8E1", borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
+  },
+  errorText: { flex: 1, color: colors.text.primary, fontSize: 11 },
+  actionRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   saveBtn: {
-    marginTop: spacing.xs,
+    flex: 1,
     backgroundColor: colors.brand.primary,
-    paddingVertical: 10, borderRadius: radii.md,
+    paddingVertical: 14, borderRadius: radii.md,
     flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6,
   },
   saveBtnDone: { backgroundColor: colors.status.green },
   saveBtnText: { color: colors.text.inverse, fontWeight: "800", fontSize: 13 },
+  deleteBtn: {
+    width: 44, height: 44, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.status.red,
+    backgroundColor: "rgba(244, 63, 94, 0.06)",
+    alignItems: "center", justifyContent: "center",
+  },
 });
