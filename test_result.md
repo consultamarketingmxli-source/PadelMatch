@@ -233,11 +233,33 @@ frontend:
     file: "/app/frontend/app/admin/reta/jugadores/[id].tsx"
     stuck_count: 0
     priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Modal full-screen con ScrollView muestra Cancha → Rondas → Partidos (Pareja A vs Pareja B). Auto-refresh con debounce 200ms cuando se abre o cambia jugadores. Race-condition guard con previewReqIdRef. Subtítulo dinámico: 'Sin guardar' vs 'Guardado'. Screenshot mostró rondas 1-5 perfectamente con 8 jugadores reales. Botón testID jugadores-preview en footer. 22/22 tests pasaron en iter 11."
+  - task: "Importación masiva de jugadores (paste CSV)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/ImportarJugadoresModal.tsx"
+    stuck_count: 0
+    priority: "high"
     needs_retesting: true
     status_history:
         - working: true
           agent: "main"
-          comment: "Modal full-screen con ScrollView muestra Cancha → Rondas → Partidos (Pareja A vs Pareja B). Auto-refresh con debounce 200ms cuando se abre o cambia jugadores. Race-condition guard con previewReqIdRef. Subtítulo dinámico: 'Sin guardar' vs 'Guardado'. Screenshot mostró rondas 1-5 perfectamente con 8 jugadores reales. Botón testID jugadores-preview en footer."
+          comment: "Backend POST /api/retas/{id}/inscripciones/import con validaciones: cupo, duplicados (Set normalizado lowercase), nombre min/max chars, 409 si hay resultados capturados. Frontend modal con TextInput multiline, parser CSV propio (coma/tab/punto-coma + skip headers genéricos), preview de items parseados, vista de resultado con creadas + omitidos por razón (YA INSCRITO/CUPO LLENO/NOMBRE INVÁLIDO). Validado E2E con screenshots: paste 5 jugadores nuevos OK + paste con duplicados → 4 omitidos correctos. Botón Importar en topBar de /admin/reta/inscripciones/[id] con testID import-open. Modal testIDs: import-textarea, import-submit, import-close, import-done."
+  - task: "Backend endpoint POST /api/retas/{id}/inscripciones/import"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/retas.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Pydantic models ImportJugadorItem/ImportJugadoresBody. Validaciones: lista vacía → 422, >1000 items → 422, resultados capturados → 409, duplicados case-insensitive (existentes + dentro del lote). Marca docs con via_import=true para trazabilidad. Tests curl 3/3 OK."
 
 metadata:
   created_by: "main_agent"
@@ -247,8 +269,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Backend endpoint POST /api/retas/{id}/rol/preview"
-    - "Vista Previa del Rol (Modal en pantalla de Drag & Drop)"
+    - "Importación masiva de jugadores (paste CSV)"
+    - "Backend endpoint POST /api/retas/{id}/inscripciones/import"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

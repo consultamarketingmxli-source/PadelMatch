@@ -168,6 +168,127 @@ async def list_inscripciones(reta_id: str, current=Depends(get_current_admin)):
     return out
 
 
+# ---------------- IMPORT MASIVO de jugadores (CSV/manual bulk) -----------------
+class ImportJugadorItem(BaseModel):
+    nombre: str
+    telefono: str | None = None
+
+
+class ImportJugadoresBody(BaseModel):
+    jugadores: List[ImportJugadorItem]
+
+
+@router.post("/{reta_id}/inscripciones/import")
+async def import_inscripciones_bulk(
+    reta_id: str,
+    body: ImportJugadoresBody,
+    current=Depends(get_current_admin),
+):
+    """Crea inscripciones en bulk (estatus_pago='Aprobado') a partir de
+    una lista parseada (típicamente desde CSV importado por el organizador).
+
+    Reglas de seguridad:
+      • Solo admin.
+      • Lista no vacía y máximo 1000 items por request (DoS guard).
+      • Cada nombre: 2..80 chars, normalizado (trim, strip duplicates spaces).
+      • Teléfono opcional → si vacío usa "N/A".
+      • Skip duplicados: nombres ya presentes en la reta (cualquier estatus)
+        se devuelven en `omitidos` con razón "duplicado".
+      • Skip si nombre vacío post-trim → `omitidos` con razón "vacio".
+      • Skip si superan el cupo `max_jugadores` → `omitidos` con razón
+        "cupo_lleno" (se respeta el orden de llegada en el body).
+      • También bloquea si ya hay resultados capturados (409) — no se debe
+        cambiar el cupo activo del torneo en juego.
+
+    Respuesta:
+      {
+        creadas: int,
+        omitidos: [{nombre, razon}],
+        total_aprobados: int,
+        max_jugadores: int
+      }
+    """
+    import uuid as _uuid
+    import re as _re
+    from datetime import timezone as _tz
+
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+
+    items = body.jugadores or []
+    if not items:
+        raise HTTPException(422, "La lista 'jugadores' no puede estar vacía")
+    if len(items) > 1000:
+        raise HTTPException(422, "Máximo 1000 jugadores por importación")
+
+    # Bloqueo si ya hay resultados (consistencia con drag & drop)
+    if await db.resultados.count_documents({"reta_id": reta_id}):
+        raise HTTPException(
+            409,
+            "No se puede importar: ya hay resultados capturados. Elimina los marcadores primero.",
+        )
+
+    canchas = reta["canchas_disponibles"]
+    max_jug = int(reta.get("max_jugadores") or canchas * 8)
+
+    # Estado actual: nombres ya en la reta (cualquier estatus)
+    cursor = db.inscripciones.find({"reta_id": reta_id}, {"_id": 0, "nombre": 1, "estatus_pago": 1})
+    existentes_norm: set[str] = set()
+    aprobados_count = 0
+    async for d in cursor:
+        existentes_norm.add(d["nombre"].strip().lower())
+        if d.get("estatus_pago") == "Aprobado":
+            aprobados_count += 1
+
+    creadas = 0
+    omitidos: List[dict] = []
+    docs_to_insert: List[dict] = []
+    nombres_en_lote_norm: set[str] = set()  # evitar duplicados dentro del mismo CSV
+
+    for it in items:
+        # Normalizar
+        nombre = _re.sub(r"\s+", " ", (it.nombre or "")).strip()
+        if len(nombre) < 2 or len(nombre) > 80:
+            omitidos.append({"nombre": it.nombre or "", "razon": "vacio"})
+            continue
+
+        key = nombre.lower()
+        if key in existentes_norm or key in nombres_en_lote_norm:
+            omitidos.append({"nombre": nombre, "razon": "duplicado"})
+            continue
+
+        if (aprobados_count + creadas) >= max_jug:
+            omitidos.append({"nombre": nombre, "razon": "cupo_lleno"})
+            continue
+
+        telefono = (it.telefono or "N/A").strip() or "N/A"
+        docs_to_insert.append({
+            "id": str(_uuid.uuid4()),
+            "reta_id": reta_id,
+            "jugador_id": f"import-{_uuid.uuid4().hex[:8]}",
+            "nombre": nombre,
+            "telefono": telefono,
+            "estatus_pago": "Aprobado",
+            "bloqueado_hasta": None,
+            "creado_en": datetime.now(_tz.utc),
+            "via_import": True,
+        })
+        nombres_en_lote_norm.add(key)
+        creadas += 1
+
+    if docs_to_insert:
+        await db.inscripciones.insert_many(docs_to_insert)
+
+    total_aprobados = aprobados_count + creadas
+    return {
+        "creadas": creadas,
+        "omitidos": omitidos,
+        "total_aprobados": total_aprobados,
+        "max_jugadores": max_jug,
+    }
+
+
 @router.post("/{reta_id}/expirar-pendientes")
 async def admin_expirar_pendientes(reta_id: str, current=Depends(get_current_admin)):
     """Liberación manual: elimina todas las inscripciones Pendientes (aunque

@@ -372,6 +372,25 @@ export const api = {
       `/retas/${retaId}/rol/preview`,
       { method: "POST", body: { jugadores }, auth: true },
     ),
+  /**
+   * Importación masiva de jugadores (CSV). El backend valida cupo,
+   * duplicados y bloquea si ya hay resultados (409).
+   * Devuelve breakdown: creadas + omitidos[{nombre, razon}].
+   */
+  importInscripciones: (
+    retaId: string,
+    jugadores: { nombre: string; telefono?: string }[],
+  ) =>
+    request<{
+      creadas: number;
+      omitidos: { nombre: string; razon: "duplicado" | "cupo_lleno" | "vacio" }[];
+      total_aprobados: number;
+      max_jugadores: number;
+    }>(`/retas/${retaId}/inscripciones/import`, {
+      method: "POST",
+      body: { jugadores },
+      auth: true,
+    }),
   listResultados: (retaId: string) =>
     request<PartidoResultado[]>(`/retas/${retaId}/resultados`, { auth: true }),
   upsertResultado: (

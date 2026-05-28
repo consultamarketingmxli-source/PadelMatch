@@ -12,9 +12,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, RotateCcw, CheckCircle2, Clock, XCircle } from "lucide-react-native";
+import { ArrowLeft, RotateCcw, CheckCircle2, Clock, Upload, XCircle } from "lucide-react-native";
 
 import { Inscripcion, api } from "@/src/api";
+import { ImportarJugadoresModal } from "@/src/components/ImportarJugadoresModal";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 const estatusInfo = (s: string) => {
@@ -30,6 +31,7 @@ export default function AdminInscripciones() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refunding, setRefunding] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -83,7 +85,14 @@ export default function AdminInscripciones() {
           <ArrowLeft size={18} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Inscripciones</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          onPress={() => setImportOpen(true)}
+          style={styles.importBtn}
+          testID="import-open"
+        >
+          <Upload size={14} color={colors.brand.primary} />
+          <Text style={styles.importBtnTxt}>Importar</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -136,6 +145,14 @@ export default function AdminInscripciones() {
           }}
         />
       )}
+
+      {/* Modal de Importación Masiva — paste CSV */}
+      <ImportarJugadoresModal
+        retaId={id || ""}
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => void load()}
+      />
     </SafeAreaView>
   );
 }
@@ -150,6 +167,16 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md, backgroundColor: colors.bg.card,
     borderWidth: 1, borderColor: colors.border.default, alignItems: "center", justifyContent: "center",
+  },
+  importBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: spacing.sm + 2, paddingVertical: 8,
+    borderRadius: radii.md, borderWidth: 1,
+    borderColor: colors.brand.primary + "40",
+    backgroundColor: colors.brand.primary + "10",
+  },
+  importBtnTxt: {
+    ...typography.button, fontSize: 12, color: colors.brand.primary,
   },
   title: { ...typography.h2, color: colors.text.primary, fontSize: 18 },
   list: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.sm },

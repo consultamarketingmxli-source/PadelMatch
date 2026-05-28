@@ -1,0 +1,45 @@
+{
+  "summary": "Iter 12 — Importación masiva de jugadores (paste CSV). BACKEND 11/11 PASS en /app/backend/tests/test_import_inscripciones.py cubriendo los 10 escenarios solicitados (5 jugadores válidos→200 creadas=5, duplicados case-insensitive→razon='duplicado', cupo_lleno respeta orden, lista vacía→422, >1000→422 'Máximo 1000', con resultados capturados→409, sin auth→401/403, normalización 'Juan   Pérez'→'Juan Pérez', nombre vacío post-trim→razon='vacio'). REGRESIÓN iter9/10/11 47/47 PASS (test_drag_drop_jugadores + test_rol_preview + test_phase_c_realtime: GET /rol, PUT /jugadores/orden, POST /rol/preview, WS hello/broadcast/ping-pong, captura de resultados, cascada de standings). FRONTEND 5/5 PASS validado vía Playwright en /admin/reta/inscripciones/{demoId}: botón Importar en topBar (testID import-open), modal abre con textarea+close+submit+done, parser CSV muestra 'X jugadores detectados' + preview con index/nombre/teléfono, submit con 1 duplicado + 3 cupo_lleno muestra '0 jugadores importados', 'Total aprobados: 8 / 8', '4 OMITIDOS' con badges YA INSCRITO y CUPO LLENO, botón Listo cierra modal y recarga lista intacta.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Animated useNativeDriver",
+        "issue": "Warning persistente: 'Animated: `useNativeDriver` is not supported because the native animated module is missing'. Heredado de iter10. Reference: react-native-draggable-flatlist (no afecta esta feature)."
+      },
+      {
+        "component": "props.pointerEvents",
+        "issue": "Warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' (heredado). No relacionado con esta feature."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_import_inscripciones.py",
+    "/app/test_reports/pytest/iter12_import.xml"
+  ],
+  "action_items": [
+    "Ninguna acción crítica. Feature completa y validada E2E (backend + frontend)."
+  ],
+  "critical_code_review_comments": [
+    "routers/retas.py:172-289 — endpoint import_inscripciones_bulk correctamente implementado: orden de validaciones es robusto (404 reta → 422 vacío → 422 >1000 → 409 resultados → loop normalización/dedupe/cupo). Bien aislado del flow de Stripe/MP — solo inserta inscripciones con estatus='Aprobado' y marca via_import=True.",
+    "Dedupe es case-insensitive vía nombre.strip().lower() tanto contra existentes como dentro del mismo lote (nombres_en_lote_norm) — previene casos como 'JUAN' + 'juan' en el mismo CSV.",
+    "Normalización con regex r'\\s+' → ' ' colapsa múltiples espacios. Validación de longitud (2..80 chars) razonable.",
+    "Cupo: usa aprobados_count + creadas para respetar capacidad en tiempo real durante el loop (no hace queries dentro del for).",
+    "ImportarJugadoresModal.tsx — parser CSV soporta coma/tab/semicolon, detecta y skip-ea headers genéricos ('nombre', 'name', 'jugador', 'player'). Preview list solo se muestra si ≤12 items para evitar scroll infinito.",
+    "Manejo de errores: 409 mapeado a mensaje user-friendly ('ya hay resultados capturados'), 422 'Máximo 1000' también detectado. Buen UX.",
+    "testIDs presentes y consistentes: import-open, import-textarea, import-close, import-submit, import-done.",
+    "Frontend onSuccess callback recarga la lista solo si creadas > 0 (línea 129) — buen detalle para evitar re-fetches innecesarios."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_import_inscripciones.py (nuevo, 11 tests)"
+  ],
+  "success_rate": { "backend": "100% (11/11 nuevos + 47/47 regresión)", "frontend": "100% (5/5 escenarios E2E)" },
+  "seed_data_creation": "Cada test crea su propia reta temporal con _create_reta() y la limpia en finally con DELETE /api/retas/{id}. Solo test_demo_reta_full_import_blocked_by_cupo y test_b10_regresion usan la reta demo (idempotente: solo intentan importar nombres únicos que serán omitidos por cupo_lleno, no afectan estado). El test del frontend tampoco mutó la reta (todos los items fueron rechazados: 1 duplicado + 3 cupo_lleno).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reta demo 6012defc-2e74-4b14-abc2-313787a3d3e7 sigue con 8/8 aprobados (Mateo/Sofia/Andres/Camila/Diego/Valentina/Lucas/Isabella), sin resultados ni orden manual mutado. Endpoint /api/retas/{id}/inscripciones/import probado exhaustivamente — listo para producción. Si tests futuros tocan ese endpoint pueden reutilizar el helper _create_reta de este test file.",
+  "rca_of_issue": "N/A — feature completa, sin bugs encontrados."
+}
