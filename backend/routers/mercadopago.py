@@ -94,7 +94,7 @@ class MpPaymentStatus(BaseModel):
 async def _admin_with_mp_for_reta(reta: dict) -> dict:
     """Recupera el documento de admin/organizador que cobra esta reta y
     que TIENE MP conectado. Si no, lanza 400 con mensaje claro."""
-    organizador_id = reta.get("organizador_id") or "admin"
+    _organizador_id = reta.get("organizador_id") or "admin"  # noqa: F841 — reservado para multi-organizador
     # En el modelo actual solo hay un admin; lo identificamos por email default.
     admin = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT}, {"_id": 0})
     if not admin:

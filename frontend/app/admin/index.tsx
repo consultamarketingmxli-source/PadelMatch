@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { BarChart3, LogOut, Plus, Wallet } from "lucide-react-native";
+import { BarChart3, Gift, LogOut, Plus, Wallet } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
@@ -65,6 +65,9 @@ export default function AdminDashboard() {
           <>
             <TouchableOpacity onPress={() => router.push("/admin/mercadopago" as any)} style={styles.iconBtn} testID="mercadopago-btn">
               <Wallet size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/admin/marketing" as any)} style={styles.iconBtn} testID="marketing-btn">
+              <Gift size={18} color="#F59E0B" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
               <BarChart3 size={18} color={colors.brand.primary} />
