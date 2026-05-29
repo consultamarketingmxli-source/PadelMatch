@@ -1,0 +1,33 @@
+{
+  "summary": "Validación de regresión POST-refactor de /app/frontend/app/retas/[slug].tsx (1222 → 738 líneas, lógica intacta, JSX extraída a RsvpCard.tsx + CheckoutCard.tsx). Backend regression iter26 (5/5) pasa al 100%. Frontend smoke: TODOS los testIDs requeridos del checkout-card y rsvp-card siguen presentes y funcionales. Cupón flow integra correctamente con backend (input→apply→render de cupon-error con mensaje). LifeBuoy FAB visible/clickable en ambas pantallas. RsvpCard renderiza badge 'EVENTO GRATUITO · SIN CARGO', título '¿Te apuntas?', dos CTAs (aceptar/rechazar) y oculta CheckoutCard. No se detectaron regresiones del refactor.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_regression.py",
+    "/app/test_reports/pytest/iter27_regression.xml"
+  ],
+  "action_items": [
+    "No se requieren acciones - refactor exitoso. Opcional: poblar al menos 1 cupón ACTIVO (ej. PROPLAYER100) en BD seed para que el happy-path de descuento al 100% pueda validarse end-to-end. Actualmente /api/admin/cupones devuelve count=0, por eso solo se verificó el camino de error (que renderizó correctamente cupon-error con el mensaje 'Código de cupón no existe')."
+  ],
+  "critical_code_review_comments": [
+    "RsvpCard.tsx y CheckoutCard.tsx son componentes presentacionales puros que reciben props desde [slug].tsx — toda la lógica de negocio (handlers, polling de pago, validación de cupón, RSVP) permanece centralizada en el padre. Buen patrón de separación de responsabilidades.",
+    "Todos los testIDs fueron preservados de forma idéntica en ambos componentes hijos: back-btn, ver-tabla-btn, checkout-nombre-input, checkout-telefono-input, cupon-card, cupon-input, cupon-apply-btn, cupon-remove-btn, cupon-error, cupon-success, cupon-monto, pay-button, lifebuoy-fab, club-deeplink-maps, rsvp-card, rsvp-nombre-input, rsvp-telefono-input, rsvp-aceptar-btn, rsvp-rechazar-btn.",
+    "[slug].tsx ahora tiene 738 líneas - dentro de límite recomendado (<700 sería ideal). Considerar mover handlers de cupón a un custom hook (useCupon) en futuras iteraciones para reducir aún más.",
+    "Sin cambios a contratos de API, las suites backend regression iter26 siguen verdes 5/5."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "No se creó seed data nueva. Se reutilizó reta de pago existente (slug test-2-wilson-padel-club-2026-12-27, costo $100) y reta gratuita (slug reta-gratis-demo-club-amigos-2026-12-20, tipo_acceso=gratis_amigos) para validar ambos componentes presentacionales.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Refactor de [slug].tsx COMPLETO y verificado en iter27. Próxima iteración: si se requiere validar happy-path de cupón al 100% (CTA cambia a 'Confirmar Asistencia con Cupón Gratis'), poblar cupón activo PROPLAYER100 vinculado a una reta de pago vía POST /api/admin/cupones. Estado actual de cupones en BD: count=0.",
+  "rca_of_issue": "N/A - No bugs encontrados. El error visible al aplicar PROPLAYER100 ('Código de cupón no existe') NO es un bug del refactor sino estado de datos: la BD no tiene cupones activos. El testID cupon-error se renderizó correctamente, lo que prueba que el cableado prop child→parent (onApply→handleAplicarCupon, error→errorCupon prop) funciona como en el código original."
+}
