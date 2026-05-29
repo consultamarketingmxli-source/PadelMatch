@@ -328,7 +328,9 @@ async def cambiar_estatus(
         "estatus_confirmacion": new,
         "estatus_pago": new_pago,
         "promoted": bool(promoted),
-        "promoted_player": promoted.get("nombre") if promoted else None,
+        "promoted_player": (
+            promoted.get("nombre") if isinstance(promoted, dict) else getattr(promoted, "nombre", None)
+        ) if promoted else None,
     }
 
 
