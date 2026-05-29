@@ -394,6 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.default,
+    backgroundColor: colors.bg.card,
   },
   rowPressed: {
     backgroundColor: colors.brand.primarySoft,

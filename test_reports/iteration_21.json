@@ -1,0 +1,48 @@
+{
+  "summary": "Iter21 — Módulo Clubes Inteligente backend + frontend testing. Backend: 9/9 PASS (test_clubes_smart.py). Cubre: GET /api/public/clubes/buscar?q=padel (200 + schema correcto direccion_completa/latitud/longitud), GET ?lat=&lng= ordena por Haversine ascendente, GET ?q=<inexistente> devuelve [], POST /api/retas con club_id existente HEREDA dir+lat+lng del directorio, POST con texto libre EJECUTA Enriquecimiento Silencioso (crea entrada clubes), POST duplicado con misma cadena (incluso uppercase) DEDUPLICA (mismo club_id), GET /api/public/retas/{slug} expone latitud/longitud/club_direccion/club_id. Frontend: ClubAutocomplete renderiza con testID 'form-club-autocomplete', debounce 300ms funcional (2 resultados al tipear 'padel': Wilson Padel Club + Padel Pro CDMX con direcciones), opción 'Usar como ubicación personalizada' visible, botón GPS presente. Player view: chip 'MAPA' (testID club-deeplink-cta) visible en ambas retas seed; deep-link verificado en ambos modos: con-geo → query=19.4326,-99.1332 (LAT,LNG); sin-geo → query=Speed%20Club (texto URL-encoded). Login admin funcional (admin@padelappretas.com / admin123). React Native deprecation warnings detectadas: shadow* style props y props.pointerEvents (no-bloqueantes, ya reportado en iter20).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Warning persistente: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — Reference: /app/frontend/app/retas/[slug].tsx (rsvpAcceptBtn) y otros estilos del proyecto. Ya reportado en iter20."
+      },
+      {
+        "component": "props.pointerEvents",
+        "issue": "Warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Ya reportado en iter20."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_clubes_smart.py",
+    "/app/test_reports/pytest/iter21_clubes.xml"
+  ],
+  "action_items": [
+    "(Opcional) Migrar shadow* style props a boxShadow y props.pointerEvents a style.pointerEvents — no bloquea funcionalidad pero limpia warnings en Expo web.",
+    "(Opcional) Considerar añadir testID en inputs 'login-email', 'login-password', 'login-submit' del /admin/login para tests futuros (actualmente se usan selectores por índice)."
+  ],
+  "critical_code_review_comments": [
+    "clubes.py:_norm correctamente normaliza acentos+case+espacios — dedupe robusto.",
+    "upsert_club_silencioso es defensivo (try/except total, devuelve None en error) — el flujo de create_reta NUNCA se rompe por enriquecimiento.",
+    "retas.py update_reta usa misma lógica de resolución que create_reta — consistencia OK.",
+    "El endpoint /clubes/buscar nunca devuelve 500 (catch-all → results:[]) — bueno para UX del autocomplete."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_clubes_smart.py (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9)",
+    "frontend": "100% (todos los flujos verificados visualmente + via testIDs)"
+  },
+  "seed_data_creation": "Tests crean retas TEST_* con clubes únicos por uuid y se limpian al final (test_zz_cleanup). Sin contaminación de datos seed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Módulo Clubes Inteligente está estable. Backend 9/9 + Frontend visual OK. Las warnings shadow*/pointerEvents son globales del proyecto, no específicas de Clubes. test_credentials.md leído: admin@padelappretas.com/admin123 funciona. Retas seed verificadas existen: test-enrich-padel-pro-cdmx-2026-12-25 (con geo lat=19.4326 lng=-99.1332) y test-tiempo-30-speed-club-2025-12-31 (sin geo).",
+  "rca_of_issue": "N/A — no se encontraron bugs en el Módulo Clubes Inteligente."
+}

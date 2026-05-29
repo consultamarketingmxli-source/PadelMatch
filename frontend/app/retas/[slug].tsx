@@ -437,15 +437,20 @@ export default function RetaDetailScreen() {
                 activeOpacity={0.7}
                 style={styles.metaRow}
                 testID="club-deeplink-maps"
+                accessibilityLabel="Abrir ubicación en Google Maps"
+                accessibilityRole="link"
               >
-                <MapPin size={12} color={colors.text.secondary} />
-                <Text style={styles.clubText} numberOfLines={1}>
+                <MapPin size={13} color={colors.brand.primary} />
+                <Text style={styles.clubText} numberOfLines={2}>
                   {reta.club}
                   {(reta as any).club_direccion ? (
                     <Text style={styles.clubAddrText}>{" · "}{(reta as any).club_direccion}</Text>
                   ) : null}
                 </Text>
-                <MapIcon size={12} color={colors.brand.primary} />
+                <View style={styles.mapsCta} testID="club-deeplink-cta">
+                  <MapIcon size={12} color={colors.brand.primary} />
+                  <Text style={styles.mapsCtaText}>Mapa</Text>
+                </View>
               </TouchableOpacity>
               {/* Chip de modalidad — visible solo si es reta de parejas. */}
               {esRetaParejas ? (
@@ -836,6 +841,24 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
   clubText: { color: colors.text.secondary, fontSize: 13, flex: 1 },
   clubAddrText: { color: colors.text.secondary, fontSize: 11, opacity: 0.7 },
+  mapsCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    backgroundColor: colors.brand.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+  },
+  mapsCtaText: {
+    color: colors.brand.primary,
+    fontWeight: "800",
+    fontSize: 10,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
   modalidadChip: {
     alignSelf: "flex-start",
     flexDirection: "row",
