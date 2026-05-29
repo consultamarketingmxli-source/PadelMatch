@@ -629,3 +629,94 @@ metadata:
   total_tests_run: 20
   passed: 20
   failed: 0
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Iter 32-33 — Centro de Privacidad y Seguridad
+# ─────────────────────────────────────────────────────────────────────
+backend:
+  - task: "MP Webhook HMAC-SHA256 signature verification ACTIVATED"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/mercadopago.py /app/backend/.env"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "MP_WEBHOOK_SECRET cargado desde panel de MP (sandbox). Webhook rechaza requests sin firma (401), con firma inválida (401), acepta firma HMAC válida (200). Audit log mp_webhook_signature_invalid con IP+data_id."
+
+  - task: "Player session management endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/player_auth.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/players/me/sessions (lista refresh tokens activos con is_current detection), DELETE /api/players/me/sessions/{id} (revoca individual + scope estricto al user), GET /api/players/me/security-activity (últimos N eventos del propio user). Auth required."
+
+  - task: "Admin Security Center endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/security_admin.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/admin/security/stats (KPIs últimos N días: total events, top actions, by_result, failed logins, NoSQL blocks, rate-limited, account deletions, refresh reuse, MP signature blocks, active sessions). GET /api/admin/security/logs (paginado con filtros accion/id_usuario/result/from/to + has_more flag). Auto-auditoría del propio acceso a logs."
+
+  - task: "Cookie HttpOnly path=/api (no /api/auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/auth_router.py /app/backend/routers/player_auth.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Iter32 detectó que path=/api/auth impedía que el browser enviara la cookie a /api/players/me/sessions (bug de is_current). Iter33 confirmó fix en ambos archivos: _set_refresh_cookie y verify_otp cookie ahora usan path=/api. Mantiene HttpOnly+Secure+SameSite=Strict."
+
+frontend:
+  - task: "/seguridad — Centro de Privacidad del player"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/seguridad.tsx"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Pantalla completa con: lista de sesiones activas (device/IP/last_used + badge 'Este dispositivo' + botón Cerrar individual), Actividad reciente de seguridad (timeline de últimos 30 eventos con dot color-coded por result), pull-to-refresh. Screenshot E2E iter33 confirma badge visible."
+
+  - task: "/admin/security — Visor de audit logs admin"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/security.tsx"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Pantalla con: 6 KPIs (Eventos totales, Sesiones activas, Logins fallidos, NoSQL bloqueados, Rate-limited, MP firma inválida), Top acciones (top 6), chips de filtros rápidos (Logins admin, OTP, Refresh tokens, NoSQL, Rate limit, Account deletion, MP webhook + Todos/OK/Bloqueado/Rate-limit), search por user, lista paginada con dot color-coded + Cargar más."
+
+  - task: "X-Refresh-Token header en helpers native"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/api.ts"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "playerMySessions/playerRevokeSession/playerSecurityActivity ahora añaden header X-Refresh-Token desde SecureStore en native; en web la cookie HttpOnly path=/api se envía sola con credentials:include."
+
+  - task: "Nav buttons: Centro de Privacidad (player) + Centro de Seguridad (admin)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/mi-cuenta.tsx /app/frontend/app/admin/index.tsx"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Player: tarjeta 'Centro de Privacidad y Seguridad' en /mi-cuenta (arriba del bloque rojo de eliminar cuenta). Admin: icon ShieldOff azul (testID='security-center-btn') en header de /admin/index junto a dashboard."
+
+metadata:
+  iteration: 33
+  test_reports:
+    - "/app/test_reports/iteration_32.json"
+    - "/app/test_reports/iteration_33.json"
+  total_tests_run: 26
+  passed: 26
+  failed: 0
+  bugs_fixed_in_iter:
+    - "security_admin.py:114 dict slice TypeError"
+    - "Cookie path=/api/auth → /api (en 2 archivos)"
+    - "playerMySessions/RevokeSession/SecurityActivity faltaba X-Refresh-Token en native"
