@@ -315,3 +315,39 @@ def test_confirmar_manual_aprueba(s, admin_token, reta_ctx):
     j = r.json()
     assert j["ok"] is True
     assert j.get("confirmada_manualmente") is True or j.get("ya_aprobada") is True
+
+    # === Refuerzo (Iter22 — bug detectado por testing_agent): re-leer el doc
+    # y verificar que estatus_pago realmente cambió a "Aprobado", no solo
+    # los flags pago_manual.
+    r2 = s.get(f"{BASE_URL}/api/retas/{reta_id}/inscripciones",
+               headers=auth_h(admin_token))
+    assert r2.status_code == 200
+    items = r2.json() if isinstance(r2.json(), list) else r2.json().get("items", [])
+    ours = [i for i in items if i.get("id") == insc_id]
+    assert ours, "Inscripción no aparece tras confirmar manual"
+    assert ours[0]["estatus_pago"] == "Aprobado", \
+        f"estatus_pago debe ser 'Aprobado' tras confirmar manual, got {ours[0]['estatus_pago']!r}"
+    assert ours[0].get("pago_manual") is True
+
+
+# ============================================================================
+# 14. Confirmar manual idempotente: segundo call → ya_aprobada=True
+# ============================================================================
+def test_confirmar_manual_idempotente(s, admin_token, reta_ctx):
+    tel = _phone()
+    reta_id = reta_ctx['reta']['id']
+    r_insc = s.post(
+        f"{BASE_URL}/api/public/retas/{reta_id}/checkout",
+        json={"reta_id": reta_id, "nombre": "Idempotente Test", "telefono": tel},
+    )
+    if r_insc.status_code not in (200, 201):
+        pytest.skip("Setup falló")
+    insc_id = r_insc.json().get("id")
+
+    r1 = s.post(f"{BASE_URL}/api/admin/inscripciones/{insc_id}/confirmar-manual",
+                headers=auth_h(admin_token), json={"nota": "primera"})
+    assert r1.status_code == 200
+    r2 = s.post(f"{BASE_URL}/api/admin/inscripciones/{insc_id}/confirmar-manual",
+                headers=auth_h(admin_token), json={"nota": "segunda"})
+    assert r2.status_code == 200
+    assert r2.json().get("ya_aprobada") is True

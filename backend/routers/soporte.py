@@ -370,7 +370,8 @@ async def patch_inscripcion_inline(
                 "reta_id": insc["reta_id"],
                 "telefono": body.telefono,
                 "id": {"$ne": insc_id},
-                "estatus": {"$in": ["aprobado", "pendiente"]},
+                # FIX: el campo correcto es estatus_pago con casing Title-case.
+                "estatus_pago": {"$in": ["Aprobado", "Pendiente"]},
             })
             if choque:
                 raise HTTPException(409, "Ya hay otra inscripción aprobada/pendiente con ese teléfono en esta reta")

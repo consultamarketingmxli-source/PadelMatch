@@ -324,6 +324,18 @@ test_plan:
   test_priority: "high_first"
 
 backend_v2:
+  - task: "Fase B — Soporte Integral y Operaciones en Vivo"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/soporte.py + /app/backend/models.py + /app/backend/tests/test_fase_b_soporte.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Iter22 E2E PASS. 14/14 backend tests soporte + 13 clubes + 11 RSVP = 38/38 sin regresiones. Endpoints: POST alertar-organizador / reportar-ausencia (público), GET alertas/pendientes, PATCH alertas/{id}/leida, GET/PATCH admin/me, PATCH inscripciones/{id}/inline, POST inscripciones/{id}/confirmar-manual. Rate limit 60s por (slug,tel,tipo). Twilio WhatsApp opcional — si admin no tiene WA, queda como registro inbox. Inscripcion model extendido con cancha_asignada, ausencia_reportada, pago_manual. BUG CRÍTICO encontrado y arreglado por testing_agent: confirmar-manual escribía 'estatus' en vez de 'estatus_pago' (campo equivocado en mongo) y casing 'aprobado' vs 'Aprobado'. Fix en 3 lugares (línea 412/425/373). Test reforzado: ahora releé el doc y verifica estatus_pago=='Aprobado'. Test idempotencia añadido."
+
   - task: "Módulo Clubes Inteligente — buscar + Enriquecimiento Silencioso + Blindaje"
     implemented: true
     working: true
