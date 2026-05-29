@@ -6,9 +6,9 @@
  */
 import React from "react";
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -23,6 +23,7 @@ import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
 import { SearchBar } from "@/src/components/SearchBar";
 import { Toast } from "@/src/components/Toast";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { useHybridSearch } from "@/src/hooks/useHybridSearch";
 import { getLastRole, clearLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -117,9 +118,16 @@ export default function HomeScreen() {
       <Text style={styles.contextLine}>{subtitle}</Text>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.brand.primary} />
-        </View>
+        <SmartLoader
+          loading={loading}
+          skeleton={
+            <ScrollView contentContainerStyle={styles.listContent}>
+              <Skeleton.RetaCard />
+              <Skeleton.RetaCard />
+              <Skeleton.RetaCard />
+            </ScrollView>
+          }
+        />
       ) : (
         <FlatList
           testID="retas-list"

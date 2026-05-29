@@ -22,6 +22,7 @@ import { CheckCircle2, Calendar, Home } from "lucide-react-native";
 
 import { api } from "@/src/api";
 import { BrandHeader } from "@/src/components/BrandHeader";
+import { PadelBallLoader } from "@/src/components/loaders";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type PollStatus = "loading" | "approved" | "pending" | "failed";
@@ -90,10 +91,10 @@ export default function PagoExitoScreen() {
       <View style={styles.body}>
         {status === "loading" && (
           <View style={styles.center}>
-            <ActivityIndicator color={colors.brand.primary} />
-            <Text style={styles.bodyText}>
-              Confirmando tu pago con {provider === "stripe" ? "Stripe" : "Mercado Pago"}…
-            </Text>
+            <PadelBallLoader
+              size={72}
+              label={`Confirmando tu pago con ${provider === "stripe" ? "Stripe" : "Mercado Pago"}…`}
+            />
           </View>
         )}
 

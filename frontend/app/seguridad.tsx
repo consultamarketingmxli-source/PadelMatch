@@ -32,6 +32,7 @@ import {
 } from "lucide-react-native";
 
 import { api } from "@/src/api";
+import { PadelBallLoader } from "@/src/components/loaders";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 
@@ -173,7 +174,7 @@ export default function SeguridadScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <ActivityIndicator color={colors.brand.primary} />
+          <PadelBallLoader size={48} label="Cargando tus sesiones..." />
         </View>
       </SafeAreaView>
     );
