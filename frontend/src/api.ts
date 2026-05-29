@@ -12,6 +12,17 @@ export type FormatoScore = {
 
 export type ModalidadRegistro = "individual" | "parejas_libres" | "parejas_mixtas";
 
+/** Directorio de Clubes (Selector Inteligente). */
+export type ClubDir = {
+  id: string;
+  nombre: string;
+  direccion_completa?: string;
+  latitud?: number | null;
+  longitud?: number | null;
+  /** Solo presente si se pidió con lat/lng en el query. */
+  distancia_km?: number | null;
+};
+
 export type Reta = {
   id: string;
   organizador_id: string;
@@ -30,6 +41,9 @@ export type Reta = {
   url_slug: string;
   organizador_logo_url?: string | null;
   observaciones_publicas: string;
+  // Directorio de Clubes (Selector Inteligente) — vínculo opcional.
+  club_id?: string | null;
+  club_direccion?: string | null;
   latitud?: number | null;
   longitud?: number | null;
   alertas_enviadas: boolean;
@@ -360,6 +374,25 @@ export const api = {
     return request<Reta[]>(`/public/retas/buscar${qs}`);
   },
   getRetaBySlug: (slug: string) => request<Reta>(`/public/retas/${slug}`),
+
+  // ===== Directorio de Clubes (Selector Inteligente) =====
+  buscarClubes: (params: { q?: string; lat?: number; lng?: number; radioKm?: number; limit?: number }) => {
+    const sp = new URLSearchParams();
+    const q = (params.q ?? "").trim();
+    if (q) sp.set("q", q);
+    if (params.lat !== undefined && params.lng !== undefined) {
+      sp.set("lat", String(params.lat));
+      sp.set("lng", String(params.lng));
+      sp.set("radio_km", String(params.radioKm ?? 50));
+    }
+    if (params.limit) sp.set("limit", String(params.limit));
+    const qs = sp.toString() ? `?${sp.toString()}` : "";
+    return request<{
+      results: ClubDir[];
+      total: number;
+      error?: string;
+    }>(`/public/clubes/buscar${qs}`);
+  },
 
   // ===== inscripciones =====
   checkout: (

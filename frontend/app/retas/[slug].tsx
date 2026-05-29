@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft, Calendar, MapPin, Trophy, DollarSign, Users, Clock, BarChart2,
-  UserPlus, Search, CheckCircle2, XCircle, Gift, PartyPopper, Hourglass, Heart,
+  UserPlus, Search, CheckCircle2, XCircle, Gift, PartyPopper, Hourglass, Heart, Map as MapIcon,
 } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
@@ -417,10 +417,36 @@ export default function RetaDetailScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.hero} numberOfLines={2}>{reta.nombre}</Text>
-              <View style={styles.metaRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  // Deep-link a Google Maps. Si tenemos lat/lng → precisión GPS.
+                  // Si no → query con nombre+dirección (string libre).
+                  const direccion = (reta as any).club_direccion || "";
+                  const hasGeo = reta.latitud != null && reta.longitud != null;
+                  const query = hasGeo
+                    ? `${reta.latitud},${reta.longitud}`
+                    : encodeURIComponent(`${reta.club} ${direccion}`.trim());
+                  const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
+                  if (Platform.OS === "web" && typeof window !== "undefined") {
+                    window.open(url, "_blank");
+                  } else {
+                    const Linking = require("expo-linking");
+                    Linking.openURL(url).catch(() => {});
+                  }
+                }}
+                activeOpacity={0.7}
+                style={styles.metaRow}
+                testID="club-deeplink-maps"
+              >
                 <MapPin size={12} color={colors.text.secondary} />
-                <Text style={styles.clubText}>{reta.club}</Text>
-              </View>
+                <Text style={styles.clubText} numberOfLines={1}>
+                  {reta.club}
+                  {(reta as any).club_direccion ? (
+                    <Text style={styles.clubAddrText}>{" · "}{(reta as any).club_direccion}</Text>
+                  ) : null}
+                </Text>
+                <MapIcon size={12} color={colors.brand.primary} />
+              </TouchableOpacity>
               {/* Chip de modalidad — visible solo si es reta de parejas. */}
               {esRetaParejas ? (
                 <View style={styles.modalidadChip} testID="modalidad-chip">
@@ -808,7 +834,8 @@ const styles = StyleSheet.create({
   logoFallback: { color: colors.brand.primary, fontWeight: "900", fontSize: 16 },
   hero: { ...typography.h1, color: colors.text.primary, fontSize: 26 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  clubText: { color: colors.text.secondary, fontSize: 13 },
+  clubText: { color: colors.text.secondary, fontSize: 13, flex: 1 },
+  clubAddrText: { color: colors.text.secondary, fontSize: 11, opacity: 0.7 },
   modalidadChip: {
     alignSelf: "flex-start",
     flexDirection: "row",

@@ -38,6 +38,7 @@ import {
 
 import { FormatoScore, api } from "@/src/api";
 import { Button } from "@/src/components/Button";
+import { ClubAutocomplete } from "@/src/components/ClubAutocomplete";
 import { Input } from "@/src/components/Input";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
@@ -73,6 +74,9 @@ export default function RetaForm() {
   // Identidad
   const [nombre, setNombre] = useState("");
   const [club, setClub] = useState("");
+  // Selector Inteligente de Clubes (Fase B)
+  const [clubId, setClubId] = useState<string | null>(null);
+  const [clubDireccion, setClubDireccion] = useState<string>("");
   const [fechaStr, setFechaStr] = useState("");
   const [horaStr, setHoraStr] = useState("");
 
@@ -123,6 +127,8 @@ export default function RetaForm() {
         setRetaIdReal(r.id);
         setNombre(r.nombre);
         setClub(r.club);
+        setClubId(r.club_id ?? null);
+        setClubDireccion(r.club_direccion ?? "");
         const d = new Date(r.fecha_evento);
         setFechaStr(
           `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
@@ -194,6 +200,8 @@ export default function RetaForm() {
     const body = {
       nombre: nombre.trim(),
       club: club.trim(),
+      club_id: clubId,
+      club_direccion: clubDireccion.trim() || null,
       fecha_str: fechaStr,
       hora_str: horaStr,
       tz_offset_minutes: tzOffsetMin,
@@ -356,7 +364,32 @@ export default function RetaForm() {
 
           {/* IDENTIDAD */}
           <Input label="Nombre de la reta" value={nombre} onChangeText={setNombre} testID="form-nombre" placeholder="Ej. Torneo Verano" />
-          <Input label="Club" value={club} onChangeText={setClub} testID="form-club" placeholder="Ej. Padel Club CDMX" />
+          <ClubAutocomplete
+            value={club}
+            onChange={(texto, picked) => {
+              setClub(texto);
+              if (picked) {
+                setClubId(picked.id);
+                setClubDireccion(picked.direccion_completa ?? "");
+                // Heredamos coords del club si vienen — el usuario puede sobrescribir.
+                if (picked.latitud != null) setLat(String(picked.latitud));
+                if (picked.longitud != null) setLng(String(picked.longitud));
+              } else {
+                setClubId(null);
+              }
+            }}
+            label="Lugar / Club"
+            testID="form-club-autocomplete"
+          />
+          {/* Dirección opcional (visible si seleccionó del directorio O escribió a mano).
+              Permite editarla sin perder la selección. */}
+          <Input
+            label="Dirección (opcional)"
+            value={clubDireccion}
+            onChangeText={setClubDireccion}
+            placeholder="Ej. Av. Reforma 100, CDMX"
+            testID="form-club-direccion"
+          />
 
           <View style={styles.row}>
             <Input label="Fecha (YYYY-MM-DD)" value={fechaStr} onChangeText={setFechaStr} testID="form-fecha" placeholder="2026-06-15" />

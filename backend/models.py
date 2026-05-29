@@ -65,6 +65,12 @@ def _default_formato_score() -> FormatoScore:
 class RetaCreate(BaseModel):
     nombre: str = Field(min_length=2, max_length=80)
     club: str = Field(min_length=2, max_length=80)
+    # Directorio de Clubes (Selector Inteligente) — relación débil/elástica.
+    # Si el organizador eligió un club del directorio, mandamos su id (FK suave).
+    # Si NO (texto libre / club personalizado), club_id queda NULL y se respeta
+    # el texto en `club`. El backend hace enriquecimiento silencioso.
+    club_id: Optional[str] = None
+    club_direccion: Optional[str] = Field(default=None, max_length=240)
     fecha_str: str  # YYYY-MM-DD
     hora_str: str   # HH:mm
     tz_offset_minutes: int = -360  # default CDMX
@@ -113,6 +119,10 @@ class Reta(BaseModel):
     organizador_id: str = "admin"
     nombre: str
     club: str
+    # Vínculo opcional al directorio de clubes (Selector Inteligente).
+    # NULL = club personalizado / texto libre.
+    club_id: Optional[str] = None
+    club_direccion: Optional[str] = None
     fecha_evento: str  # ISO 8601 con offset
     canchas_disponibles: int
     max_jugadores: int  # múltiplo de 4, 4..32

@@ -2,7 +2,7 @@
 import math
 import os
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -16,6 +16,7 @@ from core.image_utils import compress_logo_to_webp
 from core.qr_utils import make_qr_png
 from logica_torneo import construir_fecha_local_iso
 from models import Inscripcion, Reta, RetaCreate, RetaPublic
+from routers.clubes import upsert_club_silencioso
 
 router = APIRouter(prefix="/retas", tags=["retas"])
 
@@ -73,9 +74,41 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
     canchas = _derive_canchas(max_jug, body.canchas_disponibles)
     logo_webp = compress_logo_to_webp(body.organizador_logo_url)
 
+    # ===== Resolución de club_id (Selector Inteligente) =====
+    # 1) Si llega club_id explícito, verificamos que exista en el directorio.
+    #    Si NO existe, lo tratamos como nulo (degradación silenciosa).
+    # 2) Si NO llega club_id, hacemos enriquecimiento silencioso por nombre.
+    #    Eso devuelve el club_id resultante (existente o recién creado).
+    resolved_club_id: Optional[str] = None
+    club_doc = None
+    if body.club_id:
+        club_doc = await db.clubes.find_one({"id": body.club_id}, {"_id": 0})
+        if club_doc:
+            resolved_club_id = club_doc["id"]
+    if not resolved_club_id:
+        resolved_club_id = await upsert_club_silencioso(
+            nombre=body.club,
+            direccion=body.club_direccion,
+            lat=body.latitud,
+            lng=body.longitud,
+        )
+        if resolved_club_id:
+            club_doc = await db.clubes.find_one({"id": resolved_club_id}, {"_id": 0})
+
+    # Si tenemos el doc resuelto, podemos heredar dirección/coords si no vinieron.
+    club_dir_final = body.club_direccion or (club_doc or {}).get("direccion_completa") or None
+    lat_final = body.latitud
+    lng_final = body.longitud
+    if lat_final is None and club_doc:
+        lat_final = club_doc.get("latitud")
+    if lng_final is None and club_doc:
+        lng_final = club_doc.get("longitud")
+
     reta = Reta(
         nombre=body.nombre,
         club=body.club,
+        club_id=resolved_club_id,
+        club_direccion=club_dir_final,
         fecha_evento=fecha_iso,
         canchas_disponibles=canchas,
         max_jugadores=max_jug,
@@ -89,8 +122,8 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         url_slug=slug,
         organizador_logo_url=logo_webp,
         observaciones_publicas=body.observaciones_publicas,
-        latitud=body.latitud,
-        longitud=body.longitud,
+        latitud=lat_final,
+        longitud=lng_final,
         organizador_id=current["sub"],
     )
     doc = reta.model_dump()
@@ -130,9 +163,37 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
     max_jug = _resolve_max_jugadores(body)
     canchas = _derive_canchas(max_jug, body.canchas_disponibles)
     logo_webp = compress_logo_to_webp(body.organizador_logo_url)
+
+    # Re-resolución de club_id (igual que en create).
+    resolved_club_id: Optional[str] = None
+    club_doc = None
+    if body.club_id:
+        club_doc = await db.clubes.find_one({"id": body.club_id}, {"_id": 0})
+        if club_doc:
+            resolved_club_id = club_doc["id"]
+    if not resolved_club_id:
+        resolved_club_id = await upsert_club_silencioso(
+            nombre=body.club,
+            direccion=body.club_direccion,
+            lat=body.latitud,
+            lng=body.longitud,
+        )
+        if resolved_club_id:
+            club_doc = await db.clubes.find_one({"id": resolved_club_id}, {"_id": 0})
+
+    club_dir_final = body.club_direccion or (club_doc or {}).get("direccion_completa") or None
+    lat_final = body.latitud
+    lng_final = body.longitud
+    if lat_final is None and club_doc:
+        lat_final = club_doc.get("latitud")
+    if lng_final is None and club_doc:
+        lng_final = club_doc.get("longitud")
+
     update = {
         "nombre": body.nombre,
         "club": body.club,
+        "club_id": resolved_club_id,
+        "club_direccion": club_dir_final,
         "fecha_evento": fecha_iso,
         "canchas_disponibles": canchas,
         "max_jugadores": max_jug,
@@ -145,8 +206,8 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
         "tipo_acceso": body.tipo_acceso,
         "organizador_logo_url": logo_webp,
         "observaciones_publicas": body.observaciones_publicas,
-        "latitud": body.latitud,
-        "longitud": body.longitud,
+        "latitud": lat_final,
+        "longitud": lng_final,
     }
     await db.retas.update_one({"id": reta_id}, {"$set": update})
     new = await db.retas.find_one({"id": reta_id}, {"_id": 0})

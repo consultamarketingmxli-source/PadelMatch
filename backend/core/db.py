@@ -62,6 +62,23 @@ async def setup_indexes() -> None:
     # 2dsphere para futuras consultas geo nativas (compatible con docs sin lat/lng).
     await db.retas.create_index([("latitud", ASCENDING), ("longitud", ASCENDING)], sparse=True)
 
+    # === Directorio de Clubes (Selector Inteligente) ===
+    # Dedupe por nombre normalizado (lowercase+sin acentos+trim).
+    try:
+        await db.clubes.create_index("nombre_norm", unique=True)
+    except Exception:
+        pass
+    # Substring search rápido sobre nombre y dirección.
+    try:
+        await db.clubes.create_index([("nombre", ASCENDING)])
+        await db.clubes.create_index([("direccion_completa", ASCENDING)])
+    except Exception:
+        pass
+    # Sparse para evitar errores con docs sin coords.
+    await db.clubes.create_index(
+        [("latitud", ASCENDING), ("longitud", ASCENDING)], sparse=True
+    )
+
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})
