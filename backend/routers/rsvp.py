@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from auth import get_current_admin
 from core.concurrency import liberar_lugar, reservar_lugar_atomico
 from core.db import db
-from core.helpers import promover_lista_espera
+from core.helpers import assert_reta_no_cerrada, promover_lista_espera
 from core.validators import NombreStr, PhoneStr
 
 logger = logging.getLogger("padelappretas-os")
@@ -135,6 +135,8 @@ async def rsvp_aceptar(reta_id: str, body: RsvpRequest):
     """
     reta = await _get_reta_or_404(reta_id)
     _ensure_gratis(reta)
+    # Fase C — bloqueo de rondas pasadas
+    assert_reta_no_cerrada(reta, accion="aceptar invitación a")
 
     telefono_norm = body.telefono.strip()
     nombre_norm = body.nombre.strip()

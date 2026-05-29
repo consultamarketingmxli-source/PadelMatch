@@ -179,6 +179,10 @@ export default function RetaDetailScreen() {
       return;
     }
     setRsvpAction("aceptar");
+    // Captura el estado de cupo ANTES del POST. Si el server contesta lista_espera
+    // pero localmente creíamos que había cupos → es late-fill (la reta se llenó
+    // entre que cargamos la página y el usuario presionó Aceptar).
+    const llenoPreClick = lleno;
     try {
       const res = await api.rsvpAceptar(reta.id, {
         nombre: nombre.trim(),
@@ -187,9 +191,15 @@ export default function RetaDetailScreen() {
       if (res.estatus_confirmacion === "aceptado") {
         setRsvpResult({ tipo: "aceptado", mensaje: res.mensaje });
       } else {
+        // Late-fill: enriquecemos el mensaje para que el jugador entienda
+        // que ANTES había cupo, no que se equivocó al elegir "Aceptar".
+        const baseMsg = res.mensaje || "";
+        const lateFillPrefix = !llenoPreClick
+          ? "¡Ups! La reta se acaba de llenar mientras escribías. "
+          : "";
         setRsvpResult({
           tipo: "lista_espera",
-          mensaje: res.mensaje,
+          mensaje: lateFillPrefix + baseMsg,
           posicion: res.posicion_lista_espera ?? undefined,
         });
       }

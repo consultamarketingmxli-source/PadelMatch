@@ -33,6 +33,47 @@ def strip_mongo(doc: dict) -> dict:
     return doc
 
 
+# ============================================================================
+# Fase C — Matriz de Blindaje: helpers de "reta cerrada"
+# ============================================================================
+# Buffer en horas para considerar una reta como "ya jugada" — permite editar
+# inscripciones hasta unas horas después de la hora oficial (útil cuando el
+# admin necesita confirmar pagos manualmente tras el evento).
+RETA_CERRADA_BUFFER_HOURS = 6
+
+
+def _is_reta_cerrada(reta: dict) -> bool:
+    """True si la reta ya pasó (con un buffer de cortesía).
+
+    Lee `fecha_evento` (ISO 8601 con offset). Si está malformado, asume que
+    NO está cerrada (mejor permitir edits que bloquear por bad data).
+    """
+    raw = reta.get("fecha_evento")
+    if not raw:
+        return False
+    try:
+        fecha = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return False
+    return datetime.now(timezone.utc) > (fecha + timedelta(hours=RETA_CERRADA_BUFFER_HOURS))
+
+
+def assert_reta_no_cerrada(reta: dict, accion: str = "modificar") -> None:
+    """Levanta 403 si la reta ya pasó. Mensaje específico al `accion` intentado.
+
+    Aplicar en endpoints públicos (rsvp aceptar/rechazar, checkout) y admin
+    (edición de inscripciones, confirmación manual).
+    """
+    if _is_reta_cerrada(reta):
+        raise HTTPException(
+            403,
+            f"Esta reta ya finalizó (hace más de {RETA_CERRADA_BUFFER_HOURS} h). "
+            f"No es posible {accion} inscripciones de rondas cerradas.",
+        )
+
+
 async def compute_public(r: dict) -> dict:
     """Adjunta inscritos_count, waitlist_count, capacidad_pct y semáforo a una reta.
 

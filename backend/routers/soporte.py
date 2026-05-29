@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_admin
 from core.db import db
+from core.helpers import assert_reta_no_cerrada
 from core.validators import NombreStr, PhoneStr
 from notifications import is_twilio_configured, send_whatsapp
 
@@ -353,12 +354,14 @@ async def patch_inscripcion_inline(
     # Validar que la reta pertenece al admin actual.
     reta = await db.retas.find_one(
         {"id": insc["reta_id"]},
-        {"_id": 0, "organizador_id": 1, "canchas_disponibles": 1},
+        {"_id": 0, "organizador_id": 1, "canchas_disponibles": 1, "fecha_evento": 1},
     )
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
     if reta.get("organizador_id") and reta["organizador_id"] != current["sub"]:
         raise HTTPException(403, "No puedes editar inscripciones de otra reta")
+    # Fase C — bloqueo de rondas cerradas
+    assert_reta_no_cerrada(reta, accion="editar")
 
     update: dict = {}
     if body.nombre is not None:
@@ -415,10 +418,13 @@ async def confirmar_inscripcion_manual(
 
     reta = await db.retas.find_one(
         {"id": insc["reta_id"]},
-        {"_id": 0, "organizador_id": 1},
+        {"_id": 0, "organizador_id": 1, "fecha_evento": 1},
     )
     if reta and reta.get("organizador_id") and reta["organizador_id"] != current["sub"]:
         raise HTTPException(403, "No puedes confirmar inscripciones de otra reta")
+    # Fase C — bloqueo de rondas cerradas
+    if reta:
+        assert_reta_no_cerrada(reta, accion="confirmar pago de")
 
     await db.inscripciones.update_one(
         {"id": insc_id},

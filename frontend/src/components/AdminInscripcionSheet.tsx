@@ -26,8 +26,9 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { X, Save, CheckCircle2, AlertTriangle, MapPin } from "lucide-react-native";
+import { X, Save, CheckCircle2, AlertTriangle, MapPin, WifiOff } from "lucide-react-native";
 import { api, Inscripcion } from "@/src/api";
+import { useOfflineQueue } from "@/src/hooks/useOfflineQueue";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Props = {
@@ -48,6 +49,7 @@ export function AdminInscripcionSheet({
   const [confirming, setConfirming] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [okMsg, setOkMsg] = useState<string>("");
+  const { online, enqueue, pendientes } = useOfflineQueue();
 
   useEffect(() => {
     if (visible && inscripcion) {
@@ -88,11 +90,37 @@ export function AdminInscripcionSheet({
       if (Object.keys(body).length === 0) {
         setErrorMsg("No hay cambios para guardar."); setSaving(false); return;
       }
+      // ===== Fase C — fallback offline: si no hay red, encolamos =====
+      if (!online) {
+        await enqueue({ kind: "patchInscripcionInline", payload: { inscId: inscripcion.id, body } });
+        // Mostramos el estado optimista al usuario para que sienta el cambio inmediato.
+        onSaved({ ...inscripcion, ...body } as Inscripcion);
+        setOkMsg("Cambios guardados sin conexión. Se sincronizarán al recuperar internet.");
+        setTimeout(onClose, 1100);
+        return;
+      }
       const res = await api.patchInscripcionInline(inscripcion.id, body);
       setOkMsg("Cambios guardados.");
       onSaved(res.inscripcion);
       setTimeout(onClose, 800);
     } catch (e: any) {
+      // Si el error parece de red (no body.status), tratamos como offline → enqueue.
+      const looksNetwork = !e?.status && !e?.body?.status;
+      if (looksNetwork) {
+        try {
+          const body: { nombre?: string; telefono?: string; cancha_asignada?: number } = {};
+          if (nombre.trim() !== inscripcion.nombre) body.nombre = nombre.trim();
+          if (telefono.trim() !== inscripcion.telefono) body.telefono = telefono.trim();
+          if (cancha !== ((inscripcion as any).cancha_asignada ?? null) && cancha != null) {
+            body.cancha_asignada = cancha;
+          }
+          await enqueue({ kind: "patchInscripcionInline", payload: { inscId: inscripcion.id, body } });
+          onSaved({ ...inscripcion, ...body } as Inscripcion);
+          setOkMsg("Sin conexión. Cambios encolados — se sincronizarán automáticamente.");
+          setTimeout(onClose, 1200);
+          return;
+        } catch { /* fall through */ }
+      }
       const msg = e?.body?.detail || e?.message || "No se pudo guardar.";
       setErrorMsg(typeof msg === "string" ? msg : "Error desconocido");
     } finally { setSaving(false); }
@@ -129,6 +157,23 @@ export function AdminInscripcionSheet({
               <X size={20} color={colors.text.secondary} />
             </TouchableOpacity>
           </View>
+
+          {/* Fase C — banner offline / cola pendiente */}
+          {!online ? (
+            <View style={styles.offlineBanner} testID="admin-sheet-offline-banner">
+              <WifiOff size={14} color="#92400E" />
+              <Text style={styles.offlineBannerText}>
+                Sin conexión · cambios se sincronizarán al volver online
+                {pendientes > 0 ? ` (${pendientes} pendientes)` : ""}
+              </Text>
+            </View>
+          ) : pendientes > 0 ? (
+            <View style={styles.syncBanner} testID="admin-sheet-pending-banner">
+              <Text style={styles.syncBannerText}>
+                Sincronizando {pendientes} cambio{pendientes === 1 ? "" : "s"} pendiente{pendientes === 1 ? "" : "s"}...
+              </Text>
+            </View>
+          ) : null}
 
           <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Nombre</Text>
@@ -249,6 +294,25 @@ const styles = StyleSheet.create({
   sheetTitle: { ...typography.h3, color: colors.text.primary, fontSize: 16, fontWeight: "800" },
   sheetSub: { color: colors.text.secondary, fontSize: 12, marginTop: 2 },
   iconBtn: { padding: 6 },
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 8,
+    backgroundColor: "#FEF3C7",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FCD34D",
+  },
+  offlineBannerText: { color: "#92400E", fontSize: 12, fontWeight: "600", flex: 1 },
+  syncBanner: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 6,
+    backgroundColor: "#DBEAFE",
+    borderBottomWidth: 1,
+    borderBottomColor: "#93C5FD",
+  },
+  syncBannerText: { color: "#1E40AF", fontSize: 11, fontWeight: "600" },
   sheetContent: { paddingHorizontal: spacing.lg, paddingVertical: 16, gap: 6 },
   label: {
     ...typography.label,

@@ -324,6 +324,18 @@ test_plan:
   test_priority: "high_first"
 
 backend_v2:
+  - task: "Fase C — Matriz de Blindaje (rondas cerradas + late-fill)"
+    implemented: true
+    working: true
+    file: "/app/backend/core/helpers.py + /app/backend/routers/soporte.py + /app/backend/routers/rsvp.py + /app/backend/tests/test_fase_c_blindaje.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Iter23 5/5 PASS. Nuevo helper assert_reta_no_cerrada (buffer 6h) en core/helpers.py. Aplicado en RSVP aceptar, PATCH inline edit, confirmar-manual → todos devuelven 403 con mensaje claro 'Esta reta ya finalizó (hace más de 6 h)'. Late-fill detectado en frontend con captura de lleno PRE-tap → mensaje 'La reta se acaba de llenar mientras escribías'. Tests retas-futuras siguen funcionando (no false-positives). Total backend: 43/43 sin regresiones (incluye 5 Fase C + 14 Fase B + 13 Clubes + 11 RSVP)."
+
   - task: "Fase B — Soporte Integral y Operaciones en Vivo"
     implemented: true
     working: true
