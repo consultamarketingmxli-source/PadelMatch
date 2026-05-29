@@ -40,12 +40,11 @@ import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 /**
- * Foto Pexels — Cancha de pádel arcilla/naranja a ras de suelo con red negra
- * en primer plano y luz dorada. Composición 3/4 lateral. Se sirve via CDN
- * comprimida (<120 KB para 1600w).
+ * Foto cancha azul (Director de Arte v3 — Blue Club Pro):
+ * Pista de pádel con césped sintético azul vibrante. Composición sport-premium.
  */
 const COURT_IMAGE_URI =
-  "https://images.pexels.com/photos/29578736/pexels-photo-29578736.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
+  "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
 
 export default function AdminLogin() {
   const router = useRouter();

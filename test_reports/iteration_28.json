@@ -1,0 +1,34 @@
+{
+  "summary": "Regresión POST-migración 'Blue Club Pro V2' (Verde Esmeralda → Azul Eléctrico #2563EB + Indigo Cobalto #312E81). Backend iter26 suite: 5/5 verde (sin cambios). Frontend smoke: TODOS los flujos funcionales intactos. Visual: confirmado pay-button + admin-login-btn + Guardar marcador renderizan en rgb(37,99,235)=#2563EB. BrandLogo isotipo en gradiente azul, BrandWordmark muestra 'Padel' (slate-900/light) + 'AppRetas' (blue-600). Login admin → /seleccion → /admin OK. admin-panic-fab abre bottom-sheet ('Asistente de Operación', 'Mesa de Control', 'Nueva Convocatoria'). /retas/[slug]: cupon-card/input/apply-btn/error/pay-button/lifebuoy-fab visibles; cupón inválido renderiza cupon-error correctamente. Mesa de Control en /admin/reta/resultados/{id} renderiza partidos (RONDA 1/2, PAREJA A vs B, controles +/-, botón 'Guardar marcador' azul). No se detectaron crashes, red-screens ni tokens de tema rotos.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_regression.py",
+    "/app/test_reports/pytest/iter28_regression.xml"
+  ],
+  "action_items": [
+    "Ninguna acción requerida. Migración de paleta exitosa sin regresiones funcionales ni visuales detectables."
+  ],
+  "critical_code_review_comments": [
+    "theme.ts: migración limpia. Token `colors.brand.primary` ahora apunta a #2563EB (blue-600). Tokens emerald se mantienen sólo bajo `colors.status.green*` y `colors.text.positive` para semáforos positivos (DG+, score+, capacidad ok), respetando el spec.",
+    "BrandLogo.tsx: SVG con LinearGradient blue-600 → indigo-900 + RadialGradient highlight. 3 variantes (light/dark/mono) consistentes. Costuras en stroke blanco fluido. Renderizó sin warnings en web preview.",
+    "BrandWordmark.tsx: Dos componentes Text (Padel font-weight 300 + AppRetas font-weight 900) en flexDirection row, alignItems baseline. Color secondColor = colors.brand.primary (#2563EB) confirmado en pantalla.",
+    "Hardcoded '#059669' bg en /seleccion.tsx (RoleCard tone='emerald' para 'Jugador') — INTENCIONAL según spec del Director de Arte (CTA Jugador en emerald-600 como contrapeso al Organizador en slate-900). NO es un descuido de la migración.",
+    "/seleccion.tsx mantiene comentario stale '/Botón Jugador: bg-emerald-600' en doc-header — informativo no funcional, pero conviene actualizar a 'Blue Club Pro V2' en próxima iteración cosmética."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Sin seed data nueva. Se reutilizaron reta-id 2e8a92f7-cdec-43da-9655-4eaccfa22533 (TEST_Regression_Reta, 28 partidos) y slug test-2-wilson-padel-club-2026-12-27 ($100 costo).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Migración Verde→Azul (iter28) verificada end-to-end. Próxima iter: si se introducen cambios funcionales nuevos, reutilizar el set de testIDs auditados aquí (admin-login-btn, admin-panic-fab, seleccion-organizador/jugador/logout, cupon-*, pay-button, lifebuoy-fab). Mesa de Control sigue ruteada en /admin/reta/resultados/{retaId}. Cupones activos = 0 en BD (skip happy-path como en iter27).",
+  "rca_of_issue": "N/A — sin bugs encontrados. El refactor masivo de theme.ts no rompió ningún consumidor: todas las referencias a colors.brand.primary, colors.brand.gradient*, colors.text.positive, colors.status.green* mantuvieron sus claves; sólo cambiaron los valores hex. Cero pantallas reportaron undefined ni Text-undefined warnings durante la sesión."
+}

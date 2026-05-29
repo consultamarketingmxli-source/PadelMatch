@@ -45,7 +45,7 @@ import { clearLastRole, setLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 const COURT_IMAGE_URI =
-  "https://images.pexels.com/photos/29578736/pexels-photo-29578736.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
+  "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";

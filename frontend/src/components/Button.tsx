@@ -67,7 +67,11 @@ export function Button({
 
   // Color del isotipo según variante (sobre fondo claro queremos color de marca,
   // sobre fondo emerald queremos blanco).
-  const brandIconVariant = variant === "primary" || variant === "danger" ? "mono" : "default";
+  // Variantes nuevas v3 — Blue Club Pro:
+  //   primary/danger → "mono" (silueta blanca sobre fondo de color)
+  //   secondary/ghost → "light" (gradient azul sobre fondos claros)
+  const brandIconVariant: "mono" | "light" =
+    variant === "primary" || variant === "danger" ? "mono" : "light";
   const isotipoSize = size === "lg" ? 18 : 16;
 
   return (
