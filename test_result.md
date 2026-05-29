@@ -316,12 +316,38 @@ metadata:
 
 test_plan:
   current_focus:
-    - "RSVP — Retas Gratis / Entre Amigos (Fase A) — backend"
-    - "RSVP Public UI on /retas/[slug] (Fase A) — frontend"
-    - "Admin Attendance View 3-Column for gratis_amigos (Fase A) — frontend"
+    - "Módulo Clubes Inteligente — backend (Enriquecimiento Silencioso + Geoproximidad)"
+    - "Módulo Clubes Inteligente — frontend Admin (<ClubAutocomplete /> + debounce + GPS timeout)"
+    - "Módulo Clubes Inteligente — frontend Player (Deep Link Google Maps chip MAPA)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+backend_v2:
+  - task: "Módulo Clubes Inteligente — buscar + Enriquecimiento Silencioso"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/clubes.py + /app/backend/routers/retas.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Iter21 9/9 PASS. GET /api/public/clubes/buscar funciona con q, lat/lng (Haversine asc), límite y resultados vacíos. POST /api/retas con club_id hereda dir+lat+lng. POST con texto libre crea entrada silenciosa. Duplicados (incluso UPPERCASE) deduplican por nombre_norm. RetaPublic expone latitud, longitud, club_direccion, club_id."
+
+frontend_v2:
+  - task: "Módulo Clubes Inteligente — Admin Autocomplete + Player Deep Link"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/ClubAutocomplete.tsx + /app/frontend/app/admin/reta/[id].tsx + /app/frontend/app/retas/[slug].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Iter21 PASS visual + funcional. Admin: form-club-autocomplete con debounce 300ms, dropdown con resultados + dirección secundaria + opción 'Usar como ubicación personalizada'. GPS button con timeout 5s y degradación silenciosa. Player con geo: chip MAPA verde abre https://www.google.com/maps/search/?api=1&query=LAT,LNG. Sin geo: chip MAPA abre URL con encodeURIComponent(nombre+direccion). Layout no rompe traffic light."
 
 agent_communication:
     - agent: "main"
