@@ -94,15 +94,19 @@ def _create_player_token(jugador_id: str, telefono: str, nombre: str) -> str:
     if jwt is None:
         # Fallback (no debería pasar — pyjwt está instalado por auth.py)
         return create_access_token(subject=telefono, role="player")
+    import uuid as _uuid
+
     from auth import ACCESS_TOKEN_EXP_MIN  # 15 min
 
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": telefono,
         "role": "player",
         "jugador_id": jugador_id,
         "nombre": nombre,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXP_MIN),
-        "iat": datetime.now(timezone.utc),
+        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXP_MIN),
+        "iat": now,
+        "jti": _uuid.uuid4().hex,  # unique per emission — paridad con admin tokens
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 

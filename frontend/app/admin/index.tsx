@@ -2,7 +2,6 @@
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -16,6 +15,7 @@ import { BarChart3, Gift, LogOut, Plus, Repeat, ShieldOff, Wallet } from "lucide
 
 import { api, Reta } from "@/src/api";
 import { storage } from "@/src/utils/storage";
+import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
 import { BrandHeader } from "@/src/components/BrandHeader";
@@ -61,36 +61,32 @@ export default function AdminDashboard() {
    * Revoca todos los refresh tokens en backend. Cualquier sesión activa
    * (incluso esta) quedará invalidada al expirar su access token (15min).
    */
-  const revokeAllSessions = async () => {
-    Alert.alert(
-      "Cerrar sesión global",
-      "Vas a cerrar sesión en TODOS los dispositivos donde ingresaste con esta cuenta de admin. Los tokens activos se invalidarán automáticamente en máximo 15 minutos.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Cerrar todo",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const token = await storage.secureGet<string>("ppos.admin.token", "");
-              if (!token) {
-                router.replace("/admin/login");
-                return;
-              }
-              const r = await api.revokeAllSessions(token);
-              await clearLastRole();
-              Alert.alert(
-                "Sesiones cerradas",
-                `Se cerraron ${r.sessions_revoked} sesiones activas. Inicia sesión nuevamente.`,
-                [{ text: "OK", onPress: () => router.replace("/admin/login") }],
-              );
-            } catch {
-              Alert.alert("Error", "No se pudo cerrar las sesiones. Intenta más tarde.");
-            }
-          },
-        },
-      ],
-    );
+  const revokeAllSessions = () => {
+    confirmAlert({
+      title: "Cerrar sesión global",
+      message:
+        "Vas a cerrar sesión en TODOS los dispositivos donde ingresaste con esta cuenta de admin. Los tokens activos se invalidarán automáticamente en máximo 15 minutos.",
+      confirmText: "Cerrar todo",
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          const token = await storage.secureGet<string>("ppos.admin.token", "");
+          if (!token) {
+            router.replace("/admin/login");
+            return;
+          }
+          const r = await api.revokeAllSessions(token);
+          await clearLastRole();
+          infoAlert(
+            "Sesiones cerradas",
+            `Se cerraron ${r.sessions_revoked} sesiones activas. Inicia sesión nuevamente.`,
+            () => router.replace("/admin/login"),
+          );
+        } catch {
+          infoAlert("Error", "No se pudo cerrar las sesiones. Intenta más tarde.");
+        }
+      },
+    });
   };
 
   const onRefresh = async () => {

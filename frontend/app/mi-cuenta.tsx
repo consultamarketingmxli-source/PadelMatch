@@ -13,7 +13,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -39,6 +38,7 @@ import {
 
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
@@ -89,20 +89,19 @@ export default function MiCuenta() {
     setRefreshing(false);
   };
 
-  const logout = async () => {
-    Alert.alert("Cerrar sesión", "¿Quieres salir de tu cuenta?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Salir",
-        style: "destructive",
-        onPress: async () => {
-          await api.playerLogout();
-          await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
-          await AsyncStorage.removeItem(PLAYER_INFO_KEY);
-          router.replace("/" as any);
-        },
+  const logout = () => {
+    confirmAlert({
+      title: "Cerrar sesión",
+      message: "¿Quieres salir de tu cuenta?",
+      confirmText: "Salir",
+      destructive: true,
+      onConfirm: async () => {
+        await api.playerLogout();
+        await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+        await AsyncStorage.removeItem(PLAYER_INFO_KEY);
+        router.replace("/" as any);
       },
-    ]);
+    });
   };
 
   /**
@@ -111,6 +110,7 @@ export default function MiCuenta() {
    * Aplicamos **doble confirmación** para prevenir tap accidental, pero la
    * acción en sí es de un solo paso una vez confirmada (sin redirección
    * a soporte, sin email manual). El backend anonimiza irreversiblemente.
+   * Usa `confirmAlert` (cross-platform: window.confirm en web, Alert.alert nativo).
    */
   const handleDeleteAccount = async () => {
     const t = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
@@ -118,57 +118,49 @@ export default function MiCuenta() {
       router.replace("/login" as any);
       return;
     }
-    Alert.alert(
-      "Eliminar mi cuenta",
-      "Se borrarán tu nombre, teléfono y datos personales de forma irreversible. " +
+    confirmAlert({
+      title: "Eliminar mi cuenta",
+      message:
+        "Se borrarán tu nombre, teléfono y datos personales de forma irreversible. " +
         "Tus partidos jugados se mantendrán como 'Usuario eliminado' para preservar " +
         "el histórico de torneos. ¿Continuar?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar definitivamente",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Confirmación final",
-              "Esta acción no se puede deshacer. ¿Eliminar mi cuenta y datos personales?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Sí, eliminar",
-                  style: "destructive",
-                  onPress: async () => {
-                    try {
-                      const res = await api.playerDeleteMyAccount(t);
-                      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
-                      await AsyncStorage.removeItem(PLAYER_INFO_KEY);
-                      Alert.alert(
-                        "Cuenta eliminada",
-                        res.mensaje || "Tus datos personales han sido eliminados.",
-                        [{ text: "OK", onPress: () => router.replace("/" as any) }],
-                      );
-                    } catch (e: any) {
-                      const msg = String(e?.message || "");
-                      if (msg.startsWith("429")) {
-                        Alert.alert(
-                          "Demasiados intentos",
-                          "Por seguridad, espera 1 hora antes de volver a intentarlo.",
-                        );
-                      } else {
-                        Alert.alert(
-                          "Error",
-                          "No se pudo eliminar la cuenta. Intenta más tarde.",
-                        );
-                      }
-                    }
-                  },
-                },
-              ],
-            );
+      confirmText: "Eliminar definitivamente",
+      destructive: true,
+      onConfirm: () => {
+        // Segunda confirmación.
+        confirmAlert({
+          title: "Confirmación final",
+          message: "Esta acción no se puede deshacer. ¿Eliminar mi cuenta y datos personales?",
+          confirmText: "Sí, eliminar",
+          destructive: true,
+          onConfirm: async () => {
+            try {
+              const res = await api.playerDeleteMyAccount(t);
+              await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+              await AsyncStorage.removeItem(PLAYER_INFO_KEY);
+              infoAlert(
+                "Cuenta eliminada",
+                res.mensaje || "Tus datos personales han sido eliminados.",
+                () => router.replace("/" as any),
+              );
+            } catch (e: any) {
+              const msg = String(e?.message || "");
+              if (msg.startsWith("429")) {
+                infoAlert(
+                  "Demasiados intentos",
+                  "Por seguridad, espera 1 hora antes de volver a intentarlo.",
+                );
+              } else {
+                infoAlert(
+                  "Error",
+                  "No se pudo eliminar la cuenta. Intenta más tarde.",
+                );
+              }
+            }
           },
-        },
-      ],
-    );
+        });
+      },
+    });
   };
 
   if (loading) {
