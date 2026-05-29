@@ -120,6 +120,9 @@ export default function AdminDashboard() {
             <TouchableOpacity onPress={() => router.push("/admin/marketing" as any)} style={styles.iconBtn} testID="marketing-btn">
               <Gift size={18} color="#F59E0B" />
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/admin/security" as any)} style={styles.iconBtn} testID="security-center-btn" accessibilityLabel="Centro de Seguridad">
+              <ShieldOff size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
               <BarChart3 size={18} color={colors.brand.primary} />
             </TouchableOpacity>

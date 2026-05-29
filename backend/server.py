@@ -36,6 +36,7 @@ from routers.realtime_ws import router as realtime_ws_router
 from routers.resultados import router as resultados_router
 from routers.retas import router as retas_router
 from routers.rsvp import router_admin as rsvp_admin_router
+from routers.security_admin import router as security_admin_router
 from routers.rsvp import router_public as rsvp_public_router
 from routers.clubes import router as clubes_public_router
 from routers.soporte import router_admin as soporte_admin_router
@@ -79,6 +80,7 @@ api.include_router(rsvp_admin_router)
 api.include_router(clubes_public_router)
 api.include_router(soporte_public_router)
 api.include_router(soporte_admin_router)
+api.include_router(security_admin_router)
 
 
 @api.get("/")

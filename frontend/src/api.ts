@@ -994,6 +994,95 @@ export const api = {
     }
   },
 
+  // ===== Centro de Privacidad (Player) =====
+  playerMySessions: (token: string) =>
+    request<{
+      sessions: Array<{
+        id: string;
+        ip: string | null;
+        user_agent: string;
+        created_at: string | null;
+        last_used_at: string | null;
+        expires_at: string | null;
+        is_current: boolean;
+      }>;
+      count: number;
+    }>(`/players/me/sessions`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  playerRevokeSession: (token: string, sessionId: string) =>
+    request<{ ok: boolean; already_revoked?: boolean }>(
+      `/players/me/sessions/${sessionId}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    ),
+
+  playerSecurityActivity: (token: string, limit = 20) =>
+    request<{
+      items: Array<{
+        accion: string;
+        result: string;
+        ip: string | null;
+        user_agent: string;
+        timestamp: string | null;
+      }>;
+      count: number;
+    }>(`/players/me/security-activity?limit=${limit}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  // ===== Centro de Seguridad (Admin) =====
+  adminSecurityStats: (days = 7) =>
+    request<{
+      window_days: number;
+      since: string;
+      total_events: number;
+      top_actions: Array<{ accion: string; count: number }>;
+      by_result: Record<string, number>;
+      critical: {
+        failed_logins: number;
+        nosql_blocks: number;
+        rate_limited: number;
+        account_deletions: number;
+        refresh_reuse_detected: number;
+        mp_webhook_signature_invalid: number;
+      };
+      active_sessions: number;
+    }>(`/admin/security/stats?days=${days}`, { auth: true }),
+
+  adminSecurityLogs: (params: {
+    accion?: string;
+    id_usuario?: string;
+    result?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    skip?: number;
+  } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    });
+    return request<{
+      items: Array<{
+        accion: string;
+        id_usuario: string | null;
+        result: string;
+        ip_origen: string | null;
+        user_agent: string;
+        timestamp: string | null;
+        extra: Record<string, any>;
+      }>;
+      total: number;
+      limit: number;
+      skip: number;
+      has_more: boolean;
+    }>(`/admin/security/logs?${qs.toString()}`, { auth: true });
+  },
+
   // ===== pdf =====
   async generatePdfUrl(retaId: string, jugadores: string[], numRondas: 5 | 6 | 7) {
     // Devuelve un blob URL listo para abrir.

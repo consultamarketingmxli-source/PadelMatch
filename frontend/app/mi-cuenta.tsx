@@ -247,6 +247,22 @@ export default function MiCuenta() {
 
         {/* === Privacidad y Seguridad (Apple App Store 5.1.1) === */}
         <Text style={styles.section}>Privacidad y seguridad</Text>
+
+        <TouchableOpacity
+          onPress={() => router.push("/seguridad" as any)}
+          style={styles.linkCard}
+          testID="btn-ir-seguridad"
+        >
+          <ShieldOff size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Centro de Privacidad y Seguridad</Text>
+            <Text style={styles.linkHint}>
+              Ver mis sesiones activas, actividad reciente y configuración.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
+
         <View style={styles.privacyCard}>
           <View style={styles.privacyHead}>
             <ShieldOff size={18} color={colors.status.red} />
@@ -484,6 +500,19 @@ const styles = StyleSheet.create({
   ctaText: { color: colors.text.inverse, fontWeight: "800" },
 
   // === Privacy / Apple 5.1.1 ===
+  linkCard: {
+    backgroundColor: colors.bg.card,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  linkTitle: { ...typography.bodyBold, fontSize: 13, color: colors.text.primary },
+  linkHint: { color: colors.text.secondary, fontSize: 11, marginTop: 1 },
   privacyCard: {
     backgroundColor: "#FFF5F5",
     borderWidth: 1,

@@ -1,0 +1,67 @@
+{
+  "summary": "Iter32 — Centro de Privacidad y Seguridad. Backend pytest 16/16 PASS tras fix de bug crítico (slice de dict en /admin/security/logs). Frontend admin /admin/security funciona end-to-end (KPIs, top acciones, chips de filtro action+result, paginación, audit log auto-registrado). Frontend player /seguridad lista sesiones + actividad + botón 'Cerrar' OK, PERO el badge 'Este dispositivo' NUNCA aparece en web por bug de path de cookie HttpOnly (cookie scoped a /api/auth, no llega a /api/players/me/sessions → backend siempre devuelve is_current=false). Webhook MP HMAC SHA256: rechaza sin firma (401), rechaza inválida (401), acepta válida (200), audita 'mp_webhook_signature_invalid'. Auth guards OK (401 sin JWT en endpoints admin y player).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/admin/security/logs?accion=... | ?result=...",
+        "issue": "TypeError: unhashable type: 'slice' al usar CUALQUIER filtro. Línea 114 de security_admin.py intentaba slicear un dict: `{k: str(v) for k,v in q.items()}[:200]`. FIXED por agent envolviendo en str() antes de slicear.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/players/auth/otp/verify (web flow)",
+        "issue": "El cookie HttpOnly `padelapp_refresh` se setea con path='/api/auth'. Esto impide que el browser la envíe a /api/players/me/sessions, por lo que get_raw_refresh_from_request() retorna None y is_current siempre es false en web. Cambiar path a '/api' (o ampliar el scope). Ref: backend/routers/player_auth.py:244 y backend/routers/auth_router.py:38."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/seguridad — badge 'Este dispositivo'",
+        "issue": "Badge nunca aparece en preview web por el bug del cookie path. Funcionalmente la UI lo renderiza condicionalmente sobre is_current=true (verificado en el código), pero el backend nunca lo marca así desde web. Resolver el path del cookie en backend lo arregla automáticamente.",
+        "testID": "n/a",
+        "priority": "HIGH"
+      },
+      {
+        "component": "src/api.ts playerMySessions (mobile)",
+        "issue": "En clientes nativos (iOS/Android) la función playerMySessions(token) NO añade header X-Refresh-Token. Resultado: is_current=false también en mobile. Debería agregar `X-Refresh-Token: <getRefreshToken()>` cuando !IS_WEB. Ref: frontend/src/api.ts:998-1012. Similar para playerSecurityActivity si en el futuro depende de current.",
+        "testID": "n/a",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/admin (header)",
+        "issues": ["No encontré data-testid='switch-role-btn' (los otros 5 testIDs sí están: mercadopago-btn, marketing-btn, security-center-btn, dashboard-btn, revoke-all-sessions-btn, logout-btn). El icono de switch sí se ve en el header — probablemente le falta el testID."]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_security_center.py",
+    "/app/test_reports/pytest/iter32_security_center.xml"
+  ],
+  "action_items": [
+    "Cambiar path del cookie `padelapp_refresh` de '/api/auth' a '/api' (o '/') en backend/routers/player_auth.py:244 y backend/routers/auth_router.py:38/43 — desbloquea badge 'Este dispositivo' en web sin nuevas regresiones.",
+    "Añadir header X-Refresh-Token (con valor de getRefreshToken()) cuando !IS_WEB en frontend/src/api.ts playerMySessions y playerRevokeSession para que la marca current funcione en iOS/Android nativo.",
+    "Agregar testID='switch-role-btn' al botón de cambio de rol en frontend/app/admin/index.tsx (los demás 5 ya están).",
+    "Considerar agregar testID a los KPI cards y chips de /admin/security para tests futuros (actualmente sólo localizables por texto)."
+  ],
+  "critical_code_review_comments": [
+    "security_admin.py tenía un bug productivo (slice de dict) que tiraba 500 con cualquier filtro — sin tests, no se hubiera detectado.",
+    "Cookie con path='/api/auth' es demasiado restrictivo para un sistema con varios módulos bajo /api/players/*; aumentar el scope a /api da más utilidad sin perder seguridad (sigue siendo HttpOnly+Secure+SameSite=Strict).",
+    "playerMySessions, playerRevokeSession y playerSecurityActivity en src/api.ts duplican la lógica de auth header — considerar centralizar en un wrapper que agregue Authorization + X-Refresh-Token (mobile) o credentials:include (web) en un sólo lugar."
+  ],
+  "updated_files": [
+    "/app/backend/routers/security_admin.py (fix slice dict bug en línea 114)",
+    "/app/backend/tests/test_iter32_security_center.py (nuevo, 16 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (16/16 pytest)", "frontend": "85% (admin OK end-to-end; player /seguridad renderiza pero badge current bloqueado por bug backend)"},
+  "seed_data_creation": "Se crearon ~3 cuentas de player TEST_Iter32* via OTP que quedaron en mongo (con sus refresh tokens y audit logs). El test elimina vía DELETE /me al finalizar las que están en la fixture.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "El backend test suite test_iter32_security_center.py necesita conexión a MongoDB local + acceso a EXPO_PUBLIC_BACKEND_URL para leer OTP de la colección player_otps (Twilio rate-limit en free tier impide leerlo del SMS). Cuando se arregle el cookie path, validar: 1) login OTP por la UI web, 2) navegar a /seguridad, 3) confirmar que el badge 'Este dispositivo' aparece en la sesión que se acaba de crear. La fixture `player_session` en pytest usa header X-Client-Platform=ios para forzar que el verify devuelva refresh_token en el body (no cookie), por lo que sus tests cubren la ruta mobile.",
+  "rca_of_issue": "RCA #1 (slice dict): security_admin.py:114 — código `{k: str(v) for k,v in q.items()}[:200]` aplica `[:200]` sobre el dict resultante del comprehension (no sobre el str). Python interpreta `dict[slice]` como acceso por clave-slice → TypeError. Fix: envolver en str() primero. Reproducción: GET /api/admin/security/logs?accion=admin_login → 500 antes del fix, 200 después.\n\nRCA #2 (is_current=false en web): backend/routers/player_auth.py:244 y auth_router.py:38 setean cookie con `path='/api/auth'`. Las cookies con path restringido sólo se envían a URLs cuyo path comienza con ese prefijo. El endpoint /api/players/me/sessions NO está bajo /api/auth, por lo que el browser NO envía la cookie → get_raw_refresh_from_request retorna None → is_current siempre false. Reproducción: 1) Login OTP en preview web, 2) document.cookie='' (HttpOnly, esperado), 3) fetch /api/players/me/sessions con credentials:include → response.sessions[0].is_current=false. Mitigación: cambiar path a '/api' (mantiene HttpOnly+Secure+SameSite=Strict)."
+}

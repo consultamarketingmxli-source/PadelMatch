@@ -259,6 +259,129 @@ async def me(current=Depends(get_current_player)):
 
 
 # ----------------------------------------------------------------------
+# Ola E.2 — Centro de Privacidad: Sesiones activas del player.
+# ----------------------------------------------------------------------
+@router.get("/me/sessions")
+async def list_my_sessions(request: Request, current=Depends(get_current_player)):
+    """Lista las sesiones activas (refresh tokens no revocados ni expirados)
+    del player autenticado. Útil para que el usuario vea desde dónde está
+    su sesión y revoque dispositivos perdidos.
+
+    Devuelve: id (opaco, derivado del hash), ip, user_agent, created_at,
+    last_used_at, expires_at, is_current (el que envió esta request).
+    """
+    telefono = current["sub"]
+    now = datetime.now(timezone.utc)
+
+    # ID estable opaco = primeros 12 chars del token_hash (no leak útil).
+    cursor = db.refresh_tokens.find(
+        {"user_id": telefono, "revoked": False, "expires_at": {"$gt": now}},
+        {"_id": 0},
+    ).sort("created_at", -1)
+
+    # Identificamos cuál refresh token vino con esta request (si aplica).
+    from core.refresh_tokens import (
+        get_raw_refresh_from_request,
+        hash_refresh_token,
+    )
+
+    raw = get_raw_refresh_from_request(request)
+    current_hash = hash_refresh_token(raw) if raw else None
+
+    sessions = []
+    async for d in cursor:
+        th = d.get("token_hash", "")
+        sessions.append(
+            {
+                "id": th[:16],
+                "ip": d.get("ip"),
+                "user_agent": (d.get("user_agent") or "")[:120],
+                "created_at": (d.get("created_at") or now).isoformat()
+                if hasattr(d.get("created_at"), "isoformat")
+                else None,
+                "last_used_at": (d.get("last_used_at") or now).isoformat()
+                if hasattr(d.get("last_used_at"), "isoformat")
+                else None,
+                "expires_at": (d.get("expires_at") or now).isoformat()
+                if hasattr(d.get("expires_at"), "isoformat")
+                else None,
+                "is_current": bool(current_hash and th == current_hash),
+            }
+        )
+    return {"sessions": sessions, "count": len(sessions)}
+
+
+@router.delete("/me/sessions/{session_id}")
+async def revoke_my_session(
+    session_id: str,
+    request: Request,
+    current=Depends(get_current_player),
+):
+    """Revoca UNA sesión específica (refresh token) por su id opaco.
+    El id es los primeros 16 chars del hash SHA256 del token.
+    El usuario solo puede revocar sus propias sesiones."""
+    if not session_id or len(session_id) < 8:
+        raise HTTPException(400, "session_id inválido")
+
+    telefono = current["sub"]
+    # Buscamos por prefijo de hash + scope estricto al usuario.
+    doc = await db.refresh_tokens.find_one(
+        {"user_id": telefono, "token_hash": {"$regex": f"^{session_id}"}}
+    )
+    if not doc:
+        raise HTTPException(404, "Sesión no encontrada")
+    if doc.get("revoked"):
+        return {"ok": True, "already_revoked": True}
+
+    await db.refresh_tokens.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"revoked": True, "last_used_at": datetime.now(timezone.utc)}},
+    )
+
+    from core.security import write_security_log
+
+    await write_security_log(
+        accion="player_session_revoked",
+        request=request,
+        id_usuario=telefono,
+        result="success",
+        extra={"session_id": session_id[:16]},
+    )
+    return {"ok": True}
+
+
+@router.get("/me/security-activity")
+async def my_security_activity(
+    request: Request,
+    limit: int = 20,
+    current=Depends(get_current_player),
+):
+    """Últimos eventos de seguridad del propio usuario (limit ≤ 100).
+    Solo muestra acciones relacionadas con la cuenta del usuario actual."""
+    telefono = current["sub"]
+    limit = max(1, min(100, int(limit)))
+
+    cursor = db.security_logs.find(
+        {"id_usuario": telefono},
+        {"_id": 0, "accion": 1, "result": 1, "ip_origen": 1, "timestamp": 1, "user_agent": 1},
+    ).sort("timestamp", -1).limit(limit)
+
+    items = []
+    async for d in cursor:
+        ts = d.get("timestamp")
+        items.append(
+            {
+                "accion": d.get("accion"),
+                "result": d.get("result"),
+                "ip": d.get("ip_origen"),
+                "user_agent": (d.get("user_agent") or "")[:80],
+                "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else None,
+            }
+        )
+    return {"items": items, "count": len(items)}
+
+
+# ----------------------------------------------------------------------
 # Ola C — Eliminación de Cuenta (Apple App Store 5.1.1).
 #
 # Anonimización IRREVERSIBLE:
