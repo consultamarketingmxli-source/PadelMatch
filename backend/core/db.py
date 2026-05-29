@@ -102,6 +102,17 @@ async def setup_indexes() -> None:
     except Exception:
         pass
 
+    # === Refresh Tokens (Ola E — DevSecOps) ===
+    # TTL automático sobre expires_at + lookup rápido por hash y revocación masiva.
+    try:
+        await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0)
+        await db.refresh_tokens.create_index("token_hash", unique=True)
+        await db.refresh_tokens.create_index(
+            [("user_id", ASCENDING), ("revoked", ASCENDING)]
+        )
+    except Exception:
+        pass
+
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})

@@ -1,9 +1,15 @@
 /** API client for PadelappRetas OS — handles auth token + /api prefix. */
+import { Platform } from "react-native";
+
 import { storage } from "@/src/utils/storage";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 const TOKEN_KEY = "ppos.admin.token";
 const PLAYER_TOKEN_KEY_GLOBAL = "padelappretas.player.token";
+// Ola E — Refresh Tokens
+const REFRESH_TOKEN_KEY = "ppos.refresh.token"; // SecureStore (native) — vacío en web (cookie)
+const IS_WEB = Platform.OS === "web";
+const CLIENT_PLATFORM = IS_WEB ? "web" : "native";
 
 /* ---------------------------------------------------------------------------
  * Auditoría Routing — Interceptor global de errores 401 (Stale Session).
@@ -330,9 +336,77 @@ export type PlayerWaitlistItem = {
   notificado: boolean;
 };
 
-async function tokenHeader() {
+async function tokenHeader(): Promise<Record<string, string>> {
   const t = await storage.secureGet<string>(TOKEN_KEY, "");
   return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/* ---------------------------------------------------------------------------
+ * Ola E — Refresh Token Mutex + Auto-Refresh on 401
+ *
+ * Estrategia:
+ *  - Mobile (Native): refresh token guardado en SecureStore; lo enviamos en
+ *    header `X-Refresh-Token` al endpoint /auth/refresh.
+ *  - Web: refresh token vive en cookie `HttpOnly` `padelapp_refresh`; el
+ *    navegador la adjunta automáticamente con `credentials: 'include'`.
+ *  - Mutex `_refreshInFlight`: si caen 5 peticiones con 401 simultáneas,
+ *    solo UNA dispara refresh; las demás esperan al mismo Promise.
+ *  - Rotación: cada refresh invalida el anterior y devuelve uno nuevo.
+ *  - Reuse detection: si el backend detecta replay, revoca todas las sesiones.
+ * ------------------------------------------------------------------------- */
+export async function getRefreshToken(): Promise<string | null> {
+  if (IS_WEB) return null; // cookie HttpOnly — JS no la puede leer
+  return (await storage.secureGet<string>(REFRESH_TOKEN_KEY, "")) || null;
+}
+
+export async function setRefreshToken(token: string | null): Promise<void> {
+  if (IS_WEB) return; // no-op (cookie HttpOnly manejada por backend)
+  if (token) await storage.secureSet(REFRESH_TOKEN_KEY, token);
+  else await storage.secureRemove(REFRESH_TOKEN_KEY);
+}
+
+let _refreshInFlight: Promise<string | null> | null = null;
+
+/** Llama /api/auth/refresh; devuelve el nuevo access token o `null` si falla. */
+async function performRefresh(): Promise<string | null> {
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Client-Platform": CLIENT_PLATFORM,
+    };
+    const init: RequestInit = { method: "POST", headers };
+    if (IS_WEB) {
+      init.credentials = "include"; // adjunta cookie HttpOnly
+    } else {
+      const ref = await getRefreshToken();
+      if (!ref) return null;
+      headers["X-Refresh-Token"] = ref;
+    }
+    const res = await fetch(`${BASE}/api/auth/refresh`, init);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      access_token: string;
+      refresh_token?: string | null;
+    };
+    if (!data?.access_token) return null;
+    // Guardamos el nuevo access en SecureStore (admin) y el refresh rotado.
+    await storage.secureSet(TOKEN_KEY, data.access_token);
+    if (!IS_WEB && data.refresh_token) {
+      await setRefreshToken(data.refresh_token);
+    }
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureRefresh(): Promise<string | null> {
+  if (!_refreshInFlight) {
+    _refreshInFlight = performRefresh().finally(() => {
+      _refreshInFlight = null;
+    });
+  }
+  return _refreshInFlight;
 }
 
 async function request<T>(
@@ -343,25 +417,45 @@ async function request<T>(
     auth?: boolean;
     raw?: boolean;
     headers?: Record<string, string>;
+    _retry?: boolean; // interno: no reintentar dos veces el refresh.
   } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Client-Platform": CLIENT_PLATFORM,
+  };
   if (opts.auth) Object.assign(headers, await tokenHeader());
   if (opts.headers) Object.assign(headers, opts.headers);
-  const res = await fetch(`${BASE}/api${path}`, {
+  const init: RequestInit = {
     method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  };
+  if (IS_WEB) init.credentials = "include"; // siempre, por si hay cookie
+  const res = await fetch(`${BASE}/api${path}`, init);
+
   if (!res.ok) {
-    const txt = await res.text();
-    // Auditoría Routing — Stale Session interceptor.
-    // Sólo limpiamos y notificamos si la petición ERA autenticada o si
-    // el endpoint claramente requiere sesión (mantiene UX limpia en
-    // endpoints públicos que pueden devolver 401 por accidente).
-    if (res.status === 401 && (opts.auth || /Authorization/i.test(JSON.stringify(headers)))) {
+    // Ola E — Auto-refresh on 401 (única vez por petición).
+    if (
+      res.status === 401 &&
+      !opts._retry &&
+      (opts.auth || /Authorization/i.test(JSON.stringify(headers)))
+    ) {
+      const newToken = await ensureRefresh();
+      if (newToken) {
+        // Reintentar con nuevo token. Si el caller usó `auth:true`, ya se
+        // reinyectará vía tokenHeader(); si pasó Authorization manual,
+        // lo sobreescribimos también.
+        const retryHeaders = { ...(opts.headers || {}) };
+        if (/Authorization/i.test(JSON.stringify(opts.headers || {}))) {
+          retryHeaders["Authorization"] = `Bearer ${newToken}`;
+        }
+        return request<T>(path, { ...opts, headers: retryHeaders, _retry: true });
+      }
+      // Refresh falló → limpiamos y emitimos authExpired.
       try {
         await storage.secureRemove(TOKEN_KEY);
+        await setRefreshToken(null);
         const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
         await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
       } catch {
@@ -369,6 +463,7 @@ async function request<T>(
       }
       _emitAuthExpired();
     }
+    const txt = await res.text();
     throw new Error(`${res.status}: ${txt}`);
   }
   if (opts.raw) return res as unknown as T;
@@ -378,15 +473,36 @@ async function request<T>(
 export const api = {
   // ===== auth =====
   async login(username: string, password: string) {
-    const r = await request<{ access_token: string; token_type: string }>(
-      "/auth/login",
-      { method: "POST", body: { username, password } },
-    );
+    const r = await request<{
+      access_token: string;
+      token_type: string;
+      refresh_token?: string | null;
+      expires_in?: number;
+    }>("/auth/login", { method: "POST", body: { username, password } });
     await storage.secureSet(TOKEN_KEY, r.access_token);
+    if (r.refresh_token) await setRefreshToken(r.refresh_token);
     return r;
   },
   async logout() {
+    // Notifica al backend para revocar refresh token + borra cookie.
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Client-Platform": CLIENT_PLATFORM,
+      };
+      const init: RequestInit = { method: "POST", headers };
+      if (IS_WEB) {
+        init.credentials = "include";
+      } else {
+        const ref = await getRefreshToken();
+        if (ref) headers["X-Refresh-Token"] = ref;
+      }
+      await fetch(`${BASE}/api/auth/logout`, init);
+    } catch {
+      /* silenciamos errores de red en logout */
+    }
     await storage.secureRemove(TOKEN_KEY);
+    await setRefreshToken(null);
   },
   async getToken() {
     return (await storage.secureGet<string>(TOKEN_KEY, "")) || null;
@@ -755,8 +871,16 @@ export const api = {
       `/players/auth/otp/request`,
       { method: "POST", body },
     ),
-  playerVerifyOtp: (body: { telefono: string; codigo: string }) =>
-    request<PlayerAuthResponse>(`/players/auth/otp/verify`, { method: "POST", body }),
+  playerVerifyOtp: async (body: { telefono: string; codigo: string }) => {
+    const r = await request<PlayerAuthResponse>(`/players/auth/otp/verify`, {
+      method: "POST",
+      body,
+    });
+    // Ola E — guarda refresh token devuelto (sólo native; web usa cookie).
+    const anyR = r as PlayerAuthResponse & { refresh_token?: string | null };
+    if (anyR.refresh_token) await setRefreshToken(anyR.refresh_token);
+    return r;
+  },
   playerMe: (token: string) =>
     request<{ jugador_id: string; telefono: string; nombre: string; role: string }>(
       `/players/me`,
@@ -788,6 +912,62 @@ export const api = {
     }>(`/players/me/roles`, {
       headers: { Authorization: `Bearer ${token}` },
     }),
+
+  // ===== Apple 5.1.1 — Account Deletion (anonimización irreversible) =====
+  /**
+   * Elimina la cuenta del jugador permanentemente.
+   *
+   * El backend NO borra el registro físicamente para preservar el histórico de
+   * torneos (puntos, posiciones, brackets). En su lugar **anonimiza**:
+   *   - nombre  → "Usuario_Anónimo_XXXX"
+   *   - email   → null
+   *   - telefono → hash SHA256
+   * Esto cumple con Apple App Store 5.1.1 (cuenta y datos personales borrados)
+   * y con GDPR derecho al olvido, sin destruir partidos relacionados.
+   */
+  playerDeleteMyAccount: async (token: string) => {
+    const res = await request<{ ok: boolean; mensaje: string }>(`/players/me`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    // Limpieza local total tras éxito.
+    await storage.secureRemove(TOKEN_KEY);
+    await setRefreshToken(null);
+    try {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+    } catch {
+      /* no-op */
+    }
+    return res;
+  },
+
+  /** Player logout — revoca refresh token + limpia almacenamiento. */
+  async playerLogout() {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Client-Platform": CLIENT_PLATFORM,
+      };
+      const init: RequestInit = { method: "POST", headers };
+      if (IS_WEB) {
+        init.credentials = "include";
+      } else {
+        const ref = await getRefreshToken();
+        if (ref) headers["X-Refresh-Token"] = ref;
+      }
+      await fetch(`${BASE}/api/auth/logout`, init);
+    } catch {
+      /* no-op */
+    }
+    await setRefreshToken(null);
+    try {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+    } catch {
+      /* no-op */
+    }
+  },
 
   // ===== pdf =====
   async generatePdfUrl(retaId: string, jugadores: string[], numRondas: 5 | 6 | 7) {

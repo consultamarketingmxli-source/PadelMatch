@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from auth import JWT_ALG, JWT_SECRET, create_access_token
@@ -51,6 +51,9 @@ class PlayerTokenResponse(BaseModel):
     jugador_id: str
     nombre: str
     telefono: str
+    # Ola E — refresh token (native only). En web va por cookie HttpOnly.
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
 
 
 class PlayerInscripcion(BaseModel):
@@ -86,16 +89,19 @@ async def _store_otp(telefono: str, codigo: str) -> None:
 
 
 def _create_player_token(jugador_id: str, telefono: str, nombre: str) -> str:
-    """Crea JWT con tipo `player`. Reusa la SECRET_KEY del módulo auth."""
+    """Crea JWT con tipo `player`. Reusa la SECRET_KEY del módulo auth.
+    Ola E — Access tokens ahora son 15 min; persistencia vía refresh tokens."""
     if jwt is None:
         # Fallback (no debería pasar — pyjwt está instalado por auth.py)
         return create_access_token(subject=telefono, role="player")
+    from auth import ACCESS_TOKEN_EXP_MIN  # 15 min
+
     payload = {
         "sub": telefono,
         "role": "player",
         "jugador_id": jugador_id,
         "nombre": nombre,
-        "exp": datetime.now(timezone.utc) + timedelta(days=30),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXP_MIN),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
@@ -151,7 +157,7 @@ async def request_otp(request: Request, body: OtpRequest):
 
 @router.post("/auth/otp/verify", response_model=PlayerTokenResponse)
 @limiter.limit("10/minute")
-async def verify_otp(request: Request, body: OtpVerify):
+async def verify_otp(request: Request, response: Response, body: OtpVerify):
     rec = await db.player_otps.find_one({"telefono": body.telefono}, {"_id": 0})
     if not rec:
         raise HTTPException(400, "No hay código pendiente para ese teléfono.")
@@ -195,12 +201,47 @@ async def verify_otp(request: Request, body: OtpVerify):
         jugador = doc
 
     token = _create_player_token(jugador["id"], body.telefono, jugador["nombre"])
-    return PlayerTokenResponse(
+
+    # Ola E — emitir refresh token (HTTP cookie web / JSON native).
+    from auth import ACCESS_TOKEN_EXP_MIN
+    from core.refresh_tokens import (
+        REFRESH_COOKIE_NAME,
+        REFRESH_TOKEN_LIFETIME_DAYS,
+        create_refresh_token_document,
+        detect_client_platform,
+        generate_refresh_token,
+    )
+
+    raw_refresh = generate_refresh_token()
+    await create_refresh_token_document(
+        db=db,
+        raw_token=raw_refresh,
+        user_id=body.telefono,
+        role="player",
+        request=request,
+    )
+    platform = detect_client_platform(request)
+
+    payload = PlayerTokenResponse(
         access_token=token,
         jugador_id=jugador["id"],
         nombre=jugador["nombre"],
         telefono=body.telefono,
+        expires_in=ACCESS_TOKEN_EXP_MIN * 60,
     )
+    if platform == "web":
+        response.set_cookie(
+            key=REFRESH_COOKIE_NAME,
+            value=raw_refresh,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
+            path="/api/auth",
+        )
+    else:
+        payload.refresh_token = raw_refresh
+    return payload
 
 
 @router.get("/me")
@@ -269,6 +310,11 @@ async def delete_my_account(request: Request, current=Depends(get_current_player
     # 3. Limpieza de credenciales activas (no reversible).
     await db.player_otps.delete_many({"telefono": telefono})
 
+    # 3b. Ola E — Revoca TODOS los refresh tokens activos del usuario.
+    from core.refresh_tokens import revoke_all_user_tokens
+
+    revoked = await revoke_all_user_tokens(db, telefono)
+
     # 4. Audit log irrefutable (GDPR + Apple compliance).
     await write_security_log(
         accion="account_deleted",
@@ -279,6 +325,7 @@ async def delete_my_account(request: Request, current=Depends(get_current_player
             "telefono_hash": hash_phone,
             "nombre_antes": nombre_antes,
             "matched": update_result.matched_count,
+            "refresh_tokens_revoked": revoked,
         },
     )
 

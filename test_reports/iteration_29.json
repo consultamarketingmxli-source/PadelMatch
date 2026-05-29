@@ -1,0 +1,61 @@
+{
+  "summary": "Validación exhaustiva del MÓDULO DE SEGURIDAD ABSOLUTA (Olas A/B/C/D/E). Se ejecutaron 30 test cases agrupados en 7 clases pytest cubriendo: security headers (HSTS, X-Frame-Options, etc.), rate limiting (slowapi 5/min en login + OTP request — verificado en backend logs), audit logs middleware, NoSQL injection sanitizer (incluyendo nested $where), refresh tokens híbridos native+web con rotación y REUSE DETECTION, eliminación de cuenta Apple 5.1.1 (anonimización irreversible verificada directamente en Mongo: nombre='Usuario eliminado', email=null, telefono=hash, anonimizado=true), OTP flow completo. TODOS los grupos pasan individualmente. Se encontró y corrigió 1 bug real (logout 500). Se detectó 1 issue no crítico de h11 (Too much data for declared Content-Length) que no afecta los flujos validados.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/logout (con X-Refresh-Token válido)",
+        "issue": "FIXED por T1 — devolvía 500 porque routers/auth_router.py:207 llamaba write_security_log(role=...) pero la función no acepta ese kwarg. Corregido moviendo role dentro de extra={'role': ...}",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "general (uvicorn h11)",
+        "issue": "Backend logs muestran ocasionalmente 'h11._util.LocalProtocolError: Too much data for declared Content-Length' en starlette/middleware/base.py stream_response. No produjo fallos visibles en los tests pero indica que algún middleware (probable: safe_exception_handler o uno de los custom) está re-escribiendo body sin actualizar Content-Length. Recomendado revisar core/security.py:378 dispatch para asegurar que las respuestas modificadas usen Response(...) con headers consistentes."
+      },
+      {
+        "endpoint": "JWT access_token (HS256 sin iat/jti)",
+        "issue": "Tokens emitidos en la misma segundo para el mismo usuario son BYTE-IDENTICOS (mismo payload {sub,role,exp}). No es vulnerabilidad — los tokens siguen siendo válidos — pero impide diferenciarlos en logs/auditoría. Recomendado añadir claim 'iat' (issued at, segundos) y/o 'jti' (uuid4) en core/security.py create_access_token() para garantizar unicidad."
+      },
+      {
+        "endpoint": "Rate limit feedback al cliente",
+        "issue": "Cuando slowapi devuelve 429, el ingress envoy de Kubernetes corta la conexión con 503 en bursts >5/sec. Esto enmascara el 429 real ante clientes externos agresivos. No-op para uso legítimo, pero podría considerar añadir Retry-After header explícito."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_security_olas.py",
+    "/app/test_reports/pytest/iter29_security.xml"
+  ],
+  "action_items": [
+    "[ya hecho por T1] Confirmar el fix en /api/auth/logout (role -> extra dict)",
+    "Añadir 'iat' y/o 'jti' al payload de create_access_token (core/security.py) para unicidad byte-level de JWTs emitidos consecutivamente",
+    "Investigar el h11 LocalProtocolError en backend logs (probable Content-Length stale en algún middleware). No bloquea producción pero ensucia logs",
+    "Considerar separar test_credentials/admin user para tests automatizados, ya que el rate-limit 5/min global por IP es muy estricto y bloquea suites largas (no es bug, es feature funcionando)"
+  ],
+  "critical_code_review_comments": [
+    "core/security.py:162 — write_security_log() signature usa kwargs-only (*, accion, request, ...). Cualquier llamador que pase un kwarg desconocido (como el bug 'role=' encontrado) crashea el endpoint. Considerar añadir **kwargs ignorados o usar dict 'extra' explícitamente en todos los callsites.",
+    "routers/auth_router.py — varios callsites de write_security_log conviven con patrones distintos (algunos con extra={}, otros pasando kwargs sueltos). Estandarizar.",
+    "core/refresh_tokens.py — REUSE DETECTION funciona correctamente y revoca TODOS los refresh tokens del usuario, verificado en test_reuse_detection_revokes_all_tokens.",
+    "Sanitizer NoSQL bloquea correctamente $ne, $gt, $where (incluso nested) y dotted keys. Webhooks y /api/public/retas/* exentos correctamente."
+  ],
+  "updated_files": [
+    "/app/backend/routers/auth_router.py (fix: role -> extra={'role':...} en logout)",
+    "/app/backend/tests/test_iter29_security_olas.py (nuevo, 30 test cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 cuando se ejecutan en grupos respetando la ventana de rate limit; el suite completo falla por compartir budget de 5/min globalmente — limitación de infra, no funcional)",
+    "frontend": "N/A (testing backend only)"
+  },
+  "seed_data_creation": "Se creó 1 jugador test efímero ('TEST_PlayerDelete') que se auto-anonimiza dentro del propio test (DELETE /api/players/me). No queda data residual de admin. OTPs test consumidos.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "1) El suite completo de iter29 NO debe correrse de una sola vez sin sleeps: el rate-limit 5/min en /api/auth/login es compartido por IP y agota el budget. Correr por clase con sleep(65) entre clases. 2) Para tests de account-deletion se requiere acceso a Mongo (MONGO_URL+DB_NAME desde /app/backend/.env). 3) El admin 'admin@padelappretas.com' / 'admin123' funciona. 4) Cookie HttpOnly se llama 'padelapp_refresh' con SameSite=Strict. 5) Native usa header X-Refresh-Token; web usa cookie. 6) X-Client-Platform: 'web'|'native'. 7) Smoke endpoint /api/ devuelve 200 y trae headers HSTS+CSP.",
+  "rca_of_issue": "BUG /api/auth/logout 500: file=routers/auth_router.py line=207, llamada write_security_log(role=doc.get('role'), ...) pero la función firma core/security.py:162 sólo acepta {accion, request, id_usuario, result, extra}. Reproducir: 1) login native → obtén refresh_token, 2) POST /api/auth/logout con header X-Refresh-Token=<token>, 3) backend lanza TypeError → 500. Fix aplicado: mover role a extra={'role': doc.get('role')}. Verificado con re-run (test_logout_revokes_refresh PASS)."
+}

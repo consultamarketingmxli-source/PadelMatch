@@ -18,7 +18,11 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "padelappretas-os-secret-dev-key-min-32bytes-please-rotate-in-prod")
 JWT_ALG = "HS256"
-ACCESS_TOKEN_EXP_MIN = 60 * 24  # 24h
+# Ola E — Access tokens ahora son SHORT-LIVED (15 min).
+# Refresh tokens cubren la persistencia de sesión hasta 30 días (ver core.refresh_tokens).
+# Tokens emitidos ANTES de este cambio (legacy 24h/30d) siguen siendo válidos
+# hasta su exp natural — no rompemos sesiones activas.
+ACCESS_TOKEN_EXP_MIN = 15
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

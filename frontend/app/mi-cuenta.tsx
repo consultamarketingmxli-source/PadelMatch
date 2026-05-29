@@ -31,6 +31,8 @@ import {
   Clock,
   Hourglass,
   LogOut,
+  ShieldOff,
+  Trash2,
   Trophy,
   XCircle,
 } from "lucide-react-native";
@@ -94,12 +96,79 @@ export default function MiCuenta() {
         text: "Salir",
         style: "destructive",
         onPress: async () => {
+          await api.playerLogout();
           await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
           await AsyncStorage.removeItem(PLAYER_INFO_KEY);
           router.replace("/" as any);
         },
       },
     ]);
+  };
+
+  /**
+   * Apple App Store 5.1.1(v) — Eliminación de cuenta visible y de un paso.
+   *
+   * Aplicamos **doble confirmación** para prevenir tap accidental, pero la
+   * acción en sí es de un solo paso una vez confirmada (sin redirección
+   * a soporte, sin email manual). El backend anonimiza irreversiblemente.
+   */
+  const handleDeleteAccount = async () => {
+    const t = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+    if (!t) {
+      router.replace("/login" as any);
+      return;
+    }
+    Alert.alert(
+      "Eliminar mi cuenta",
+      "Se borrarán tu nombre, teléfono y datos personales de forma irreversible. " +
+        "Tus partidos jugados se mantendrán como 'Usuario eliminado' para preservar " +
+        "el histórico de torneos. ¿Continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar definitivamente",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Confirmación final",
+              "Esta acción no se puede deshacer. ¿Eliminar mi cuenta y datos personales?",
+              [
+                { text: "Cancelar", style: "cancel" },
+                {
+                  text: "Sí, eliminar",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      const res = await api.playerDeleteMyAccount(t);
+                      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+                      await AsyncStorage.removeItem(PLAYER_INFO_KEY);
+                      Alert.alert(
+                        "Cuenta eliminada",
+                        res.mensaje || "Tus datos personales han sido eliminados.",
+                        [{ text: "OK", onPress: () => router.replace("/" as any) }],
+                      );
+                    } catch (e: any) {
+                      const msg = String(e?.message || "");
+                      if (msg.startsWith("429")) {
+                        Alert.alert(
+                          "Demasiados intentos",
+                          "Por seguridad, espera 1 hora antes de volver a intentarlo.",
+                        );
+                      } else {
+                        Alert.alert(
+                          "Error",
+                          "No se pudo eliminar la cuenta. Intenta más tarde.",
+                        );
+                      }
+                    }
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -183,6 +252,29 @@ export default function MiCuenta() {
         ) : (
           inscripciones.map((ins) => <InscRow key={ins.id} ins={ins} router={router} />)
         )}
+
+        {/* === Privacidad y Seguridad (Apple App Store 5.1.1) === */}
+        <Text style={styles.section}>Privacidad y seguridad</Text>
+        <View style={styles.privacyCard}>
+          <View style={styles.privacyHead}>
+            <ShieldOff size={18} color={colors.status.red} />
+            <Text style={styles.privacyTitle}>Eliminar mi cuenta y datos personales</Text>
+          </View>
+          <Text style={styles.privacyText}>
+            Tu nombre, teléfono e información personal serán borrados de forma
+            permanente. Las inscripciones y resultados pasados se conservan como
+            “Usuario eliminado” para no romper el histórico de los torneos.
+          </Text>
+          <TouchableOpacity
+            onPress={handleDeleteAccount}
+            style={styles.dangerBtn}
+            testID="btn-eliminar-cuenta"
+            accessibilityLabel="Eliminar mi cuenta y datos personales"
+          >
+            <Trash2 size={16} color="#fff" />
+            <Text style={styles.dangerBtnText}>Eliminar mi cuenta</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -398,4 +490,49 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   ctaText: { color: colors.text.inverse, fontWeight: "800" },
+
+  // === Privacy / Apple 5.1.1 ===
+  privacyCard: {
+    backgroundColor: "#FFF5F5",
+    borderWidth: 1,
+    borderColor: colors.status.red,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  privacyHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  privacyTitle: {
+    ...typography.bodyBold,
+    color: colors.status.red,
+    fontSize: 14,
+    flex: 1,
+  },
+  privacyText: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: spacing.sm,
+  },
+  dangerBtn: {
+    backgroundColor: colors.status.red,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: radii.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 44,
+  },
+  dangerBtnText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 14,
+  },
 });

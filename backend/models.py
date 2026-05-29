@@ -263,6 +263,9 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    # Ola E — Refresh token (devuelto SOLO en modo native; en web va en cookie HttpOnly)
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None  # segundos hasta exp del access
 
 
 # ============= Webhook =============

@@ -424,8 +424,58 @@ async def webhook_mercadopago(request: Request):
       - { type: 'payment', data: { id: '...' } }
       - query params ?type=payment&data.id=...  (IPN legacy)
       - { topic: 'merchant_order', resource: 'https://.../merchant_orders/XXX' }
+
+    Verificación de firma HMAC-SHA256 (Ola D — DevSecOps):
+      Si MP_WEBHOOK_SECRET está configurado, validamos x-signature según
+      docs MP: manifest = "id:{data.id};request-id:{x-request-id};ts:{ts};"
+      sha256_hmac(secret, manifest) === v1
     """
     body_bytes = await request.body()
+
+    # --- Verificación de firma HMAC (cuando hay secret en .env) ---
+    mp_secret = os.getenv("MP_WEBHOOK_SECRET", "").strip()
+    if mp_secret:
+        import hashlib
+        import hmac as _hmac
+
+        from core.security import write_security_log
+
+        x_signature = request.headers.get("x-signature", "")
+        x_request_id = request.headers.get("x-request-id", "")
+        # x-signature viene como "ts=1704467022,v1=abcdef..."
+        parts = dict(
+            kv.split("=", 1) for kv in x_signature.split(",") if "=" in kv
+        )
+        ts = parts.get("ts", "").strip()
+        v1 = parts.get("v1", "").strip()
+        # data.id puede estar en query (IPN) o en body JSON.
+        qp_for_sig = dict(request.query_params)
+        try:
+            preview = await request.json() if body_bytes else {}
+        except Exception:
+            preview = {}
+        data_id = (
+            qp_for_sig.get("data.id")
+            or qp_for_sig.get("id")
+            or (preview.get("data") or {}).get("id")
+            or preview.get("id")
+            or ""
+        )
+        manifest = f"id:{data_id};request-id:{x_request_id};ts:{ts};"
+        expected = _hmac.new(
+            mp_secret.encode("utf-8"),
+            manifest.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not (v1 and _hmac.compare_digest(expected, v1)):
+            await write_security_log(
+                accion="mp_webhook_signature_invalid",
+                request=request,
+                result="denied",
+                extra={"data_id": str(data_id)[:32]},
+            )
+            raise HTTPException(401, "Firma de webhook inválida.")
+
     try:
         payload = await request.json() if body_bytes else {}
     except Exception:
