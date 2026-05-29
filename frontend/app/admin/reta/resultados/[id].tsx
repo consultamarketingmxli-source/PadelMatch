@@ -40,6 +40,7 @@ import {
   Equal,
   Minus,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react-native";
 
@@ -78,6 +79,7 @@ export default function CapturarResultados() {
   const [slots, setSlots] = useState<Record<string, Slot>>({});
   const [loading, setLoading] = useState(true);
   const [canchaActiva, setCanchaActiva] = useState(1);
+  const [recalcularVisible, setRecalcularVisible] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -277,13 +279,23 @@ export default function CapturarResultados() {
               {reta ? ` · ${reta.formato_score?.tipo === "TIEMPO" ? `${reta.formato_score?.valor}min` : `a ${reta.formato_score?.valor} ${reta.formato_score?.unidad ?? "juegos"}`}` : ""}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => reta && router.push(`/retas/${reta.url_slug}/tabla` as any)}
-            style={styles.iconBtn}
-            testID="resultados-tabla"
-          >
-            <BarChart2 size={18} color={colors.brand.primary} />
-          </TouchableOpacity>
+          <View style={styles.topBarActions}>
+            <TouchableOpacity
+              onPress={() => setRecalcularVisible(true)}
+              style={styles.iconBtn}
+              testID="resultados-recalcular"
+              accessibilityLabel="Recalcular rondas pendientes"
+            >
+              <RefreshCw size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => reta && router.push(`/retas/${reta.url_slug}/tabla` as any)}
+              style={styles.iconBtn}
+              testID="resultados-tabla"
+            >
+              <BarChart2 size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {rol.canchas > 1 ? (
@@ -427,6 +439,20 @@ export default function CapturarResultados() {
           ))}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Fase D — Hito 3: Recálculo en caliente */}
+      {id ? (
+        <RecalcularRondasModal
+          visible={recalcularVisible}
+          retaId={id}
+          jugadores={rol.jugadores ?? []}
+          onClose={() => setRecalcularVisible(false)}
+          onApplied={() => {
+            // Refrescar rol + resultados para reflejar el nuevo ordenamiento.
+            void load();
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -477,6 +503,11 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+  },
+  topBarActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
   },
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md,
