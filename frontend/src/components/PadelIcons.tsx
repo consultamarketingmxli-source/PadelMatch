@@ -22,41 +22,10 @@ import { colors } from "@/src/theme";
 
 type IconProps = { size?: number; color?: string };
 
-// =========== Pala de Pádel con agujeros ===========
-export function PadelPalaIcon({
-  size = 22,
-  color = colors.brand.primary,
-}: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {/* Mango */}
-      <Path
-        d="M11 18.5h2v3.2a1 1 0 0 1-2 0v-3.2Z"
-        fill={color}
-      />
-      {/* Cabeza pála */}
-      <Path
-        d="M12 1.5c4.42 0 8 3.58 8 8s-3.58 8-8 8-8-3.58-8-8 3.58-8 8-8Z"
-        stroke={color}
-        strokeWidth={1.8}
-        fill="none"
-      />
-      {/* Patrón de agujeros */}
-      <Circle cx={9} cy={7.5} r={0.9} fill={color} />
-      <Circle cx={12} cy={7.5} r={0.9} fill={color} />
-      <Circle cx={15} cy={7.5} r={0.9} fill={color} />
-      <Circle cx={7.5} cy={10} r={0.9} fill={color} />
-      <Circle cx={10.5} cy={10} r={0.9} fill={color} />
-      <Circle cx={13.5} cy={10} r={0.9} fill={color} />
-      <Circle cx={16.5} cy={10} r={0.9} fill={color} />
-      <Circle cx={9} cy={12.5} r={0.9} fill={color} />
-      <Circle cx={12} cy={12.5} r={0.9} fill={color} />
-      <Circle cx={15} cy={12.5} r={0.9} fill={color} />
-      <Circle cx={10.5} cy={15} r={0.9} fill={color} />
-      <Circle cx={13.5} cy={15} r={0.9} fill={color} />
-    </Svg>
-  );
-}
+// =========== Pala de Pádel ===========
+// Re-export del componente canónico (Blue Club Pro Flat v2).
+// El antiguo SVG redondo con dots quedó deprecado al rediseñar la identidad.
+export { PadelPalaIcon } from "./PadelPalaIcon";
 
 // =========== Reloj 24h + línea de pista ===========
 export function CourtClockIcon({

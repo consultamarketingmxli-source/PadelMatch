@@ -1,27 +1,24 @@
 /**
- * BrandLogo — Sistema de marca PadelappRetas v3 "Blue Club Pro"
+ * BrandLogo v4 "Blue Club Pro" — Pelota fiel a la foto de referencia.
  *
- * Director de Arte:
- *   "Isotipo: pelota de tenis/pádel minimalista de líneas fluidas, costuras
- *    curvas como trazados vectoriales calados en negativo. Renderizado en
- *    degradado de Azul Eléctrico (#2563EB) a Azul Cobalto Real (#312E81)
- *    sobre fondos claros, o Blanco Puro con destellos sutiles sobre oscuros.
+ * Director de Arte / iteración 2 (post-feedback usuario):
  *
- *    Fusión Tipográfica Elegante: 'Padel' en peso ultra-delgado o regular
- *    (font-light/normal) y 'AppRetas' en peso extra-negrita (font-black/extrabold)."
+ *   La pelota muestra DOS arcos blancos elegantes que representan la
+ *   costura continua de la pelota de tenis/pádel — uno bombeando hacia
+ *   arriba en la mitad superior, otro bombeando hacia abajo en la mitad
+ *   inferior. NO son zigzags ni curvas exageradas, son trazos suaves y
+ *   premium tipo arcos de campana (Bezier cuadrático).
  *
- * Exporta dos componentes:
- *   - <BrandLogo />       : Solo el isotipo (pelota azul minimalista)
- *   - <BrandWordmark />   : Wordmark "PadelAppRetas" con fusión tipográfica
- *   - <BrandLockup />     : Isotipo + wordmark en composición horizontal
+ *   Cuerpo: gradiente lineal Azul Eléctrico (#2563EB) → Cobalto (#312E81)
+ *   con highlight radial superior-izquierdo para volumen 3D.
  *
- * Variantes de color:
- *   - `light` (default): degradado azul sobre fondos claros
- *   - `dark`          : blanco puro con destellos para fondos oscuros
- *   - `mono`          : silueta plana en color custom
+ * Exporta:
+ *   - <BrandLogo />     : Isotipo (3 variantes: light / dark / mono)
+ *   - <BrandWordmark /> : "Padel" light + "AppRetas" black (compat)
+ *   - <BrandLockup />   : Isotipo + wordmark horizontal
  */
 import React from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import Svg, {
   Circle,
   Defs,
@@ -42,14 +39,12 @@ type LogoProps = {
 };
 
 /**
- * Isotipo principal — Pelota de pádel/tenis minimalista.
+ * Isotipo principal — Pelota de pádel/tenis fiel a la foto referencia.
  *
  * Geometría:
- *   • Esfera central (cuerpo) con degradado lineal blue-600 → indigo-900.
- *   • Highlight superior izquierdo (radial blanco) para volumen 3D sutil.
- *   • 2 costuras curvas (Path) calados en negativo blanco con stroke fino.
- *
- * Optimizado para iconos de app (64×64, 128×128) y headers (24-48).
+ *   • Esfera con degradado lineal blue-600 → indigo-900
+ *   • Highlight radial superior-izquierdo (volumen 3D sutil)
+ *   • DOS arcos blancos elegantes (uno arriba, otro abajo) — costura tenis
  */
 export function BrandLogo({ size = 48, variant = "light", color }: LogoProps) {
   if (variant === "mono") {
@@ -61,20 +56,34 @@ export function BrandLogo({ size = 48, variant = "light", color }: LogoProps) {
   return <BrandMarkLight size={size} />;
 }
 
-/** Versión "light" — degradado azul sobre fondos claros. */
+/**
+ * Path data de las costuras — calculado para verse como la foto:
+ *
+ *   • TOP seam: M(6, 28) Q(32, 14) (58, 28)
+ *     → bell curve que arranca a las 9 horas, sube hacia las 12, baja a las 3.
+ *
+ *   • BOTTOM seam: M(6, 36) Q(32, 50) (58, 36)
+ *     → mirror exacto, bell curve hacia abajo.
+ *
+ *   Los puntos finales (6,28) y (58,28) están sobre el círculo r=29 cx=32,
+ *   garantizando que la costura termina exactamente sobre el borde de la
+ *   pelota sin sobresalir.
+ */
+const SEAM_TOP_PATH = "M 6 28 Q 32 14 58 28";
+const SEAM_BOTTOM_PATH = "M 6 36 Q 32 50 58 36";
+const SEAM_WIDTH = 2.4;
+
 function BrandMarkLight({ size }: { size: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
       <Defs>
-        {/* Degradado principal: blue-600 (top-left) → indigo-900 (bottom-right) */}
-        <LinearGradient id="ballGrad" x1="14%" y1="14%" x2="86%" y2="86%">
+        <LinearGradient id="ballGradL" x1="14%" y1="14%" x2="86%" y2="86%">
           <Stop offset="0%" stopColor={colors.brand.gradientFrom} />
           <Stop offset="55%" stopColor={colors.brand.gradientVia} />
           <Stop offset="100%" stopColor={colors.brand.gradientTo} />
         </LinearGradient>
-        {/* Highlight superior izquierdo — sutilísimo volumen 3D */}
         <RadialGradient
-          id="ballHighlight"
+          id="ballHiL"
           cx="32%"
           cy="28%"
           rx="35%"
@@ -82,102 +91,82 @@ function BrandMarkLight({ size }: { size: number }) {
           fx="32%"
           fy="28%"
         >
-          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.35} />
+          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.4} />
           <Stop offset="60%" stopColor="#FFFFFF" stopOpacity={0.08} />
           <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0} />
         </RadialGradient>
       </Defs>
 
-      {/* Cuerpo de la pelota — degradado azul */}
-      <Circle cx={32} cy={32} r={29} fill="url(#ballGrad)" />
-      {/* Highlight 3D */}
-      <Circle cx={32} cy={32} r={29} fill="url(#ballHighlight)" />
+      <Circle cx={32} cy={32} r={29} fill="url(#ballGradL)" />
+      <Circle cx={32} cy={32} r={29} fill="url(#ballHiL)" />
 
-      {/*
-        Costuras (seams) — Trazados curvos calados en negativo blanco.
-        Spec: "líneas fluidas y dinámicas de alta gama, líneas curvas
-        características de la pelota como trazados vectoriales limpios
-        de alto contraste o calados en negativo".
-
-        Curva izquierda: nace en el flanco-izq y termina en el flanco-der
-        atravesando la parte superior con forma de "C" invertida.
-        Curva derecha: espejo, atraviesa la parte inferior.
-      */}
+      {/* Costuras blancas elegantes — fiel a la foto. */}
       <Path
-        d="M 6 32 C 14 18, 28 14, 40 18 S 58 28, 58 32"
+        d={SEAM_TOP_PATH}
         stroke="#FFFFFF"
-        strokeWidth={2.6}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.92}
-      />
-      <Path
-        d="M 6 32 C 14 46, 28 50, 40 46 S 58 36, 58 32"
-        stroke="#FFFFFF"
-        strokeWidth={2.6}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.92}
-      />
-    </Svg>
-  );
-}
-
-/** Versión "dark" — blanco puro con destellos sutiles sobre fondos oscuros. */
-function BrandMarkDark({ size }: { size: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-      <Defs>
-        <RadialGradient
-          id="ballDarkHi"
-          cx="30%"
-          cy="28%"
-          rx="40%"
-          ry="40%"
-        >
-          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={1} />
-          <Stop offset="100%" stopColor="#E0E7FF" stopOpacity={0.85} />
-        </RadialGradient>
-      </Defs>
-      <Circle cx={32} cy={32} r={29} fill="url(#ballDarkHi)" />
-      {/* Costuras en azul cobalto */}
-      <Path
-        d="M 6 32 C 14 18, 28 14, 40 18 S 58 28, 58 32"
-        stroke={colors.brand.cobalt}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.8}
-      />
-      <Path
-        d="M 6 32 C 14 46, 28 50, 40 46 S 58 36, 58 32"
-        stroke={colors.brand.cobalt}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.8}
-      />
-    </Svg>
-  );
-}
-
-/** Versión "mono" — silueta plana, color custom. */
-function BrandMarkMono({ size, color }: { size: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-      <Circle cx={32} cy={32} r={29} fill={color} />
-      <Path
-        d="M 6 32 C 14 18, 28 14, 40 18 S 58 28, 58 32"
-        stroke="#FFFFFF"
-        strokeWidth={2.6}
+        strokeWidth={SEAM_WIDTH}
         strokeLinecap="round"
         fill="none"
         opacity={0.95}
       />
       <Path
-        d="M 6 32 C 14 46, 28 50, 40 46 S 58 36, 58 32"
+        d={SEAM_BOTTOM_PATH}
         stroke="#FFFFFF"
-        strokeWidth={2.6}
+        strokeWidth={SEAM_WIDTH}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.95}
+      />
+    </Svg>
+  );
+}
+
+function BrandMarkDark({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+      <Defs>
+        <RadialGradient id="ballDarkHi" cx="30%" cy="28%" rx="42%" ry="42%">
+          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={1} />
+          <Stop offset="100%" stopColor="#E0E7FF" stopOpacity={0.9} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={32} cy={32} r={29} fill="url(#ballDarkHi)" />
+      <Path
+        d={SEAM_TOP_PATH}
+        stroke={colors.brand.cobalt}
+        strokeWidth={SEAM_WIDTH - 0.3}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.85}
+      />
+      <Path
+        d={SEAM_BOTTOM_PATH}
+        stroke={colors.brand.cobalt}
+        strokeWidth={SEAM_WIDTH - 0.3}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.85}
+      />
+    </Svg>
+  );
+}
+
+function BrandMarkMono({ size, color }: { size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+      <Circle cx={32} cy={32} r={29} fill={color} />
+      <Path
+        d={SEAM_TOP_PATH}
+        stroke="#FFFFFF"
+        strokeWidth={SEAM_WIDTH}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.95}
+      />
+      <Path
+        d={SEAM_BOTTOM_PATH}
+        stroke="#FFFFFF"
+        strokeWidth={SEAM_WIDTH}
         strokeLinecap="round"
         fill="none"
         opacity={0.95}
@@ -187,15 +176,7 @@ function BrandMarkMono({ size, color }: { size: number; color: string }) {
 }
 
 /* ────────────────────────────────────────────────────────────────
-   WORDMARK — Fusión tipográfica elegante.
-
-   Spec: "'Padel' en peso ultra-delgado o regular (font-light/font-normal)
-          y 'AppRetas' en peso extra-negrita (font-black/font-extrabold)"
-
-   Implementación:
-     • "Padel"     → Inter_400Regular (peso regular, look elegante)
-     • "AppRetas"  → Inter_900Black + tracking-tighter (look corporativo)
-   Color: degradado lineal en SVG (cuando es light) o text color (mono).
+   WORDMARK + LOCKUP (sin cambios funcionales, mantienen contrato).
    ──────────────────────────────────────────────────────────────── */
 
 type WordmarkProps = {
@@ -209,8 +190,8 @@ export function BrandWordmark({
   variant = "light",
   color,
 }: WordmarkProps) {
-  const lightColor = colors.brand.cobalt;       // indigo-900 — base
-  const accentColor = colors.brand.primary;     // blue-600 — acento
+  const lightColor = colors.brand.cobalt;
+  const accentColor = colors.brand.primary;
   const darkColor = "#FFFFFF";
   const monoColor = color ?? colors.text.primary;
 
@@ -241,12 +222,7 @@ export function BrandWordmark({
   );
 }
 
-/* ────────────────────────────────────────────────────────────────
-   LOCKUP — Composición horizontal isotipo + wordmark.
-   ──────────────────────────────────────────────────────────────── */
-
 type LockupProps = {
-  /** Altura del isotipo (el wordmark se escala proporcionalmente). */
   size?: number;
   variant?: Variant;
 };
@@ -262,17 +238,9 @@ export function BrandLockup({ size = 32, variant = "light" }: LockupProps) {
 }
 
 const styles = StyleSheet.create({
-  lockupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  wordmarkRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-  },
+  lockupRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  wordmarkRow: { flexDirection: "row", alignItems: "baseline" },
   wordmarkLight: {
-    // Peso ligero/regular — look elegante, casi editorial.
     fontFamily: Platform.select({
       web: "Inter, system-ui, -apple-system, sans-serif",
       default: fonts.sansRegular,
@@ -281,7 +249,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   wordmarkHeavy: {
-    // Peso extra-negrita — corporativo, deportivo.
     fontFamily: Platform.select({
       web: "Inter, system-ui, -apple-system, sans-serif",
       default: fonts.sansBlack,

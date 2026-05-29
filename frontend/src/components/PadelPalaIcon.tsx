@@ -1,173 +1,242 @@
 /**
- * PadelPalaIcon — Isotipo vectorial profesional de pala de pádel.
+ * PadelPalaIcon v2 "Blue Club Pro Flat" — Rediseño según referencia del usuario.
  *
- * Director de Arte v7 — Reconstrucción fiel al 100% del contorno
- * Bullpadel Vertex 04 (referencia provista por usuario).
+ * Director de Arte / iteración 2:
+ *   Estilo flat-illustration moderno (similar a icono Material/Apple).
+ *   Sustituye la versión anterior de líneas finas Bullpadel-style.
  *
- *   ViewBox 40×64 — Aspect ratio real medido = 0.625 (ancho/alto)
+ * Anatomía (fiel a image_padel_reference.png):
+ *   • Cabeza: silueta de gota/teardrop con cuello ligeramente cinturado.
+ *   • Sombra lateral izquierda: gradiente sutil para volumen 3D plano.
+ *   • Huecos: grid 4×4 honeycomb de círculos blancos calados.
+ *   • Cuello V: muesca triangular blanca calada entre los dos brazos.
+ *   • Grip: cilindro rectangular azul-accent con cap superior + cap inferior.
+ *   • Cordón de muñeca: trazo curvo cobalto que sale lateralmente.
  *
- *   Anclas geométricas (medidas en píxeles del viewBox 40×64):
+ * Paleta (Blue Club Pro):
+ *   • Cuerpo: gradiente blue-600 (#2563EB) → indigo-700 (#4338CA)
+ *   • Sombra lado izquierdo: indigo-900 (#312E81) al 25%
+ *   • Grip y detalles: blue-500 (#3B82F6) (accent)
+ *   • Cordón: indigo-950 (#1E1B4B) o slate-900
+ *   • Huecos / cuello-V: blanco puro
  *
- *     TIP TOP            (20.0,  0.0)   — ratio (0.50, 0.00)
- *     UPPER SHOULDER L   ( 9.2,  9.6)   — ratio (0.23, 0.15)
- *     UPPER SHOULDER R   (30.8,  9.6)
- *     WIDEST POINT L     ( 2.8, 22.4)   — ratio (0.07, 0.35) · MAX width
- *     WIDEST POINT R     (37.2, 22.4)
- *     LOWER TAPER L      (10.0, 35.2)   — ratio (0.25, 0.55)
- *     LOWER TAPER R      (30.0, 35.2)
- *     BRIDGE TOP L       (14.0, 43.5)   — ratio (0.35, 0.68)
- *     BRIDGE TOP R       (26.0, 43.5)
- *     BRIDGE BOTTOM L    (16.0, 49.9)   — ratio (0.40, 0.78)
- *     BRIDGE BOTTOM R    (24.0, 49.9)
- *     GRIP CAP           (20.0, 63.4)   — ratio (0.50, 0.99)
- *
- *   Proporciones verificadas:
- *     • Head:   ~68% (y=0 → y=43.5)
- *     • Bridge: ~10% (y=43.5 → y=50)
- *     • Grip:   ~22% (y=50 → y=64)
- *
- *   Sin contenido interno (cero texto, cero marcas comerciales).
- *   Sólo silueta + grid uniforme de perforaciones + bridge calado.
+ * Contrato (mantiene compatibilidad con la versión anterior):
+ *   - size?: number
+ *   - color?: string         (override del color principal para uso mono)
+ *   - filled?: boolean       (true = ilustración fill; false = outline mono)
+ *   - strokeWidth?: number   (ignorado en variante filled — sin uso)
  */
 import React from "react";
-import Svg, { Circle, G, Path, Polygon, Rect } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient,
+  Path,
+  Polygon,
+  Stop,
+  Rect,
+  G,
+} from "react-native-svg";
 
 type Props = {
   size?: number;
   color?: string;
   strokeWidth?: number;
-  /** Si true, rellena la cabeza con color (versión activa). */
+  /** true: ilustración flat con gradiente blue (default).
+   *  false: silueta mono outline (compat con calls antiguos que pasaban filled=false).
+   */
   filled?: boolean;
 };
 
-const DEFAULT_COLOR = "#0F172A"; // slate-900
+// Paleta blue club pro embebida (evita import circular con theme).
+const BLUE_600 = "#2563EB";
+const BLUE_700 = "#1D4ED8";
+const INDIGO_700 = "#4338CA";
+const INDIGO_900 = "#312E81";
+const INDIGO_950 = "#1E1B4B";
+const BLUE_500 = "#3B82F6";
+const SLATE_900 = "#0F172A";
 
+/**
+ * ViewBox 80×100 — proporción 4:5 que captura cabeza + grip + cordón.
+ *
+ * Anclas (todos los valores en px del viewBox):
+ *   TOP TIP            (40,  4)
+ *   LEFT WIDEST        ( 6, 48)
+ *   RIGHT WIDEST       (74, 48)
+ *   BRIDGE NECK L      (32, 72)
+ *   BRIDGE NECK R      (48, 72)
+ *   V-CUT APEX UP      (40, 56)
+ *   GRIP TOP           (36, 73)
+ *   GRIP BOTTOM        (44, 93)
+ *   CORD START         (44, 90)
+ *   CORD LOOP END      (52, 98)
+ */
 export function PadelPalaIcon({
   size = 24,
-  color = DEFAULT_COLOR,
-  strokeWidth,
-  filled = false,
+  color,
+  filled = true,
 }: Props) {
-  // Ratio real 40:64 = 0.625 — mantiene la aspecto exacto
-  const w = (size * 40) / 64;
+  // Aspect ratio 4:5 — mantén proporción real.
+  const w = (size * 4) / 5;
   const h = size;
-  const sw = strokeWidth ?? (size <= 24 ? 1.8 : size <= 48 ? 1.6 : 1.4);
-  const stroke = color;
-  const fillHead = filled ? color : "none";
-  const accent = filled ? "#FFFFFF" : color;
-  const cutoutFill = filled ? color : "#FFFFFF";
+
+  if (!filled) {
+    return <PalaMono size={size} color={color ?? SLATE_900} />;
+  }
 
   return (
-    <Svg width={w} height={h} viewBox="0 0 40 64" fill="none">
-      {/* =========================================================
-          CABEZA — Contorno Bullpadel Vertex 04 (silhouette 1:1).
+    <Svg width={w} height={h} viewBox="0 0 80 100" fill="none">
+      <Defs>
+        {/* Gradiente principal de la cabeza */}
+        <LinearGradient id="palaHead" x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0%" stopColor={BLUE_600} />
+          <Stop offset="100%" stopColor={INDIGO_700} />
+        </LinearGradient>
+        {/* Sombra lateral izquierda (overlay sutil) */}
+        <LinearGradient id="palaShadow" x1="0%" y1="0%" x2="100%" y2="0%">
+          <Stop offset="0%" stopColor={INDIGO_900} stopOpacity={0.35} />
+          <Stop offset="55%" stopColor={INDIGO_900} stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
 
-          Recorrido (anti-horario desde el tip):
-            1. Tip (20,0) → curva tip-rounded → Upper-Shoulder-L (9.2, 9.6)
-            2. Upper-Shoulder-L → Widest-L (2.8, 22.4)   (flare out)
-            3. Widest-L → Lower-Taper-L (10, 35.2)        (taper in)
-            4. Lower-Taper-L → Bridge-Top-L (14, 43.5)    (taper in)
-            5. Bridge-Top-L → Bridge-Top-R (26, 43.5)     (línea recta)
-            6. Espejo simétrico en lado derecho hasta cerrar en Tip.
-          ========================================================= */}
+      {/* ─────────────────────────────────────────────────────────
+          CABEZA — Teardrop fiel a la referencia.
+          ───────────────────────────────────────────────────────── */}
       <Path
         d="
-          M 20 0
-          C 15.5 0  11.8 3.2  9.2 9.6
-          C 6.4 13.8  3.6 17.6  2.8 22.4
-          C 3.6 27.8  6.0 31.8  10 35.2
-          C 11.6 38.5  13.0 41.0  14 43.5
-          L 26 43.5
-          C 27.0 41.0  28.4 38.5  30 35.2
-          C 34.0 31.8  36.4 27.8  37.2 22.4
-          C 36.4 17.6  33.6 13.8  30.8 9.6
-          C 28.2 3.2  24.5 0  20 0 Z"
-        fill={fillHead}
-        stroke={stroke}
-        strokeWidth={sw}
-        strokeLinejoin="round"
-        strokeLinecap="round"
+          M 40 4
+          C 26 4, 14 16, 8 32
+          C 5 42, 5 50, 8 56
+          C 11 64, 20 71, 32 72
+          L 48 72
+          C 60 71, 69 64, 72 56
+          C 75 50, 75 42, 72 32
+          C 66 16, 54 4, 40 4 Z"
+        fill="url(#palaHead)"
+      />
+      {/* Sombra lateral izquierda — encima del cuerpo, recortada por el path. */}
+      <Path
+        d="
+          M 40 4
+          C 26 4, 14 16, 8 32
+          C 5 42, 5 50, 8 56
+          C 11 64, 20 71, 32 72
+          L 48 72
+          C 60 71, 69 64, 72 56
+          C 75 50, 75 42, 72 32
+          C 66 16, 54 4, 40 4 Z"
+        fill="url(#palaShadow)"
       />
 
-      {/* =========================================================
-          PERFORACIONES GRID — Rectangular uniforme.
-          Centrado en (20, 22). 7 cols × 8 filas, step 3.6.
-          Solo dentro del area útil de la cara (sin invasión al
-          contorno ni al área del bridge).
-          ========================================================= */}
-      <DrillingGrid color={accent} filled={filled} />
+      {/* ─────────────────────────────────────────────────────────
+          HUECOS — Grid honeycomb-ish 4×4 (16 dots), centrado.
+          ───────────────────────────────────────────────────────── */}
+      <DotGrid />
 
-      {/* =========================================================
-          PUENTE M-INVERTIDA — Trapecio sólido + 2 huecos triangulares.
-          Bridge top (y=43.5) → Bridge bottom (y=50).
-          ========================================================= */}
-      <Polygon
-        points="14,43.5 26,43.5 24,50 16,50"
-        fill={stroke}
-      />
-      {/* Hueco triangular izquierdo */}
-      <Polygon
-        points="16.5,44.5 19.5,44.5 18,49"
-        fill={cutoutFill}
-      />
-      {/* Hueco triangular derecho */}
-      <Polygon
-        points="20.5,44.5 23.5,44.5 22,49"
-        fill={cutoutFill}
-      />
+      {/* ─────────────────────────────────────────────────────────
+          CUELLO V — Muesca triangular blanca entre brazos.
+          Apex apunta HACIA ARRIBA dentro de la cabeza (40, 56),
+          base abierta en (33, 72) y (47, 72).
+          ───────────────────────────────────────────────────────── */}
+      <Polygon points="33,72 47,72 40,56" fill="#FFFFFF" />
 
-      {/* =========================================================
-          GRIP — Cap superior · cilindro · cap inferior expandido.
-          ========================================================= */}
-      {/* Cap superior delgado (conector bridge → grip) */}
-      <Rect x={15.5} y={49.8} width={9} height={1.6} rx={0.5} fill={stroke} />
+      {/* ─────────────────────────────────────────────────────────
+          GRIP — Cilindro azul-accent + caps.
+          ───────────────────────────────────────────────────────── */}
+      {/* Cap superior (conector neck → cilindro) */}
+      <Rect x={35} y={72} width={10} height={2.5} rx={1} fill={BLUE_500} />
       {/* Cilindro principal */}
-      <Rect x={16.8} y={51.4} width={6.4} height={10} rx={1.4} fill={stroke} />
-      {/* Cap inferior expandido (knob) */}
-      <Rect x={14.8} y={61.2} width={10.4} height={2.4} rx={1.2} fill={stroke} />
+      <Rect x={36} y={74.5} width={8} height={16} rx={1.8} fill={BLUE_500} />
+      {/* Cap inferior (knob) */}
+      <Rect x={34} y={90.5} width={12} height={3} rx={1.4} fill={BLUE_500} />
+
+      {/* ─────────────────────────────────────────────────────────
+          CORDÓN — Loop de muñeca, sale del knob lateral derecho.
+          ───────────────────────────────────────────────────────── */}
+      <Path
+        d="M 45 92 C 56 93, 62 97, 60 100 C 58 97, 52 96, 47 95"
+        stroke={INDIGO_950}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        fill="none"
+      />
     </Svg>
   );
 }
 
 /**
- * Grid rectangular de perforaciones — uniforme y limpio.
- * Centrado en (20, 22), step 3.6, máx 7 cols × 8 filas.
- * Filtra agujeros que caigan fuera de la silueta diamante.
+ * Grid 4×4 de huecos (perforaciones) — ligeramente honeycomb por offset
+ * alternado en filas pares. Coordenadas dentro del viewBox 80×100.
  */
-function DrillingGrid({
-  color,
-  filled = false,
-}: {
-  color: string;
-  filled?: boolean;
-}) {
-  const cx = 20;
-  const cy = 22;
-  const step = 3.6;
-  const cols = 7;
-  const rows = 9;
-  const holeR = 0.7;
-  const op = filled ? 0.95 : 0.5;
-
-  const holes: { x: number; y: number }[] = [];
+function DotGrid() {
+  const cx = 40;
+  const cy = 36;
+  const stepX = 8;
+  const stepY = 7;
+  const dotR = 2.1;
+  const cols = 4;
+  const rows = 4;
+  const dots: { x: number; y: number }[] = [];
   for (let r = 0; r < rows; r++) {
+    // Offset honeycomb: filas impares desplazadas medio paso.
+    const xOffset = r % 2 === 0 ? 0 : stepX / 2;
     for (let c = 0; c < cols; c++) {
-      const x = cx + (c - (cols - 1) / 2) * step;
-      const y = cy + (r - (rows - 1) / 2) * step;
-      // Solo agujeros dentro del area útil (elipse interior de la cara)
-      const dx = (x - cx) / 14.5;
-      const dy = (y - cy) / 18;
-      if (dx * dx + dy * dy <= 0.92) {
-        holes.push({ x, y });
+      const x = cx + (c - (cols - 1) / 2) * stepX + xOffset;
+      const y = cy + (r - (rows - 1) / 2) * stepY;
+      // Recorta huecos que se salen del area útil de la cabeza
+      // (elipse interior aprox.).
+      const dx = (x - cx) / 24;
+      const dy = (y - cy) / 24;
+      if (dx * dx + dy * dy <= 1) {
+        dots.push({ x, y });
       }
     }
   }
-
   return (
     <G>
-      {holes.map((h, i) => (
-        <Circle key={i} cx={h.x} cy={h.y} r={holeR} fill={color} opacity={op} />
+      {dots.map((d, i) => (
+        <Circle key={i} cx={d.x} cy={d.y} r={dotR} fill="#FFFFFF" opacity={0.95} />
       ))}
     </G>
+  );
+}
+
+/**
+ * Variante MONO outline — silueta plana de un solo color.
+ * Útil para chips, breadcrumbs y casos donde el fill ilustrativo es exceso visual.
+ */
+function PalaMono({ size, color }: { size: number; color: string }) {
+  const w = (size * 4) / 5;
+  const h = size;
+  return (
+    <Svg width={w} height={h} viewBox="0 0 80 100" fill="none">
+      <Path
+        d="
+          M 40 4
+          C 26 4, 14 16, 8 32
+          C 5 42, 5 50, 8 56
+          C 11 64, 20 71, 32 72
+          L 48 72
+          C 60 71, 69 64, 72 56
+          C 75 50, 75 42, 72 32
+          C 66 16, 54 4, 40 4 Z"
+        fill={color}
+        opacity={0.95}
+      />
+      <Polygon points="33,72 47,72 40,56" fill="#FFFFFF" />
+      <Rect x={35} y={72} width={10} height={2.5} rx={1} fill={color} />
+      <Rect x={36} y={74.5} width={8} height={16} rx={1.8} fill={color} />
+      <Rect x={34} y={90.5} width={12} height={3} rx={1.4} fill={color} />
+      <Path
+        d="M 45 92 C 56 93, 62 97, 60 100 C 58 97, 52 96, 47 95"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Huecos en mono — círculos blancos del fondo si filled fuera permitido */}
+      <DotGrid />
+    </Svg>
   );
 }
