@@ -547,6 +547,34 @@ export const api = {
       { method: "POST", body: { jugadores }, auth: true },
     ),
   /**
+   * Fase D — Recalcula las rondas FUTURAS de un torneo en curso preservando
+   * los marcadores ya guardados. Útil cuando un jugador se lesiona o se
+   * cambia el cupo a mitad del torneo.
+   */
+  recalcularRondasPendientes: (
+    retaId: string,
+    excluirJugadores: string[] = [],
+  ) =>
+    request<{
+      reta_id: string;
+      canchas: number;
+      num_rondas: number;
+      rol_actualizado: {
+        cancha: number;
+        rondas: { ronda: number; partidos: { pareja_a: string[]; pareja_b: string[] }[]; bloqueada: boolean }[];
+      }[];
+      rondas_bloqueadas: { cancha: number; ronda: number }[];
+      jugadores_activos: string[];
+      jugadores_excluidos: string[];
+      fixture_metadata: FixtureMetadataDTO;
+      rondas_pendientes_recalculadas: number;
+      es_parejas: boolean;
+    }>(`/retas/${retaId}/rol/recalcular-pendientes`, {
+      method: "POST",
+      body: { excluir_jugadores: excluirJugadores },
+      auth: true,
+    }),
+  /**
    * Importación masiva de jugadores (CSV). El backend valida cupo,
    * duplicados y bloquea si ya hay resultados (409).
    * Devuelve breakdown: creadas + omitidos[{nombre, razon}].

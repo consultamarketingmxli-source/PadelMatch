@@ -47,6 +47,7 @@ import { PartidoResultado, Reta, RolResponse, api } from "@/src/api";
 import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { PadelPalaIcon } from "@/src/components/PadelPalaIcon";
 import { FixtureMetadataBadge } from "@/src/components/FixtureMetadataBadge";
+import { RecalcularRondasModal } from "@/src/components/RecalcularRondasModal";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Slot = {
