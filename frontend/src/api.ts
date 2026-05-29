@@ -102,12 +102,25 @@ export type CanchaRol = {
   rondas: RondaRol[];
 };
 
+export type FixtureMetadataDTO = {
+  optimizacion_aplicada: boolean;
+  parejas_repetidas: number;
+  rivales_repetidos_extra: number;
+  descansos_distribuidos: boolean;
+  iteraciones_usadas: number;
+  relax_level_final: number;
+  motivo: string;
+  algoritmo: string;
+};
+
 export type RolResponse = {
   reta_id: string;
   canchas: number;
   num_rondas: 5 | 6 | 7;
   jugadores: string[];
   rol: CanchaRol[];
+  fixture_metadata?: FixtureMetadataDTO;
+  es_parejas?: boolean;
 };
 
 export type PartidoResultado = {

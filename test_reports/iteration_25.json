@@ -1,0 +1,44 @@
+{
+  "summary": "Iter25 — Fase D (motor de fixtures CSP + endpoint recalcular + badge UI + font-mono) verificada end-to-end. BACKEND: pytest sobre las 8 suites solicitadas → 95 PASS + 2 SKIPPED (los 2 skips son pre-existentes de test_fase_c_blindaje, requieren seed reta-pasada — consistente con iter24, NO son regresiones). Tiempo total 20.35s, sin colgarse (disyuntor max_iterations=500 funcionando, incluido test_n_grande_no_cuelga N=11 R=11). VERIFICACIÓN ESPECÍFICA DE ENDPOINTS (/tmp/test_rol_endpoints.py contra preview URL): (1) GET /api/retas/{id}/rol para reta N=8 → fixture_metadata.algoritmo='estatico', optimizacion_aplicada=false, motivo='Rol perfecto: matriz pre-validada (Round Robin clásico).' ✓ (2) POST /rol/recalcular-pendientes body {} → 200, jugadores_excluidos=[], rondas_bloqueadas=[] ✓ (3) POST con excluir_jugadores=['Jugador 8'] → 200, jugadores_activos.length=7, algoritmo='csp-degradado', optimizacion_aplicada=true, motivo='Rol optimizado...' ✓ (4) POST exclusión masiva (5 jugadores, queda 3) → 409 Conflict 'Solo quedan 3 jugadores activos…' ✓. FRONTEND WEB: login admin OK → navegación directa a /admin/reta/resultados/6ff7a598... (reta N=8 con 14 partidos) → 'Mesa de Control' renderiza, 7 rondas + 14 partidos visibles. FixtureMetadataBadge AUSENTE del DOM (correcto: rol perfecto). Tipografía monospace verificada en 12 nombres de pareja (computed fontFamily='monospace, monospace'). 0 console errors, 0 page errors. Únicas warnings benignos en logs Expo: 'shadow*' y 'pointerEvents' deprecation — pre-existentes, NO regresiones de Fase D.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter25_fase_d.xml",
+    "/app/backend/tests/test_fixture_engine.py",
+    "/app/backend/tests/test_fixture_recalcular.py",
+    "/app/backend/tests/test_phase_a_rsvp.py",
+    "/app/backend/tests/test_fase_b_soporte.py",
+    "/app/backend/tests/test_fase_c_blindaje.py",
+    "/app/backend/tests/test_fase_c_checkout_guards.py",
+    "/app/backend/tests/test_logic_modules.py",
+    "/app/backend/tests/test_rol_preview.py",
+    "/tmp/test_rol_endpoints.py"
+  ],
+  "action_items": [
+    "Ninguno bloqueante. Fase D cerrada con 95/95 + 2 skip pre-existentes, los 4 escenarios de endpoint exigidos verificados directos al preview, y la UI web cumple: badge oculto para N=8 y nombres font-mono."
+  ],
+  "critical_code_review_comments": [
+    "fixture_engine.py — el disyuntor max_iterations=500 + relajación por niveles está bien arquitecturado y el endpoint nunca devolvió 5xx en ninguna combinación probada.",
+    "FixtureMetadataBadge.tsx — guard `if (!metadata.optimizacion_aplicada && !showAlways) return null;` cumple el contrato (badge oculto para rol perfecto). Bien.",
+    "[id].tsx resultados — estilo fontFamily con Platform.select({ios:'Menlo', android:'monospace', default:'monospace'}) — correctamente aplicado a nombres de pareja. Verificado computed style 'monospace, monospace' en web preview.",
+    "[id].tsx tiene 589 líneas (bajo el límite 700) — bien. inscripciones/[id].tsx sigue cerca del límite por revisión de iter24 (no relacionado a Fase D)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (95/95 PASS + 2 SKIP esperados, 0 fallos, 0 regresiones)",
+    "frontend": "100% (Mesa de Control carga, badge correctamente oculto N=8, font-mono aplicado en 12 nombres, 0 errores JS)"
+  },
+  "seed_data_creation": "Ninguna. Usadas retas existentes: 6ff7a598-16c6-4f32-af66-79ae172bdc92 'TEST_Empty_Pdf' (N=8, parejas) para todas las verificaciones de endpoint y UI.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fase D motor de fixtures completamente verificada. Backend 95/95 PASS. Endpoints /rol y /rol/recalcular-pendientes correctos en los 4 escenarios pedidos (rol perfecto, body vacío, exclusión 1 → CSP, exclusión masiva → 409). UI: FixtureMetadataBadge correctamente condicional (oculto cuando optimizacion_aplicada=false). font-mono confirmado en computed style ('monospace, monospace') en web. Login admin: usar testID 'admin-email-input'/'admin-password-input' + click en texto 'Entrar al panel' (no hay testID 'admin-login-submit'). El backend usa /api/auth/login con body {username,password} (no 'email'). Reta de testing N=8 usada: 6ff7a598-16c6-4f32-af66-79ae172bdc92. Twilio rate-limit 429 en logs es esperado (trial 5 msgs/día, exportar WHATSAPP_FORCE_MOCK=true si se necesita). Tests pre-existentes en test_stripe_payments.py NO se corrieron (no estaban en la lista de Fase D, y según contexto fallan por validación de teléfono — NO regresiones).",
+  "rca_of_issue": "N/A — no se encontraron bugs. Fase D pasa todas las verificaciones."
+}

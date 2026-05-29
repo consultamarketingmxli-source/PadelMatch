@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from auth import decode_token, get_current_admin
 from core.db import db
+from core.fixture_engine import generar_fixture, generar_fixture_parejas
 from core.realtime import manager
 from core.standings import compute_duo_standings, compute_individual_standings
 from logica_torneo import generar_rol_multi_cancha, generar_rol_multi_cancha_parejas
@@ -212,6 +213,12 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
         while len(duos) + 2 <= max_duos:
             duos.append([f"Pareja {len(duos)+1}A", f"Pareja {len(duos)+1}B"])
         rol = generar_rol_multi_cancha_parejas(duos, canchas, num_rondas)
+        # Fase D — añadimos metadata del motor (badge UI).
+        try:
+            res_motor = generar_fixture_parejas(duos, num_rondas)
+            fixture_meta = res_motor["metadata"]
+        except Exception:
+            fixture_meta = {"algoritmo": "estatico", "optimizacion_aplicada": False, "motivo": ""}
         return {
             "reta_id": reta_id,
             "canchas": canchas,
@@ -220,11 +227,18 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
             "duos": duos,
             "rol": rol,
             "es_parejas": True,
+            "fixture_metadata": fixture_meta,
         }
 
     # Flujo INDIVIDUAL clásico.
     jugadores = await _resolver_jugadores_de_reta(reta)
     rol = generar_rol_multi_cancha(jugadores, canchas, num_rondas)
+    # Fase D — metadata del motor para badge UI.
+    try:
+        res_motor = generar_fixture(jugadores, num_rondas)
+        fixture_meta = res_motor["metadata"]
+    except Exception:
+        fixture_meta = {"algoritmo": "estatico", "optimizacion_aplicada": False, "motivo": ""}
     return {
         "reta_id": reta_id,
         "canchas": canchas,
@@ -232,6 +246,7 @@ async def get_rol(reta_id: str, current=Depends(get_current_admin)):
         "jugadores": jugadores,
         "rol": rol,
         "es_parejas": False,
+        "fixture_metadata": fixture_meta,
     }
 
 
@@ -280,6 +295,138 @@ async def preview_rol(
         "jugadores": jugadores,
         "rol": rol,
         "is_preview": True,
+    }
+
+
+# ---------- Fase D — Recálculo en CALIENTE de rondas pendientes ----------
+@router.post("/retas/{reta_id}/rol/recalcular-pendientes")
+async def recalcular_rondas_pendientes(
+    reta_id: str,
+    body: dict | None = None,
+    current=Depends(get_current_admin),
+):
+    """Recalcula las rondas FUTURAS de un torneo en curso preservando las
+    rondas ya jugadas (con marcadores guardados).
+
+    Casos de uso:
+      • Un jugador se lesiona a mitad del torneo → admin lo excluye y los
+        partidos pendientes se redistribuyen entre los demás manteniendo
+        las Reglas A/B/C aplicables.
+      • Un jugador no se presenta y queda registrado como "rechazado" →
+        idem.
+
+    Body opcional:
+      {
+        "excluir_jugadores": ["NombreA", "NombreB"]?  // exclusión adicional manual
+      }
+
+    Lock optimista: si dos admins llaman a este endpoint simultáneamente,
+    el primero gana; el segundo recibe la nueva versión y debe recalcular.
+    NO modifica los resultados ya guardados — éstos son inmutables (Fase C).
+
+    Returns:
+      {
+        rol_actualizado: [{cancha, rondas: [{ronda, partidos, bloqueada: bool}]}],
+        rondas_bloqueadas: [{cancha, ronda}],
+        jugadores_activos: [str],
+        jugadores_excluidos: [str],
+        fixture_metadata: {...},
+        rondas_pendientes_recalculadas: int
+      }
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+
+    canchas = reta["canchas_disponibles"]
+    num_rondas = reta.get("num_rondas", 7)
+    body = body or {}
+    excluir_extras = body.get("excluir_jugadores", []) or []
+    if not isinstance(excluir_extras, list):
+        raise HTTPException(422, "excluir_jugadores debe ser una lista")
+
+    # 1. Resolver jugadores activos (los aprobados de la reta).
+    if _es_reta_de_parejas(reta):
+        # Para parejas, el "jugador" excluido se reinterpreta como dúo entero.
+        duos_full = await _resolver_duos_de_reta(reta)
+        # Eliminamos cualquier dúo donde uno de sus miembros esté excluido.
+        duos = [d for d in duos_full if not any(p in excluir_extras for p in d)]
+        excluidos = [p for d in duos_full for p in d if p in excluir_extras]
+        # Necesitamos al menos 2 dúos para un fixture válido.
+        if len(duos) < 2:
+            raise HTTPException(
+                409,
+                f"Solo quedan {len(duos)} dúos activos tras la exclusión. "
+                "Se requieren al menos 2 dúos completos.",
+            )
+        rol_nuevo_resp = generar_fixture_parejas(duos, num_rondas)
+    else:
+        jugadores_full = await _resolver_jugadores_de_reta(reta)
+        jugadores = [j for j in jugadores_full if j not in excluir_extras]
+        excluidos = [j for j in jugadores_full if j in excluir_extras]
+        if len(jugadores) < 4:
+            raise HTTPException(
+                409,
+                f"Solo quedan {len(jugadores)} jugadores activos tras la exclusión. "
+                "Se requieren al menos 4 jugadores.",
+            )
+        rol_nuevo_resp = generar_fixture(jugadores, num_rondas)
+
+    rol_nuevo = rol_nuevo_resp["rol"]
+    fixture_meta = rol_nuevo_resp["metadata"]
+
+    # 2. Obtener resultados ya guardados (rondas bloqueadas).
+    resultados_cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0})
+    rondas_bloqueadas: set[tuple[int, int]] = set()
+    async for r in resultados_cursor:
+        rondas_bloqueadas.add((int(r["cancha"]), int(r["ronda"])))
+
+    # 3. Generar el rol VIEJO también (con la lista original) para preservar
+    # exactamente los partidos en las rondas bloqueadas.
+    if _es_reta_de_parejas(reta):
+        rol_viejo = generar_rol_multi_cancha_parejas(duos_full, canchas, num_rondas)
+    else:
+        rol_viejo = generar_rol_multi_cancha(jugadores_full, canchas, num_rondas)
+
+    # 4. Combinar: rondas bloqueadas vienen del rol VIEJO; las pendientes del NUEVO.
+    rol_combinado: List[dict] = []
+    rondas_recalculadas = 0
+    for cancha_idx, cancha_nueva in enumerate(rol_nuevo):
+        cancha_num = cancha_nueva.get("cancha", cancha_idx + 1)
+        cancha_vieja = next(
+            (c for c in rol_viejo if c.get("cancha") == cancha_num),
+            {"cancha": cancha_num, "rondas": []},
+        )
+        rondas_out = []
+        rondas_nuevas_dict = {r["ronda"]: r for r in cancha_nueva.get("rondas", [])}
+        rondas_viejas_dict = {r["ronda"]: r for r in cancha_vieja.get("rondas", [])}
+        all_rondas = sorted(set(rondas_nuevas_dict.keys()) | set(rondas_viejas_dict.keys()))
+        for r_num in all_rondas:
+            is_bloqueada = (cancha_num, r_num) in rondas_bloqueadas
+            if is_bloqueada and r_num in rondas_viejas_dict:
+                # Mantener el partido ORIGINAL para respetar los marcadores.
+                ronda_data = dict(rondas_viejas_dict[r_num])
+                ronda_data["bloqueada"] = True
+            else:
+                # Usar el partido nuevo (recalculado).
+                ronda_data = dict(rondas_nuevas_dict.get(r_num, rondas_viejas_dict.get(r_num, {"ronda": r_num, "partidos": []})))
+                ronda_data["bloqueada"] = False
+                if not is_bloqueada:
+                    rondas_recalculadas += 1
+            rondas_out.append(ronda_data)
+        rol_combinado.append({"cancha": cancha_num, "rondas": rondas_out})
+
+    return {
+        "reta_id": reta_id,
+        "canchas": canchas,
+        "num_rondas": num_rondas,
+        "rol_actualizado": rol_combinado,
+        "rondas_bloqueadas": [{"cancha": c, "ronda": r} for (c, r) in sorted(rondas_bloqueadas)],
+        "jugadores_activos": [p for d in duos for p in d] if _es_reta_de_parejas(reta) else jugadores,
+        "jugadores_excluidos": excluidos,
+        "fixture_metadata": fixture_meta,
+        "rondas_pendientes_recalculadas": rondas_recalculadas,
+        "es_parejas": _es_reta_de_parejas(reta),
     }
 
 

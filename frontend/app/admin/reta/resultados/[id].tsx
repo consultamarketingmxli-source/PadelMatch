@@ -46,6 +46,7 @@ import {
 import { PartidoResultado, Reta, RolResponse, api } from "@/src/api";
 import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { PadelPalaIcon } from "@/src/components/PadelPalaIcon";
+import { FixtureMetadataBadge } from "@/src/components/FixtureMetadataBadge";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Slot = {
@@ -305,6 +306,9 @@ export default function CapturarResultados() {
           </ScrollView>
         ) : null}
 
+        {/* Fase D — Badge "Rol optimizado" si el motor aplicó alguna concesión */}
+        <FixtureMetadataBadge metadata={rol.fixture_metadata} />
+
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {canchaData.rondas.map((ronda) => (
             <View key={ronda.ronda} style={styles.rondaWrap}>
@@ -523,7 +527,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 2,
   },
-  parejaText: { color: colors.text.primary, fontWeight: "700", fontSize: 14 },
+  parejaText: {
+    color: colors.text.primary,
+    fontWeight: "700",
+    fontSize: 14,
+    // Fase D — tipografía monospace para alineación impecable de nombres
+    // (números de pista, scores y nombres comparten cadencia visual).
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    letterSpacing: 0.2,
+  },
   vsRow: { alignItems: "center", paddingVertical: 2 },
   vsText: {
     color: colors.text.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1.5,

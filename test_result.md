@@ -324,6 +324,18 @@ test_plan:
   test_priority: "high_first"
 
 backend_v2:
+  - task: "Fase D — Motor de Fixtures Blindado (CSP + degradación + recálculo)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/core/fixture_engine.py + /app/backend/routers/resultados.py + /app/backend/tests/test_fixture_engine.py + /app/backend/tests/test_fixture_recalcular.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Iter25 — Nuevo motor fixture_engine.py: (1) Camino RÁPIDO para N múltiplo de 4 (4..32) usa matrices estáticas Whist pre-validadas. (2) Camino CSP genérico con backtracking + degradación selectiva (3 niveles: estricto→permite rivales repetidos→permite parejas repetidas) para cualquier N≥4. (3) Disyuntor max_iterations=500 por nivel — nunca cuelga el server. (4) Metadata transparente (FixtureMetadata): optimizacion_aplicada, parejas_repetidas, rivales_repetidos_extra, motivo legible, algoritmo. (5) Validador estricto post-generación (validar_reglas) que garantiza Regla A (igualdad partidos ±1) y reporta concesiones B/C. (6) Soporte parejas fijas con circle method para # impar de dúos. (7) Endpoint POST /api/retas/{id}/rol/recalcular-pendientes: aísla rondas con resultados guardados (intactas) y recalcula rondas pendientes con jugadores activos (excluyendo lesionados/expulsados); devuelve rol híbrido + metadata. (8) GET /api/retas/{id}/rol ahora incluye fixture_metadata para badge UI. Tests: 30 nuevos del motor + 6 del endpoint = 36 tests Fase D. Suite global 95/95 PASS sin regresiones."
+
   - task: "Fase C — Guards en checkout (Stripe, MercadoPago, mock) + PATCH estatus"
     implemented: true
     working: true
