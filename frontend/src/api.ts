@@ -995,8 +995,16 @@ export const api = {
   },
 
   // ===== Centro de Privacidad (Player) =====
-  playerMySessions: (token: string) =>
-    request<{
+  // Ola E.2 — Estas APIs usan el refresh token para detectar `is_current`.
+  // En web la cookie HttpOnly se envía sola (path=/api, credentials:include).
+  // En native añadimos el header X-Refresh-Token desde SecureStore.
+  playerMySessions: async (token: string) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (!IS_WEB) {
+      const ref = await getRefreshToken();
+      if (ref) headers["X-Refresh-Token"] = ref;
+    }
+    return request<{
       sessions: Array<{
         id: string;
         ip: string | null;
@@ -1007,21 +1015,28 @@ export const api = {
         is_current: boolean;
       }>;
       count: number;
-    }>(`/players/me/sessions`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+    }>(`/players/me/sessions`, { headers });
+  },
 
-  playerRevokeSession: (token: string, sessionId: string) =>
-    request<{ ok: boolean; already_revoked?: boolean }>(
+  playerRevokeSession: async (token: string, sessionId: string) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (!IS_WEB) {
+      const ref = await getRefreshToken();
+      if (ref) headers["X-Refresh-Token"] = ref;
+    }
+    return request<{ ok: boolean; already_revoked?: boolean }>(
       `/players/me/sessions/${sessionId}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    ),
+      { method: "DELETE", headers },
+    );
+  },
 
-  playerSecurityActivity: (token: string, limit = 20) =>
-    request<{
+  playerSecurityActivity: async (token: string, limit = 20) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (!IS_WEB) {
+      const ref = await getRefreshToken();
+      if (ref) headers["X-Refresh-Token"] = ref;
+    }
+    return request<{
       items: Array<{
         accion: string;
         result: string;
@@ -1030,9 +1045,8 @@ export const api = {
         timestamp: string | null;
       }>;
       count: number;
-    }>(`/players/me/security-activity?limit=${limit}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+    }>(`/players/me/security-activity?limit=${limit}`, { headers });
+  },
 
   // ===== Centro de Seguridad (Admin) =====
   adminSecurityStats: (days = 7) =>

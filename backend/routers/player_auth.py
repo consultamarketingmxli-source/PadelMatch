@@ -241,7 +241,7 @@ async def verify_otp(request: Request, response: Response, body: OtpVerify):
             secure=True,
             samesite="strict",
             max_age=REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
-            path="/api/auth",
+            path="/api",
         )
     else:
         payload.refresh_token = raw_refresh

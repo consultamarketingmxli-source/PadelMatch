@@ -1,0 +1,36 @@
+{
+  "summary": "Iter33 re-test post-fix Iter32 cookie path issue. Backend 10/10 + 16/16 regression PASS. Frontend E2E PASS: badge 'Este dispositivo' renderiza correctamente en /seguridad sobre web. Detectado y corregido un fix incompleto: player_auth.py:244 aún tenía path='/api/auth' (el cambio se había aplicado solo a auth_router.py). Aplicado el fix de 1 línea, backend reiniciado y re-verificado.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_cookie_path.py",
+    "/app/test_reports/pytest/iter33_cookie_path.xml"
+  ],
+  "action_items": [
+    "(Cosmético) Considerar agregar testID a los inputs de login.tsx (name/telefono/codigo) para tests E2E más estables — los placeholders funcionan pero son frágiles ante cambios de copy."
+  ],
+  "critical_code_review_comments": [
+    "El fix de cookie path /api se había aplicado parcialmente: auth_router.py (_set_refresh_cookie/_clear_refresh_cookie) correcto, pero player_auth.py verify_otp (línea 244) seguía con path='/api/auth'. Tras corregir y restart backend, ambos endpoints (admin login + player OTP verify) emiten Set-Cookie con path=/api unificado."
+  ],
+  "updated_files": [
+    "/app/backend/routers/player_auth.py (path='/api/auth' -> path='/api')",
+    "/app/backend/tests/test_iter33_cookie_path.py (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 iter33 + 16/16 iter32 regression)",
+    "frontend": "100% (E2E badge visible)"
+  },
+  "seed_data_creation": "Test player creado on-the-fly con phone +5215550xxxxxx (TEST_Iter33UI) y eliminado al final del flujo (DELETE /api/players/me).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Cookie HttpOnly 'padelapp_refresh' ahora tiene path=/api unificado tanto desde admin login (auth_router.py) como desde player OTP verify (player_auth.py). Esto permite que el browser la envíe a CUALQUIER ruta /api/* (incluyendo /api/players/me/sessions, /api/auth/refresh, etc). Verificado con curl-style requests, fetch desde browser context, y UI E2E (screenshot muestra badge 'Este dispositivo'). Endpoints regression OK: /api/auth/login, /api/auth/refresh (con cookie), /api/auth/logout, /api/auth/revoke-all-sessions, /api/players/auth/otp/{request,verify}, /api/players/me/sessions, /api/players/me (DELETE), /api/webhooks/mercadopago (rechaza correctamente firmas inválidas y ausentes).",
+  "rca_of_issue": "Iter32 reportó que el badge 'Este dispositivo' no aparecía porque la cookie tenía path=/api/auth y por tanto NO se enviaba a GET /api/players/me/sessions. El fix Iter32 movió a path='/api' SOLAMENTE en auth_router.py. En esta iter33 se detectó que player_auth.py:244 (set_cookie de verify_otp) aún tenía path='/api/auth'. Corregido en línea 244 y restart backend. Re-test: Set-Cookie en respuesta de verify ahora dice 'path=/api', y la cookie efectivamente llega a /api/players/me/sessions: sessions=[{is_current: true, ...}]. UI muestra badge 'Este dispositivo' como esperado. Reproducción: (1) POST /api/players/auth/otp/verify con X-Client-Platform=web; (2) inspeccionar Set-Cookie header; (3) si path != '/api' → bug. Mitigación aplicada: cambio de 1 línea en player_auth.py."
+}

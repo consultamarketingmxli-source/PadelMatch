@@ -35,12 +35,15 @@ def _set_refresh_cookie(response: Response, raw_refresh: str) -> None:
         secure=True,  # Producción HTTPS — el reverse proxy garantiza TLS.
         samesite="strict",
         max_age=REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
-        path="/api/auth",
+        # Path "/api" — necesario para que el browser envíe la cookie a
+        # endpoints como /api/players/me/sessions (que la usan para detectar
+        # is_current). Sigue siendo HttpOnly/Secure/SameSite=Strict.
+        path="/api",
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/auth")
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/api")
 
 
 @router.post("/login", response_model=TokenResponse)
