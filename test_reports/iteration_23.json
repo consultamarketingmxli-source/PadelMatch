@@ -1,0 +1,60 @@
+{
+  "summary": "Iter23 — Fase C blindaje (P0): backend 46/46 + 5/5 nuevos checkout-guard tests PASS (test_fase_c_checkout_guards.py, test_phase_a_rsvp.py, test_fase_b_soporte.py, test_fase_c_blindaje.py, test_clubes_smart.py). El endpoint PATCH /api/admin/inscripciones/{id}/estatus responde 200 y aplica el cambio. La pantalla /admin/reta/inscripciones/{id} para reta gratis_amigos carga limpia: sin errores JS, sin OfflineQueueBanner (estamos online sin cola), banner verde 'EVENTO GRATUITO · RSVP' visible, 4 columnas (Confirmados, Lista de espera, Pendientes, Rechazados) renderizando, botón IMPORTAR presente, testIDs move-{id}-{target} y row-edit-{id} correctos. BUG CRÍTICO WEB: el click en 'Lista de espera'/'Rechazar'/'Confirmar' dispara confirmMove() que llama Alert.alert(...) con botones, pero react-native-web 0.21 ignora los buttons del Alert (solo muestra window.alert()), por lo que el callback 'Sí, mover' nunca se ejecuta en web — NO se hace PATCH y la lista NO se refresca en preview web. En Expo Go / native build esto sí funciona. Recomendación: en web, usar window.confirm() o un Modal custom en lugar de Alert.alert.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "admin/reta/inscripciones/[id].tsx :: confirmMove()",
+        "issue": "En web (react-native-web 0.21) Alert.alert ignora los botones, por lo que la confirmación 'Sí, mover' nunca dispara moveTo() → no se hace PATCH /admin/inscripciones/{id}/estatus y la columna no se refresca. Funciona en native (Expo Go). Reproducido con click directo sobre testID 'move-{inscId}-lista_espera': 0 dialogs en DOM, 0 window.alert/confirm interceptados, 0 PATCH calls. Reference: /app/frontend/app/admin/reta/inscripciones/[id].tsx:194-203",
+        "testID": "move-{inscId}-lista_espera",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Cambio manual de estatus (gratis_amigos) en WEB",
+        "issue": "El backend funciona (PATCH 200, payload correcto con estatus_confirmacion), pero el wrapper Alert.alert en web bloquea el flujo end-to-end. La cola offline (useOfflineSync) sí inicializa OK (offline.isOnline true, banner oculto).",
+        "affected_testIDs": ["move-{id}-lista_espera", "move-{id}-aceptado", "move-{id}-rechazado"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Alert.alert (react-native-web)",
+        "issue": "Alert.alert con buttons no es soportado en react-native-web — los callbacks de los botones nunca se ejecutan, solo se muestra el mensaje vía window.alert. Cualquier flujo que dependa de un onPress dentro de Alert.alert estará roto en web. Reference: /app/frontend/app/admin/reta/inscripciones/[id].tsx:194-203 (confirmMove) y otros usos similares."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase_c_checkout_guards.py",
+    "/app/backend/tests/test_phase_a_rsvp.py",
+    "/app/backend/tests/test_fase_b_soporte.py",
+    "/app/backend/tests/test_fase_c_blindaje.py",
+    "/app/backend/tests/test_clubes_smart.py",
+    "/app/test_reports/pytest/iter23_fase_c_guards.xml"
+  ],
+  "action_items": [
+    "[WEB-CRITICAL] Reemplazar Alert.alert(...,buttons) en confirmMove() por Platform.OS==='web' ? window.confirm() : Alert.alert() — o usar un Modal/Dialog custom. Sin esto, el admin no puede mover jugadores entre columnas desde el panel web. Mismo patrón puede afectar otros confirm-Alerts del proyecto, vale la pena hacer grep global de Alert.alert con buttons.",
+    "[OPCIONAL] Considerar exponer un helper común 'confirmDialog(title, msg)' que abstraiga la diferencia web/native para evitar repetir el switch."
+  ],
+  "critical_code_review_comments": [
+    "El backend está sólido: guards de retas pasadas correctamente aplicados a checkout (mock/stripe/mp) y PATCH estatus. 46/46 PASS.",
+    "La cola offline (offlineQueue.ts + useOfflineSync) está bien diseñada: distingue NETWORK ERROR (encola) de 4xx/5xx (propaga). OfflineQueueBanner se oculta correctamente cuando isOnline && size===0.",
+    "En el endpoint frontend api.ts el body es correcto: { estatus_confirmacion: estatus } — coincide con el schema backend.",
+    "La pantalla [id].tsx tiene 715 líneas — está cerca del límite recomendado (>700). Considerar extraer SectionColumn, PersonRow, y los modos paid/gratis a archivos separados.",
+    "Alert.alert con buttons aparece en múltiples archivos del proyecto — auditar y unificar."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (46/46 PASS + 5/5 checkout guards)",
+    "frontend": "75% (carga sin errores, banner OK, sin OfflineQueueBanner online, importar visible — pero el flujo de cambio de estatus está roto en web por Alert.alert)"
+  },
+  "seed_data_creation": "Ninguna. Se usaron datos existentes (reta 87a6c2c5-cdb4-4d16-96e8-80f056fe9b14 'Reta Gratis Demo' con Andrés Test confirmado y Sofia Rechaza rechazada).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend Fase C 100% verde. El bug crítico es solo en WEB: Alert.alert + buttons no funciona en react-native-web 0.21. Una vez que E1 sustituya el Alert.alert por window.confirm en web (o Modal custom), repetir: click testID 'move-{inscId}-lista_espera' debe disparar PATCH /api/admin/inscripciones/{inscId}/estatus y refrescar columnas. El backend PATCH funciona vía curl directo (verificado: 200 OK con {estatus_confirmacion:'lista_espera'}).",
+  "rca_of_issue": "RCA Alert.alert en web: react-native-web 0.21 implementa Alert.alert como window.alert(message) — ignora el array de buttons. Cuando confirmMove() llama Alert.alert('Confirmar cambio', msg, [Cancelar, {text:'Sí, mover', onPress: moveTo}]), en web solo se muestra el mensaje (o ni siquiera, si el usuario tiene window.alert silenciado), y onPress nunca se invoca. Resultado: en web, click en cualquier botón move-* no produce PATCH. Mitigación: en web usar window.confirm(`${msg}`) y, si true, llamar moveTo directamente; o renderizar un Modal custom de RN. Reproducción: 1) login admin web 2) abrir /admin/reta/inscripciones/87a6c2c5-cdb4-4d16-96e8-80f056fe9b14 3) click 'Lista de espera' en Andrés Test 4) observar: 0 modals en DOM, 0 PATCH en network, contador sigue 1/8 confirmados."
+}

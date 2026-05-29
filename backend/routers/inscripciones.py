@@ -19,6 +19,7 @@ from core.concurrency import (
     siguiente_posicion_waitlist_atomica,
 )
 from core.helpers import (
+    assert_reta_no_cerrada,
     crear_inscripcion_free_agent_pendiente,
     crear_inscripcion_pareja_pendiente,
     crear_inscripcion_pendiente,
@@ -61,6 +62,8 @@ async def checkout_mock(reta_id: str, body: InscripcionCreate):
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
+    # Fase C — bloqueo de rondas pasadas (prevención: nadie paga por reta cerrada)
+    assert_reta_no_cerrada(reta, accion="inscribirte a")
 
     es_parejas = _es_reta_de_parejas(reta)
     permite_indiv = bool(reta.get("permitir_individual_en_parejas", False))

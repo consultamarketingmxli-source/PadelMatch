@@ -19,6 +19,7 @@ from core.concurrency import liberar_lugar
 from core.db import db
 from core.email_service import email_service
 from core.helpers import (
+    assert_reta_no_cerrada,
     crear_inscripcion_free_agent_pendiente,
     crear_inscripcion_pareja_pendiente,
     crear_inscripcion_pendiente,
@@ -52,6 +53,8 @@ async def checkout_stripe(reta_id: str, body: StripeCheckoutCreate, request: Req
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
+    # Fase C — bloqueo de rondas pasadas
+    assert_reta_no_cerrada(reta, accion="pagar inscripción a")
     if reta.get("costo_inscripcion", 0) < 10:
         raise HTTPException(400, "El costo de inscripción debe ser de al menos $10 MXN.")
 

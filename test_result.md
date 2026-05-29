@@ -324,6 +324,18 @@ test_plan:
   test_priority: "high_first"
 
 backend_v2:
+  - task: "Fase C — Guards en checkout (Stripe, MercadoPago, mock) + PATCH estatus"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routers/inscripciones.py + /app/backend/routers/payments_router.py + /app/backend/routers/mercadopago.py + /app/backend/routers/rsvp.py + /app/backend/tests/test_fase_c_checkout_guards.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Iter24 — Extensión PREVENTIVA del helper assert_reta_no_cerrada (buffer 6h) a TODOS los endpoints de pago: POST /checkout (mock), POST /checkout-stripe, POST /checkout-mercadopago. También añadido a PATCH /admin/inscripciones/{id}/estatus (rsvp.py) para preservar auditoría tras finalización. Tests nuevos 5/5 PASS (test_fase_c_checkout_guards.py) usando motor para backdate retas. Suite Fase A+B+C+Clubes: 46/46 sin regresiones."
+
   - task: "Fase C — Matriz de Blindaje (rondas cerradas + late-fill)"
     implemented: true
     working: true
@@ -361,6 +373,18 @@ backend_v2:
           comment: "Iter22 13/13 PASS. Fixes de blindaje: (1) DuplicateKeyError handler en upsert_club_silencioso para race condition de creación concurrente. (2) Tests añadidos: race condition (2 retas paralelas → 1 club), regex con caracteres especiales (.* ( ++ ? [a-z]), geo inválido (422), PUT re-enriquecimiento. (3) Índice único nombre_norm verificado en core/db.py."
 
 frontend_v2:
+  - task: "Fase C — Cola Offline Admin (AsyncStorage + NetInfo + Banner)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/utils/offlineQueue.ts + /app/frontend/src/hooks/useOfflineSync.ts + /app/frontend/src/components/OfflineQueueBanner.tsx + /app/frontend/app/admin/reta/inscripciones/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Iter24 — Cola offline admin para resiliencia ante caídas de red. Implementa: (a) offlineQueue.ts → persiste acciones (setEstatus/inscripcionInline/confirmarManual) en AsyncStorage si fallan por NETWORK ERROR (no 4xx/5xx). (b) useOfflineSync hook → escucha NetInfo + eventos online/offline en web; auto-flush en transición offline→online. (c) OfflineQueueBanner → 3 estados visuales: rojo (offline), amber (sincronizando), rojo intenso (fallidas) con botones Reintentar/Descartar. (d) moveTo en /admin/reta/inscripciones/[id].tsx ahora usa runOrQueue: si está offline encola, si está online intenta directo. Backend endpoints son idempotentes (setEstatus es no-op si old==new; confirmar-manual short-circuit por estatus_pago=='Aprobado')."
+
   - task: "Módulo Clubes Inteligente — Admin Autocomplete + Player Deep Link + Blindaje"
     implemented: true
     working: true

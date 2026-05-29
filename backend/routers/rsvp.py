@@ -293,6 +293,12 @@ async def cambiar_estatus(
     if not insc:
         raise HTTPException(404, "Inscripción no encontrada")
 
+    # Fase C — bloqueo de rondas pasadas (admin no puede cambiar estatus
+    # de inscripciones de retas ya cerradas — preserva la auditoría).
+    reta_doc = await db.retas.find_one({"id": insc["reta_id"]}, {"_id": 0})
+    if reta_doc:
+        assert_reta_no_cerrada(reta_doc, accion="cambiar estatus de")
+
     old = insc.get("estatus_confirmacion", "aceptado")
     new = body.estatus_confirmacion
     if old == new:

@@ -35,6 +35,9 @@ import {
 import { Inscripcion, Reta, api } from "@/src/api";
 import { ImportarJugadoresModal } from "@/src/components/ImportarJugadoresModal";
 import { AdminInscripcionSheet } from "@/src/components/AdminInscripcionSheet";
+import { OfflineQueueBanner } from "@/src/components/OfflineQueueBanner";
+import { useOfflineSync } from "@/src/hooks/useOfflineSync";
+import { runOrQueue } from "@/src/utils/offlineQueue";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type EstatusConfirm =
@@ -77,6 +80,9 @@ export default function AdminInscripciones() {
   const [importOpen, setImportOpen] = useState(false);
   // Fase B — Slide-Over Admin para edición inline
   const [editing, setEditing] = useState<Inscripcion | null>(null);
+
+  // Fase C — Cola offline para acciones admin críticas.
+  const offline = useOfflineSync();
 
   const esGratisAmigos = reta?.tipo_acceso === "gratis_amigos";
 
@@ -139,16 +145,43 @@ export default function AdminInscripciones() {
   };
 
   // ===== Cambio manual de estatus (modo gratis) =====
+  // Fase C — usa runOrQueue: si la red falla o estamos offline, la acción
+  // se encola en AsyncStorage y se reintenta al volver online. Si el server
+  // responde 4xx/5xx (error de negocio), se propaga el error normalmente.
   const moveTo = async (insc: AsistenciaItem, target: EstatusConfirm) => {
     if (movingId) return;
     setMovingId(insc.id);
+    // Etiqueta humana para el banner offline.
+    const labelMap: Record<EstatusConfirm, string> = {
+      aceptado: "Confirmados",
+      lista_espera: "Lista de espera",
+      pendiente_invitacion: "Pendientes",
+      rechazado: "Rechazados",
+    };
+    const label = `Mover a ${insc.nombre} → ${labelMap[target]}`;
+
     try {
-      const res = await api.setEstatusInscripcion(insc.id, target);
-      if (res.promoted && res.promoted_player) {
+      const res = await runOrQueue({
+        kind: "setEstatus",
+        label,
+        payload: { inscId: insc.id, estatus: target },
+        // Si NetInfo dice que estamos offline, salta el intento directo.
+        forceQueue: !offline.isOnline,
+      });
+
+      if (res.queued) {
         Alert.alert(
-          "Lugar liberado",
-          `Promovimos a ${res.promoted_player} desde lista de espera.`,
+          "Cambio en cola",
+          `Sin conexión. “${label}” se aplicará automáticamente al recuperar señal.`,
         );
+      } else {
+        const data = (res as any).data;
+        if (data?.promoted && data?.promoted_player) {
+          Alert.alert(
+            "Lugar liberado",
+            `Promovimos a ${data.promoted_player} desde lista de espera.`,
+          );
+        }
       }
       await load();
     } catch (e: any) {
@@ -211,6 +244,18 @@ export default function AdminInscripciones() {
           <Text style={styles.importBtnTxt}>Importar</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Fase C — banner de cola offline (solo visible si hay algo) */}
+      <OfflineQueueBanner
+        isOnline={offline.isOnline}
+        pendingCount={offline.pendingCount}
+        failedCount={offline.failedCount}
+        isFlushing={offline.isFlushing}
+        onRetry={() => {
+          void offline.flush().then(() => load());
+        }}
+        queue={offline.queue}
+      />
 
       {/* ============= MODO GRATIS_AMIGOS — 3 columnas ============= */}
       {esGratisAmigos && asistencia ? (
