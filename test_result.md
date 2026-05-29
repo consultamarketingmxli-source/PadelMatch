@@ -324,30 +324,30 @@ test_plan:
   test_priority: "high_first"
 
 backend_v2:
-  - task: "Módulo Clubes Inteligente — buscar + Enriquecimiento Silencioso"
+  - task: "Módulo Clubes Inteligente — buscar + Enriquecimiento Silencioso + Blindaje"
     implemented: true
     working: true
-    file: "/app/backend/routers/clubes.py + /app/backend/routers/retas.py"
+    file: "/app/backend/routers/clubes.py + /app/backend/routers/retas.py + /app/backend/tests/test_clubes_smart.py"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
-          agent: "testing"
-          comment: "Iter21 9/9 PASS. GET /api/public/clubes/buscar funciona con q, lat/lng (Haversine asc), límite y resultados vacíos. POST /api/retas con club_id hereda dir+lat+lng. POST con texto libre crea entrada silenciosa. Duplicados (incluso UPPERCASE) deduplican por nombre_norm. RetaPublic expone latitud, longitud, club_direccion, club_id."
+          agent: "main"
+          comment: "Iter22 13/13 PASS. Fixes de blindaje: (1) DuplicateKeyError handler en upsert_club_silencioso para race condition de creación concurrente. (2) Tests añadidos: race condition (2 retas paralelas → 1 club), regex con caracteres especiales (.* ( ++ ? [a-z]), geo inválido (422), PUT re-enriquecimiento. (3) Índice único nombre_norm verificado en core/db.py."
 
 frontend_v2:
-  - task: "Módulo Clubes Inteligente — Admin Autocomplete + Player Deep Link"
+  - task: "Módulo Clubes Inteligente — Admin Autocomplete + Player Deep Link + Blindaje"
     implemented: true
     working: true
-    file: "/app/frontend/src/components/ClubAutocomplete.tsx + /app/frontend/app/admin/reta/[id].tsx + /app/frontend/app/retas/[slug].tsx"
+    file: "/app/frontend/src/components/ClubAutocomplete.tsx + /app/frontend/src/utils/mapsDeepLink.ts + /app/frontend/app/admin/reta/[id].tsx + /app/frontend/app/retas/[slug].tsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
-          agent: "testing"
-          comment: "Iter21 PASS visual + funcional. Admin: form-club-autocomplete con debounce 300ms, dropdown con resultados + dirección secundaria + opción 'Usar como ubicación personalizada'. GPS button con timeout 5s y degradación silenciosa. Player con geo: chip MAPA verde abre https://www.google.com/maps/search/?api=1&query=LAT,LNG. Sin geo: chip MAPA abre URL con encodeURIComponent(nombre+direccion). Layout no rompe traffic light."
+          agent: "main"
+          comment: "Iter22 visual + funcional PASS. Fixes de blindaje: (1) stacking-context fix (zIndex+isolation) — los rows del dropdown ahora SÍ son clickables en react-native-web (antes el input Dirección interceptaba pointer events). (2) Auto-clean: al cambiar nombre tras un pick, dir+coords se limpian → no se persiste dirección de club B con nombre A. (3) GPS race cleanup con gpsTokenRef — respuestas obsoletas tras timeout son descartadas. (4) Backend error visible: hint rojo '⚠️ Directorio no disponible' si /buscar falla. (5) onBlur 250ms (era 180ms) para mobile lento. (6) mountedRef previene setState tras unmount. (7) Helper mapsDeepLink.ts centralizado: iOS → Apple Maps primero, Android → Google Maps, web → window.open con fallback location.href si pop-up blocker. (8) Coordenadas validadas (NaN, out-of-range). (9) Chip MAPA oculto si no hay destino válido. URLs validadas: con geo ?query=LAT,LNG | sin geo ?query=encoded(nombre+dir)."
 
 agent_communication:
     - agent: "main"

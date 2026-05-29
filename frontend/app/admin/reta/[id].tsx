@@ -369,12 +369,21 @@ export default function RetaForm() {
             onChange={(texto, picked) => {
               setClub(texto);
               if (picked) {
+                // Selección del directorio: hidratamos id + dirección + coords.
                 setClubId(picked.id);
                 setClubDireccion(picked.direccion_completa ?? "");
-                // Heredamos coords del club si vienen — el usuario puede sobrescribir.
                 if (picked.latitud != null) setLat(String(picked.latitud));
                 if (picked.longitud != null) setLng(String(picked.longitud));
               } else {
+                // El user deshizo la selección (escribió texto libre o tipeó después).
+                // Si SE TENÍA un club_id antes, ahora se vacía → limpiamos también la
+                // dirección y coords que se habían heredado del club anterior, para
+                // evitar persistir datos de un club distinto al texto actual.
+                if (clubId) {
+                  setClubDireccion("");
+                  setLat("");
+                  setLng("");
+                }
                 setClubId(null);
               }
             }}

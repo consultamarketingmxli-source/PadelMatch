@@ -186,6 +186,72 @@ def test_get_reta_publica_sin_geo(s):
     assert "club" in j
 
 
+# ---------- 8. Race condition: 2 retas con club nuevo en paralelo → 1 club ----------
+def test_race_condition_misma_creacion(s, admin_token, created_retas):
+    """Simula 2 organizadores creando retas con el mismo club nuevo casi simultáneo.
+    El segundo debe reusar el club_id del primero (vía DuplicateKeyError o find)."""
+    import concurrent.futures
+
+    nombre_club = f"TEST_RaceClub_{uuid.uuid4().hex[:8]}"
+
+    def crear():
+        return s.post(
+            f"{BASE_URL}/api/retas",
+            headers=auth_h(admin_token),
+            json=_payload(f"TEST_rR_{uuid.uuid4().hex[:4]}", nombre_club),
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        futs = [ex.submit(crear) for _ in range(2)]
+        responses = [f.result() for f in futs]
+
+    for r in responses:
+        assert r.status_code == 200, r.text
+        created_retas["retas"].append(r.json()["id"])
+
+    cids = {r.json()["club_id"] for r in responses}
+    assert len(cids) == 1, f"Race condition no resuelta: clubes distintos {cids}"
+
+
+# ---------- 9. q con caracteres especiales no rompe regex ----------
+def test_buscar_con_caracteres_especiales(s):
+    # Caracteres que romperían un regex sin escape
+    for q in [".*", "(", "++", "?", "[a-z]"]:
+        r = s.get(f"{BASE_URL}/api/public/clubes/buscar", params={"q": q})
+        assert r.status_code == 200, f"Falló con q={q!r}: {r.text}"
+        assert "results" in r.json()
+
+
+# ---------- 10. Lat/lng inválidos son rechazados o ignorados ----------
+def test_buscar_geo_invalido(s):
+    # Pydantic Query con ge/le debe rechazar 91 (out of range)
+    r = s.get(f"{BASE_URL}/api/public/clubes/buscar", params={"lat": 91, "lng": 0})
+    assert r.status_code == 422  # FastAPI validation error
+
+
+# ---------- 11. Update reta hereda enriquecimiento si user borra club_id ----------
+def test_update_reta_re_enriquece(s, admin_token, created_retas):
+    """PUT reta sin club_id pero con nombre conocido → debe reusar club existente."""
+    club_name = f"TEST_UpdateClub_{uuid.uuid4().hex[:8]}"
+    r0 = s.post(
+        f"{BASE_URL}/api/retas",
+        headers=auth_h(admin_token),
+        json=_payload(f"TEST_rU_{uuid.uuid4().hex[:4]}", club_name,
+                      direccion="Dir A", lat=20.0, lng=-100.0),
+    )
+    assert r0.status_code == 200
+    reta_id = r0.json()["id"]
+    created_retas["retas"].append(reta_id)
+    cid_orig = r0.json()["club_id"]
+
+    # Ahora PUT sin club_id → re-resolución por enriquecimiento
+    payload = _payload(f"TEST_rU_{uuid.uuid4().hex[:4]}", club_name)
+    payload["club_id"] = None
+    r1 = s.put(f"{BASE_URL}/api/retas/{reta_id}", headers=auth_h(admin_token), json=payload)
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["club_id"] == cid_orig, "PUT debe reusar club existente"
+
+
 # ---------- Cleanup ----------
 def test_zz_cleanup(s, admin_token, created_retas):
     for rid in created_retas["retas"]:

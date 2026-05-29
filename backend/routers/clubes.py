@@ -91,11 +91,16 @@ async def upsert_club_silencioso(
          su id. Si trae datos nuevos (dir/lat/lng) y el existente tenía vacíos,
          hacemos $set parcial (enriquecimiento).
       2. Si no existe, insertamos uno nuevo.
+      3. Si en paso 2 se da una race condition (DuplicateKeyError porque otro
+         request creó el mismo nombre_norm justo antes), re-leemos el doc y
+         devolvemos ese id en lugar de devolver None.
 
     Returns:
-        club_id (str) o None si nombre está vacío o falló la op.
+        club_id (str) o None si nombre está vacío o falló la op (red caída).
     """
     try:
+        from pymongo.errors import DuplicateKeyError  # import local para no romper si pymongo cambia
+
         nombre_clean = (nombre or "").strip()
         if len(nombre_clean) < 2:
             return None
@@ -117,19 +122,28 @@ async def upsert_club_silencioso(
                 await db.clubes.update_one({"id": existing["id"]}, {"$set": update_set})
             return existing["id"]
 
-        # Insert nuevo
+        # Insert nuevo — protegido contra race condition por índice único.
         new_id = str(uuid.uuid4())
-        await db.clubes.insert_one({
-            "id": new_id,
-            "nombre": nombre_clean[:80],
-            "nombre_norm": nombre_norm,
-            "direccion_completa": (direccion or "").strip()[:240] or "",
-            "latitud": float(lat) if lat is not None else None,
-            "longitud": float(lng) if lng is not None else None,
-            "creado_en": datetime.now(timezone.utc).isoformat(),
-            "fuente": "organic",  # vs "seed" si hiciéramos seed manual a futuro
-        })
-        return new_id
+        try:
+            await db.clubes.insert_one({
+                "id": new_id,
+                "nombre": nombre_clean[:80],
+                "nombre_norm": nombre_norm,
+                "direccion_completa": (direccion or "").strip()[:240] or "",
+                "latitud": float(lat) if lat is not None else None,
+                "longitud": float(lng) if lng is not None else None,
+                "creado_en": datetime.now(timezone.utc).isoformat(),
+                "fuente": "organic",  # vs "seed" si hiciéramos seed manual a futuro
+            })
+            return new_id
+        except DuplicateKeyError:
+            # Race condition: otro request acaba de insertar este mismo
+            # nombre_norm. Re-leemos y devolvemos el id del ganador.
+            winner = await db.clubes.find_one({"nombre_norm": nombre_norm}, {"_id": 0})
+            if winner:
+                logger.info("upsert_club_silencioso: race resuelta para '%s'", nombre_clean)
+                return winner["id"]
+            return None
     except Exception as e:  # pragma: no cover — guardia defensiva
         logger.warning("upsert_club_silencioso falló para '%s': %s", nombre, e)
         return None

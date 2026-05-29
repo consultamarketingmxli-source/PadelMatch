@@ -67,9 +67,22 @@ export function ClubAutocomplete({
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   // Cuando el usuario tap-ea un club, lo marcamos para hidratar dirección.
   const [pickedClub, setPickedClub] = useState<ClubDir | null>(null);
+  // Bandera de backend unavailable — degradación visible (no silenciosa).
+  const [backendError, setBackendError] = useState<boolean>(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqIdRef = useRef(0);
+  // Token único por intento GPS — descartamos respuestas obsoletas si timeout.
+  const gpsTokenRef = useRef(0);
+  // Flag de desmontaje — evita setState tras unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // ===== Búsqueda con debounce =====
   const runSearch = useCallback(
@@ -84,14 +97,21 @@ export function ClubAutocomplete({
           params.lng = lng;
         }
         const res = await api.buscarClubes(params);
+        if (!mountedRef.current) return;
         // Race-condition guard: ignora respuestas viejas.
         if (myReq !== reqIdRef.current) return;
         setResults(res?.results ?? []);
+        // Si el backend reporta error, lo marcamos para mostrar hint visible.
+        setBackendError(Boolean((res as any)?.error));
       } catch {
-        // Backend caído / red intermitente — degradamos a lista vacía.
-        if (myReq === reqIdRef.current) setResults([]);
+        // Backend caído / red intermitente — degradamos a lista vacía
+        // pero AVISAMOS al usuario con un hint.
+        if (mountedRef.current && myReq === reqIdRef.current) {
+          setResults([]);
+          setBackendError(true);
+        }
       } finally {
-        if (myReq === reqIdRef.current) setLoading(false);
+        if (mountedRef.current && myReq === reqIdRef.current) setLoading(false);
       }
     },
     [limit],
@@ -119,10 +139,14 @@ export function ClubAutocomplete({
 
   const handleBlur = () => {
     // Pequeño delay para permitir el tap en una opción antes de cerrar.
-    setTimeout(() => setFocused(false), 180);
+    // 250ms es más holgado para mobile lento (era 180ms y a veces el tap
+    // se perdía si el dispositivo tardaba en propagar el evento).
+    setTimeout(() => {
+      if (mountedRef.current) setFocused(false);
+    }, 250);
   };
 
-  // ===== GPS toggle con timeout duro 5s =====
+  // ===== GPS toggle con timeout duro 5s + cancellation token =====
   const toggleGps = async () => {
     // Si ya estaba activo lo apagamos.
     if (gpsState === "active") {
@@ -131,31 +155,40 @@ export function ClubAutocomplete({
       void runSearch(value); // re-buscamos sin geo
       return;
     }
+    const myToken = ++gpsTokenRef.current;
     setGpsState("loading");
     try {
       // En web, expo-location puede tardar; ponemos timeout duro 5s.
       const gpsPromise = (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          setGpsState("denied");
-          return null;
+          return { kind: "denied" as const };
         }
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        return pos;
+        return { kind: "ok" as const, pos };
       })();
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
-      const pos = await Promise.race([gpsPromise, timeoutPromise]);
-      if (!pos) {
-        // Timeout o permisos negados — degradación silenciosa.
-        if (gpsState !== "denied") setGpsState("error");
+      const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) =>
+        setTimeout(() => resolve({ kind: "timeout" }), 5000),
+      );
+      const result: any = await Promise.race([gpsPromise, timeoutPromise]);
+      // Si otro toggle se disparó entretanto, descartamos esta respuesta.
+      if (!mountedRef.current || myToken !== gpsTokenRef.current) return;
+      if (result.kind === "denied") {
+        setGpsState("denied");
         return;
       }
-      const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (result.kind === "timeout") {
+        setGpsState("error");
+        return;
+      }
+      const c = { lat: result.pos.coords.latitude, lng: result.pos.coords.longitude };
       setCoords(c);
       setGpsState("active");
       void runSearch(value, c.lat, c.lng);
     } catch {
-      setGpsState("error");
+      if (mountedRef.current && myToken === gpsTokenRef.current) {
+        setGpsState("error");
+      }
     }
   };
 
@@ -250,6 +283,13 @@ export function ClubAutocomplete({
         </Text>
       ) : null}
 
+      {/* Hint de backend no disponible — directorio degradado, texto libre sigue funcionando */}
+      {backendError && focused ? (
+        <Text style={[styles.gpsHint, { color: colors.status.red }]} testID={`${testID}-backend-error`}>
+          ⚠️ Directorio no disponible. Puedes escribir el nombre libremente.
+        </Text>
+      ) : null}
+
       {/* Dropdown de resultados */}
       {showDropdown ? (
         <View style={styles.dropdown} testID={`${testID}-dropdown`}>
@@ -311,7 +351,15 @@ export function ClubAutocomplete({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.md, position: "relative" as const },
+  wrap: {
+    marginBottom: spacing.md,
+    position: "relative" as const,
+    // CRÍTICO: stacking-context propio para que el dropdown absolute
+    // se renderice POR ENCIMA de inputs hermanos en react-native-web.
+    // Sin este zIndex, el input "Dirección" intercepta los taps.
+    zIndex: Platform.OS === "web" ? 100 : 1,
+    ...(Platform.OS === "web" ? ({ isolation: "isolate" } as any) : {}),
+  },
   label: {
     ...typography.label,
     color: colors.text.secondary,

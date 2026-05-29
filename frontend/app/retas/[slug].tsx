@@ -24,6 +24,7 @@ import { TrafficLight } from "@/src/components/TrafficLight";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { buildPagoReturnUrl } from "@/src/utils/deepLink";
+import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
@@ -419,38 +420,48 @@ export default function RetaDetailScreen() {
               <Text style={styles.hero} numberOfLines={2}>{reta.nombre}</Text>
               <TouchableOpacity
                 onPress={() => {
-                  // Deep-link a Google Maps. Si tenemos lat/lng → precisión GPS.
-                  // Si no → query con nombre+dirección (string libre).
-                  const direccion = (reta as any).club_direccion || "";
-                  const hasGeo = reta.latitud != null && reta.longitud != null;
-                  const query = hasGeo
-                    ? `${reta.latitud},${reta.longitud}`
-                    : encodeURIComponent(`${reta.club} ${direccion}`.trim());
-                  const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
-                  if (Platform.OS === "web" && typeof window !== "undefined") {
-                    window.open(url, "_blank");
-                  } else {
-                    const Linking = require("expo-linking");
-                    Linking.openURL(url).catch(() => {});
-                  }
+                  // Helper centralizado: maneja iOS (Apple Maps), Android (Google Maps),
+                  // y web (window.open) con fallback robusto. Si no hay datos suficientes,
+                  // openInMaps devuelve false silenciosamente.
+                  void openInMaps({
+                    nombre: reta.club,
+                    direccion: (reta as any).club_direccion,
+                    lat: reta.latitud,
+                    lng: reta.longitud,
+                  });
                 }}
                 activeOpacity={0.7}
                 style={styles.metaRow}
                 testID="club-deeplink-maps"
                 accessibilityLabel="Abrir ubicación en Google Maps"
                 accessibilityRole="link"
+                // Si no hay club ni dirección ni coords, no es clickable (no destino).
+                disabled={!buildGoogleMapsUrl({
+                  nombre: reta.club,
+                  direccion: (reta as any).club_direccion,
+                  lat: reta.latitud,
+                  lng: reta.longitud,
+                })}
               >
                 <MapPin size={13} color={colors.brand.primary} />
                 <Text style={styles.clubText} numberOfLines={2}>
-                  {reta.club}
+                  {reta.club || "Ubicación por confirmar"}
                   {(reta as any).club_direccion ? (
                     <Text style={styles.clubAddrText}>{" · "}{(reta as any).club_direccion}</Text>
                   ) : null}
                 </Text>
-                <View style={styles.mapsCta} testID="club-deeplink-cta">
-                  <MapIcon size={12} color={colors.brand.primary} />
-                  <Text style={styles.mapsCtaText}>Mapa</Text>
-                </View>
+                {/* Chip MAPA — solo si tenemos destino válido (coords O texto). */}
+                {buildGoogleMapsUrl({
+                  nombre: reta.club,
+                  direccion: (reta as any).club_direccion,
+                  lat: reta.latitud,
+                  lng: reta.longitud,
+                }) ? (
+                  <View style={styles.mapsCta} testID="club-deeplink-cta">
+                    <MapIcon size={12} color={colors.brand.primary} />
+                    <Text style={styles.mapsCtaText}>Mapa</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
               {/* Chip de modalidad — visible solo si es reta de parejas. */}
               {esRetaParejas ? (
