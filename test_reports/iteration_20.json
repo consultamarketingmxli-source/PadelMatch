@@ -1,0 +1,66 @@
+{
+  "summary": "Iter20 — Fase A (RSVP Retas Gratis) backend testing. 10/11 PASS. Cubre aceptar con cupo, idempotencia (mismo teléfono no duplica), llenado→lista_espera, rechazar previo aceptado libera+promueve waitlist, rechazar sin previo, endpoints RSVP rechazan retas paga (400), GET admin /asistencia 3 columnas con conteos correctos, PATCH aceptar en reta llena devuelve 409, auth admin obligatoria, regresión paga sigue OK. 1 FAIL: PATCH estatus aceptado→rechazado cuando hay waitlist devuelve HTTP 500. RCA: /app/backend/routers/rsvp.py:331 hace `promoted.get('nombre')` sobre el resultado de `promover_lista_espera`, pero ese helper retorna un Pydantic Inscripcion (no dict) → AttributeError: 'Inscripcion' object has no attribute 'get'. Mismo bug NO ocurre en POST /rsvp/rechazar (línea 248) porque ahí el código sí maneja el caso con isinstance(dict). Es un bug CRÍTICO porque rompe el override admin (chip 'Lista de espera'/'Rechazar' desde columna Confirmados) cuando hay alguien en espera — el cupo se libera y la promoción se ejecuta exitosamente en DB, pero el endpoint devuelve 500 y el frontend muestra error.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/admin/inscripciones/{id}/estatus",
+        "issue": "HTTP 500 cuando se mueve un inscripto 'aceptado' a otro estatus y hay waitlist a promover. rsvp.py:331 usa promoted.get('nombre') pero promover_lista_espera devuelve un Pydantic Inscripcion (no dict). El cupo SÍ se libera y la promoción SÍ ocurre en DB, pero la respuesta crashea. Fix: aplicar mismo patrón de POST /rsvp/rechazar línea 250: `promoted.get('nombre') if isinstance(promoted, dict) else getattr(promoted, 'nombre', None)`.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Admin override desde columna Confirmados (chip 'Lista de espera' o 'Rechazar') cuando existe waitlist",
+        "issue": "El backend devuelve 500 (ver bug crítico arriba). El frontend muestra Alert 'No se pudo cambiar'. Sin embargo, en DB la transición SÍ se aplicó parcialmente: el inscripto pasa al nuevo estatus, el cupo se libera, y el siguiente en waitlist se promueve. Una recarga manual vería el estado correcto. Comportamiento engañoso al usuario.",
+        "affected_testIDs": ["move-*-rechazado", "move-*-lista_espera"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Logs de Expo muestran 'shadow* style props are deprecated. Use boxShadow.' (en /app/frontend/app/retas/[slug].tsx rsvpAcceptBtn shadowColor/shadowOpacity/shadowRadius/shadowOffset). No bloquea pero conviene migrar a la API web actual."
+      },
+      {
+        "component": "props.pointerEvents deprecated",
+        "issue": "Logs muestran 'props.pointerEvents is deprecated. Use style.pointerEvents'. Revisar componentes generales."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_a_rsvp.py",
+    "/app/test_reports/pytest/iter20_rsvp.xml"
+  ],
+  "action_items": [
+    "FIX CRÍTICO: /app/backend/routers/rsvp.py línea 331 — reemplazar `promoted.get('nombre') if promoted else None` por `(promoted.get('nombre') if isinstance(promoted, dict) else getattr(promoted, 'nombre', None)) if promoted else None` (mismo patrón que se usa en línea 250). Sin este fix, el chip 'Lista de espera'/'Rechazar' del admin sobre confirmados con waitlist devuelve 500.",
+    "Tras el fix, re-correr backend/tests/test_phase_a_rsvp.py — debe quedar 11/11 PASS.",
+    "Considerar E2E frontend playwright del override admin (chips) — requiere seed con waitlist y captura del Alert post-PATCH.",
+    "Migrar shadow* style props del rsvpAcceptBtn a boxShadow (cosmético, warnings en consola web)."
+  ],
+  "critical_code_review_comments": [
+    "rsvp.py:121-218 — endpoint aceptar bien diseñado: idempotencia verificada, lista_espera atómica con count_documents+insert, rollback de cupo en caso de error en insert_one. ✓",
+    "rsvp.py:235-256 — endpoint rechazar maneja correctamente isinstance(promoted, dict) cuando llama promover_lista_espera. Sirve de referencia para el bug del PATCH. ✓",
+    "rsvp.py:313-332 — PATCH cambia estatus pero falla en respuesta cuando promueve waitlist (bug crítico reportado).",
+    "rsvp.py:103-114 — _capacidad_actual cuenta correctamente con $or estatus_confirmacion=aceptado OR estatus_pago=Aprobado (legacy retrocompat).",
+    "rsvp.py:344-373 — GET /asistencia agrupa correctamente las 4 columnas con retro-compat para retas viejas paga (asigna estatus_confirmacion derivado de estatus_pago).",
+    "frontend [slug].tsx:445 — Costo muestra 'Gratis' si tipo_acceso==gratis_amigos. ✓",
+    "frontend [slug].tsx:451-580 — RSVP card oculta Stripe/cupón correctamente (renderizada solo si esGratisAmigos y bloque pago dentro de !esGratisAmigos). ✓",
+    "frontend admin/inscripciones/[id].tsx:78-102 — switch correcto entre vista 3 columnas vs lista legacy según reta.tipo_acceso. ✓"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_a_rsvp.py (nuevo, 11 tests)"
+  ],
+  "success_rate": {
+    "backend": "91% (10/11 PASS, 1 FAIL por bug confirmado)",
+    "frontend": "no testeado E2E en esta iter — main agent ya validó manualmente UI (carga, badge, costo Gratis, aceptar+rechazar, admin 3 columnas según contexto)"
+  },
+  "seed_data_creation": "Cada test crea una reta TEST_RSVP_<tag> con cap=4 (mínimo permitido) vía POST /api/retas y la borra al final (DELETE cascade que también borra inscripciones, lista_espera, resultados, stripe_transactions). No deja basura.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Tras el fix de rsvp.py:331 deberías re-correr `pytest /app/backend/tests/test_phase_a_rsvp.py -v`. Si todo verde: 11/11. Para validar frontend del override admin con playwright, seed: crear gratis_amigos cap=4, llenar 4 RSVP aceptados + 1 waitlist, login admin, ir a /admin/reta/inscripciones/{id}, click chip 'Lista de espera' o 'Rechazar' sobre el primer confirmado → debe llamarse PATCH y ver Alert 'Lugar liberado · Promovimos a X'. Antes del fix muestra 'No se pudo cambiar'. Verificar que reta paga sigue mostrando lista legacy con botón Reembolsar (ya validado por test backend de regresión pero no por E2E).",
+  "rca_of_issue": "Bug PATCH /api/admin/inscripciones/{id}/estatus 500: en rsvp.py:331 la variable `promoted` viene de `await promover_lista_espera(reta_id)` (línea 316). En el ramal del endpoint POST /rsvp/rechazar la misma variable se maneja defensivamente con isinstance dict vs objeto Pydantic (línea 250), pero en cambiar_estatus se asume dict y rompe con AttributeError. Reproducible 100% creando gratis_amigos cap=4, llenando, agregando 1 waitlist, y haciendo PATCH del primero a 'rechazado'. Mitigación: aplicar mismo idiom defensivo. El bug no causa pérdida de datos — la promoción y liberación de cupo ocurren correctamente; solo el response crashea."
+}

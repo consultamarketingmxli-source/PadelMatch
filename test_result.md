@@ -103,14 +103,37 @@
 #====================================================================================================
 
 user_problem_statement: |
-  Continuar con P0: completar la integración Frontend del Motor de Búsqueda Híbrido
-  (Texto + GPS opcional + Fallback por fecha). Backend ya tiene endpoint
-  /api/public/retas/buscar funcionando con índices texto y filtro Haversine.
-  Validar que: (a) lista carga sin GPS por defecto ordenada por fecha,
-  (b) texto en SearchBar filtra retas/clubs, (c) botón GPS denegado muestra Toast
-  amber y mantiene fallback, (d) sin crashes ni white-screens.
+  Fase A — Retas Gratis / Entre Amigos (RSVP).
+  Activar tipo_acceso="gratis_amigos" en el wizard de creación.
+  En el landing público /retas/{slug}, si la reta es gratis_amigos:
+    - Ocultar Stripe/MP/Cupón
+    - Mostrar tarjeta "Evento gratuito · sin cargo" + inputs nombre/teléfono
+    - Botones grandes: Aceptar (emerald-600) y Rechazar (slate outline)
+    - Estados post-respuesta: aceptado, lista_espera (con posición), rechazado
+  En el admin /admin/reta/inscripciones/{id}, si la reta es gratis_amigos:
+    - Vista de "Asistencia" en 3 columnas (Confirmados / Lista de espera / Pendientes)
+    - Botones de override manual entre columnas
+    - Si hay rechazados, columna extra de auditoría con opción "Reactivar"
+    - Banner verde con contadores totales
+  Backend endpoints ya implementados y probados:
+    - POST /api/public/retas/{id}/rsvp/aceptar
+    - POST /api/public/retas/{id}/rsvp/rechazar
+    - GET  /api/admin/retas/{id}/asistencia
+    - PATCH /api/admin/inscripciones/{id}/estatus
 
 backend:
+  - task: "RSVP — Retas Gratis / Entre Amigos (Fase A)"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/rsvp.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Router con 2 endpoints públicos (POST /aceptar, POST /rechazar) y 2 admin (PATCH /inscripciones/{id}/estatus, GET /retas/{id}/asistencia). Atomicidad con reservar_lugar_atomico. Lista de espera automática cuando llena. Promoción al rechazar. Idempotencia por teléfono. 4/4 tests E2E pasaron en sesión previa."
+
   - task: "Hybrid Search endpoint /api/public/retas/buscar"
     implemented: true
     working: true
@@ -124,6 +147,30 @@ backend:
           comment: "Endpoint ya implementado y probado manualmente con script bash en la sesión anterior. Acepta q (texto), lat/lng/radio_km (Haversine), sin params → todas ordenadas por fecha_evento ASC. Índices de texto en `nombre` y `club` ya creados en db.py."
 
 frontend:
+  - task: "RSVP Public UI on /retas/[slug] (Fase A)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/retas/[slug].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Conditional rendering basado en reta.tipo_acceso === 'gratis_amigos'. Oculta Stripe/MP/Cupón. Muestra tarjeta verde 'Evento gratuito · sin cargo', inputs nombre+teléfono, botones Aceptar (emerald-600 grande) y Rechazar (slate outline). 3 estados post-respuesta: aceptado (PartyPopper), lista_espera (Hourglass amber + badge posición), rechazado (XCircle). Botón 'Cambiar respuesta' resetea estado. testIDs: rsvp-card, rsvp-nombre-input, rsvp-telefono-input, rsvp-aceptar-btn, rsvp-rechazar-btn, rsvp-reset-btn, rsvp-state-aceptado|lista_espera|rechazado. Stat Costo muestra 'Gratis' en lugar de '$0'. Validado E2E con screenshots: Aceptar incrementa 0/8 → 1/8 + semáforo amarillo, Rechazar de un usuario NO-aceptado solo registra rechazo sin alterar cupo."
+
+  - task: "Admin Attendance View 3-Column for gratis_amigos (Fase A)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/reta/inscripciones/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Refactor del screen Inscripciones a vista dual: si tipo_acceso='gratis_amigos' fetcheo GET /admin/retas/{id}/asistencia y renderizo 3 secciones tipo Trello (Confirmados verde / Lista de espera amber / Pendientes slate) + 4ª columna Rechazados (auditoría) si hay registros. Cada PersonRow tiene botones de override manual usando PATCH /admin/inscripciones/{id}/estatus. Banner verde top muestra '{n}/{max} confirmados' y contadores. Si NO es gratis_amigos, mantiene el flujo legacy con FlatList + botón Reembolsar. Validado E2E: vista admin muestra 1/8 confirmados, Andrés Test con chips [Lista de espera, Rechazar]. Empty states informativos por columna."
+
   - task: "Hybrid Search UI integration in index.tsx"
     implemented: true
     working: true
@@ -269,9 +316,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Fase 2 - Checkout coordinado por DÚO (MP/Mock/Stripe)"
-    - "Fase 3 - Motor Round Robin de Parejas (rol + standings + exports)"
-    - "Fase 4 - Admin edge cases (free-agents/match, cancel dúo|solo, listar dúos)"
+    - "RSVP — Retas Gratis / Entre Amigos (Fase A) — backend"
+    - "RSVP Public UI on /retas/[slug] (Fase A) — frontend"
+    - "Admin Attendance View 3-Column for gratis_amigos (Fase A) — frontend"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -279,7 +326,51 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Fase 2/3/4 "Retas de Parejas" COMPLETAS.
+        FASE A — Retas Gratis / Entre Amigos (RSVP) — COMPLETA y validada manualmente.
+
+        BACKEND (ya estaba listo, solo revalidar):
+        1. POST /api/public/retas/{id}/rsvp/aceptar  con {nombre, telefono} → cuando hay cupo: estatus_confirmacion="aceptado", inscritos_count++. Cuando NO hay cupo: estatus_confirmacion="lista_espera" + posicion_lista_espera. Idempotencia: misma combinación reta+telefono devuelve la inscripción existente sin duplicar ni doble-reservar cupo.
+        2. POST /api/public/retas/{id}/rsvp/rechazar con {nombre, telefono} → si previo "aceptado": libera cupo, promueve waitlist. Si nuevo rechazo: solo registra.
+        3. GET  /api/admin/retas/{id}/asistencia (auth admin) → {confirmados[], pendientes[], lista_espera[], rechazados[]}.
+        4. PATCH /api/admin/inscripciones/{id}/estatus body {estatus_confirmacion: "..."}  → al pasar a "aceptado" reserva cupo (409 si llena). Al salir de "aceptado" libera + promueve waitlist.
+        5. Validar que las retas con tipo_acceso="paga" siguen funcionando (no romper checkout MP/Stripe ni cupones).
+
+        FRONTEND (recién implementado):
+        1. Crear reta con tipo_acceso=gratis_amigos vía API o admin form (testID form-tipo-acceso-gratis_amigos).
+           - Datos demo ya creados: SLUG=reta-gratis-demo-club-amigos-2026-12-20, ID=87a6c2c5-cdb4-4d16-96e8-80f056fe9b14.
+        2. Visitar /retas/{slug}:
+           - Stat "Costo" debe decir "Gratis".
+           - Card RSVP visible con testID rsvp-card.
+           - Inputs rsvp-nombre-input y rsvp-telefono-input.
+           - Botones rsvp-aceptar-btn (verde grande) y rsvp-rechazar-btn (outline).
+           - NO debe aparecer Stripe/MP/Cupón.
+        3. Click Aceptar con datos válidos:
+           - Render testID rsvp-state-aceptado con icono PartyPopper y mensaje "¡Asistencia confirmada!".
+           - Cupo en stats debe incrementarse.
+           - Botón "Cambiar respuesta" testID rsvp-reset-btn.
+        4. Repetir Aceptar con el MISMO teléfono → debe seguir mostrando estado aceptado (idempotencia, sin duplicado).
+        5. Llenar la reta (8 aceptaciones únicas) y un 9º intentar Aceptar → render testID rsvp-state-lista_espera con badge "Posición #1".
+        6. Click Rechazar con un nuevo teléfono que no había aceptado → render testID rsvp-state-rechazado.
+        7. Login admin (admin@padelappretas.com / admin123) y navegar a /admin/reta/inscripciones/{id}:
+           - Title debe decir "Asistencia" (no "Inscripciones").
+           - Banner verde "Evento gratuito · RSVP" + "{n}/{max} confirmados" y subcontadores.
+           - 3 columnas Confirmados/Lista de espera/Pendientes con counts y empty states.
+           - Click en chip "Lista de espera" sobre un row confirmado → confirmación + apareces en Lista de espera (count decrementado en Confirmados).
+           - Click en "Rechazar" sobre lista de espera → desaparece, aparece en columna Rechazados (auditoría) si existe.
+           - Click "Confirmar" desde Lista de espera con cupo libre → vuelve a Confirmados.
+           - Click "Confirmar" desde Lista de espera con cupo lleno → Alert con "no se pudo aceptar: reta llena".
+        8. Validar que para una reta con tipo_acceso="paga", el screen sigue siendo la lista legacy con botón Reembolsar (no la vista 3 columnas).
+
+        CREDENCIALES TEST:
+          admin@padelappretas.com / admin123
+          Universal Key emergent: ya configurada, no se necesita para RSVP.
+          Slug demo: reta-gratis-demo-club-amigos-2026-12-20
+
+        Reportar regresiones en cupones, búsqueda híbrida o checkout MP/Stripe si surgen.
+
+    - agent: "main"
+      message: |
+        Fase 2/3/4 "Retas de Parejas" COMPLETAS (sesiones anteriores).
         BACKEND: 25/25 tests phase234 + 12/12 phase1 + 44/44 regresión → 37/37 PASS final tras añadir monto_total/cupos_reservados a MP/Stripe response.
         FRONTEND: /retas/{slug} con chip de modalidad, selector dúo/free-agent, inputs dinámicos de pareja, validación de teléfonos iguales, botón con monto x2.
         Archivos clave nuevos: routers/parejas_admin.py, core/standings.py:compute_duo_standings, logica_torneo.py:generar_rol_multi_cancha_parejas.

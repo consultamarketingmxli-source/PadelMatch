@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft, Calendar, MapPin, Trophy, DollarSign, Users, Clock, BarChart2,
-  UserPlus, Search, CheckCircle2, XCircle, Gift,
+  UserPlus, Search, CheckCircle2, XCircle, Gift, PartyPopper, Hourglass, Heart,
 } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
@@ -47,6 +47,15 @@ export default function RetaDetailScreen() {
   const [cuponState, setCuponState] = useState<
     null | { ok: true; codigo: string; descripcion: string } | { ok: false; razon: string }
   >(null);
+
+  // ===== Estado RSVP (Retas Gratis / Entre Amigos) =====
+  const [rsvpResult, setRsvpResult] = useState<
+    | null
+    | { tipo: "aceptado"; mensaje: string }
+    | { tipo: "lista_espera"; mensaje: string; posicion?: number }
+    | { tipo: "rechazado"; mensaje: string; promoted?: string | null }
+  >(null);
+  const [rsvpAction, setRsvpAction] = useState<"aceptar" | "rechazar" | null>(null);
 
   const load = useCallback(async () => {
     if (!slug) return;
@@ -120,6 +129,9 @@ export default function RetaDetailScreen() {
   const esRetaParejas = modalidad !== "individual";
   const permiteIndiv = !!reta?.permitir_individual_en_parejas;
 
+  // Fase A — ¿Es reta gratis (entre amigos)? Activa flujo RSVP en lugar de pago.
+  const esGratisAmigos = reta?.tipo_acceso === "gratis_amigos";
+
   // Flag derivado de cuponState — se declara ANTES de costoTotal para evitar
   // ReferenceError por TDZ de const.
   const cuponAplicado = cuponState?.ok === true;
@@ -155,6 +167,67 @@ export default function RetaDetailScreen() {
   const handleRemoveCupon = () => {
     setCuponCodigo("");
     setCuponState(null);
+  };
+
+  // ===== Handlers RSVP (Retas Gratis) =====
+  const handleRsvpAceptar = async () => {
+    if (!reta) return;
+    if (!nombre.trim() || !telefono.trim()) {
+      Alert.alert("Datos incompletos", "Ingresa tu nombre y teléfono para confirmar.");
+      return;
+    }
+    setRsvpAction("aceptar");
+    try {
+      const res = await api.rsvpAceptar(reta.id, {
+        nombre: nombre.trim(),
+        telefono: telefono.trim(),
+      });
+      if (res.estatus_confirmacion === "aceptado") {
+        setRsvpResult({ tipo: "aceptado", mensaje: res.mensaje });
+      } else {
+        setRsvpResult({
+          tipo: "lista_espera",
+          mensaje: res.mensaje,
+          posicion: res.posicion_lista_espera ?? undefined,
+        });
+      }
+      await load();
+    } catch (e: any) {
+      Alert.alert("No se pudo confirmar", e.message ?? "Inténtalo de nuevo.");
+    } finally {
+      setRsvpAction(null);
+    }
+  };
+
+  const handleRsvpRechazar = async () => {
+    if (!reta) return;
+    if (!nombre.trim() || !telefono.trim()) {
+      Alert.alert("Datos incompletos", "Ingresa tu nombre y teléfono para responder.");
+      return;
+    }
+    setRsvpAction("rechazar");
+    try {
+      const res = await api.rsvpRechazar(reta.id, {
+        nombre: nombre.trim(),
+        telefono: telefono.trim(),
+      });
+      setRsvpResult({
+        tipo: "rechazado",
+        mensaje: res.promoted
+          ? `Listo, no asistirás. Liberamos tu lugar y avisamos a ${res.promoted_player ?? "la siguiente persona"} en la lista de espera.`
+          : "Listo, registramos que no podrás asistir. ¡Gracias por avisar!",
+        promoted: res.promoted_player,
+      });
+      await load();
+    } catch (e: any) {
+      Alert.alert("No se pudo registrar", e.message ?? "Inténtalo de nuevo.");
+    } finally {
+      setRsvpAction(null);
+    }
+  };
+
+  const handleResetRsvp = () => {
+    setRsvpResult(null);
   };
 
   const handleAction = async () => {
@@ -369,11 +442,145 @@ export default function RetaDetailScreen() {
             <StatBlock icon={<Calendar size={16} color={colors.brand.primary} />} label="Fecha" value={fechaStr} />
             <StatBlock icon={<Clock size={16} color={colors.brand.primary} />} label="Hora" value={horaStr} />
             <StatBlock icon={<Trophy size={16} color={colors.brand.primary} />} label="Modalidad" value={reta.modalidad_juego} />
-            <StatBlock icon={<DollarSign size={16} color={colors.brand.primary} />} label="Costo" value={`$${reta.costo_inscripcion}`} />
+            <StatBlock icon={<DollarSign size={16} color={colors.brand.primary} />} label="Costo" value={esGratisAmigos ? "Gratis" : `$${reta.costo_inscripcion}`} />
             <StatBlock icon={<Users size={16} color={colors.brand.primary} />} label="Cupo" value={`${reta.inscritos_count}/${reta.max_jugadores}`} />
             <StatBlock icon={<Trophy size={16} color={colors.brand.primary} />} label="Rondas" value={String(reta.num_rondas)} />
           </View>
 
+          {/* ===== Fase A — Tarjeta RSVP (Retas Gratis / Entre Amigos) ===== */}
+          {esGratisAmigos ? (
+            <View style={styles.rsvpCard} testID="rsvp-card">
+              {/* Banner "evento gratuito" */}
+              <View style={styles.rsvpBadge}>
+                <Heart size={12} color="#047857" />
+                <Text style={styles.rsvpBadgeText}>Evento gratuito · sin cargo</Text>
+              </View>
+
+              {rsvpResult ? (
+                /* ===== Estado de respuesta confirmada ===== */
+                <View style={styles.rsvpStateBox} testID={`rsvp-state-${rsvpResult.tipo}`}>
+                  {rsvpResult.tipo === "aceptado" ? (
+                    <>
+                      <View style={[styles.rsvpStateIcon, { backgroundColor: "#ECFDF5", borderColor: "#10B98155" }]}>
+                        <PartyPopper size={28} color="#047857" />
+                      </View>
+                      <Text style={[styles.rsvpStateTitle, { color: "#047857" }]}>¡Asistencia confirmada!</Text>
+                      <Text style={styles.rsvpStateMsg}>{rsvpResult.mensaje}</Text>
+                    </>
+                  ) : rsvpResult.tipo === "lista_espera" ? (
+                    <>
+                      <View style={[styles.rsvpStateIcon, { backgroundColor: "#FFFBEB", borderColor: "#F59E0B55" }]}>
+                        <Hourglass size={28} color="#B45309" />
+                      </View>
+                      <Text style={[styles.rsvpStateTitle, { color: "#B45309" }]}>Quedaste en lista de espera</Text>
+                      <Text style={styles.rsvpStateMsg}>{rsvpResult.mensaje}</Text>
+                      {rsvpResult.posicion ? (
+                        <View style={styles.rsvpPosBadge}>
+                          <Text style={styles.rsvpPosBadgeText}>Posición #{rsvpResult.posicion}</Text>
+                        </View>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <View style={[styles.rsvpStateIcon, { backgroundColor: "#F1F5F9", borderColor: colors.border.default }]}>
+                        <XCircle size={28} color={colors.text.secondary} />
+                      </View>
+                      <Text style={[styles.rsvpStateTitle, { color: colors.text.primary }]}>Respuesta registrada</Text>
+                      <Text style={styles.rsvpStateMsg}>{rsvpResult.mensaje}</Text>
+                    </>
+                  )}
+                  <TouchableOpacity
+                    onPress={handleResetRsvp}
+                    style={styles.rsvpResetBtn}
+                    testID="rsvp-reset-btn"
+                  >
+                    <Text style={styles.rsvpResetBtnText}>Cambiar respuesta</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* ===== Formulario RSVP ===== */
+                <>
+                  <Text style={styles.rsvpTitle}>
+                    {lleno ? "La reta ya está llena" : "¿Te apuntas?"}
+                  </Text>
+                  <Text style={styles.rsvpSubtitle}>
+                    {lleno
+                      ? "Puedes registrarte y te dejaremos en lista de espera. Si alguien cancela, te avisamos."
+                      : "Confirma tu nombre y teléfono. Un toque para aceptar o rechazar la invitación."}
+                  </Text>
+
+                  <Input
+                    label="Tu nombre completo"
+                    placeholder="Ej. Andrés Sánchez"
+                    value={nombre}
+                    onChangeText={setNombre}
+                    autoCapitalize="words"
+                    testID="rsvp-nombre-input"
+                  />
+                  <Input
+                    label="Tu teléfono (WhatsApp)"
+                    placeholder="+5215512345678"
+                    value={telefono}
+                    onChangeText={setTelefono}
+                    keyboardType="phone-pad"
+                    testID="rsvp-telefono-input"
+                  />
+
+                  {/* Botones grandes ACEPTAR / RECHAZAR */}
+                  <View style={styles.rsvpBtnRow}>
+                    <TouchableOpacity
+                      onPress={handleRsvpAceptar}
+                      disabled={rsvpAction !== null}
+                      activeOpacity={0.85}
+                      style={[
+                        styles.rsvpAcceptBtn,
+                        rsvpAction !== null && { opacity: 0.5 },
+                      ]}
+                      testID="rsvp-aceptar-btn"
+                    >
+                      {rsvpAction === "aceptar" ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <CheckCircle2 size={20} color="#fff" />
+                          <Text style={styles.rsvpAcceptBtnText}>
+                            {lleno ? "Unirme a lista de espera" : "Aceptar"}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleRsvpRechazar}
+                      disabled={rsvpAction !== null}
+                      activeOpacity={0.85}
+                      style={[
+                        styles.rsvpRejectBtn,
+                        rsvpAction !== null && { opacity: 0.5 },
+                      ]}
+                      testID="rsvp-rechazar-btn"
+                    >
+                      {rsvpAction === "rechazar" ? (
+                        <ActivityIndicator color={colors.text.secondary} />
+                      ) : (
+                        <>
+                          <XCircle size={18} color={colors.text.secondary} />
+                          <Text style={styles.rsvpRejectBtnText}>Rechazar</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.rsvpFinePrint}>
+                    Sin pagos. Sin cargos ocultos. El organizador te confirmará por WhatsApp.
+                  </Text>
+                </>
+              )}
+            </View>
+          ) : null}
+
+          {/* ===== Tarjeta de inscripción / pago (solo si NO es gratis_amigos) ===== */}
+          {!esGratisAmigos ? (
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>
               {lleno ? "Únete a la lista de espera" : "Asegura tu lugar"}
@@ -539,6 +746,7 @@ export default function RetaDetailScreen() {
               testID={lleno ? "waitlist-btn" : "pay-button"}
             />
           </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -784,6 +992,155 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
     fontWeight: "600",
+  },
+
+  // ===== Fase A — Tarjeta RSVP (Retas Gratis) =====
+  rsvpCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: "#10B98140", // emerald-500 alpha
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  rsvpBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radii.sm,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#10B98140",
+    marginBottom: spacing.md,
+  },
+  rsvpBadgeText: {
+    color: "#047857",
+    fontWeight: "800",
+    fontSize: 11,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  rsvpTitle: {
+    ...typography.h3,
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  rsvpSubtitle: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  rsvpBtnRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  rsvpAcceptBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: "#059669", // emerald-600
+    shadowColor: "#10B981",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  rsvpAcceptBtnText: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
+  rsvpRejectBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 52,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.bg.app,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  rsvpRejectBtnText: {
+    color: colors.text.secondary,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  rsvpFinePrint: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: spacing.md,
+    lineHeight: 16,
+  },
+  // Estado post-respuesta
+  rsvpStateBox: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  rsvpStateIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  rsvpStateTitle: {
+    ...typography.h3,
+    fontSize: 18,
+    textAlign: "center",
+  },
+  rsvpStateMsg: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    paddingHorizontal: spacing.sm,
+  },
+  rsvpPosBadge: {
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radii.md,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#F59E0B55",
+  },
+  rsvpPosBadgeText: {
+    color: "#B45309",
+    fontWeight: "900",
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  rsvpResetBtn: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    backgroundColor: colors.bg.app,
+  },
+  rsvpResetBtnText: {
+    color: colors.text.secondary,
+    fontWeight: "700",
+    fontSize: 12,
   },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
