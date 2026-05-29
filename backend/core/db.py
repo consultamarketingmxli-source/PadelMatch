@@ -79,6 +79,17 @@ async def setup_indexes() -> None:
         [("latitud", ASCENDING), ("longitud", ASCENDING)], sparse=True
     )
 
+    # === Alertas Organizador (Fase B — Soporte) ===
+    # Query principal del inbox: por organizador + leida (con sort por fecha).
+    try:
+        await db.alertas_organizador.create_index(
+            [("organizador_id", ASCENDING), ("leida", ASCENDING), ("creada_en", -1)]
+        )
+        # Lookup directo por reta_id en admin attendance view.
+        await db.alertas_organizador.create_index([("reta_id", ASCENDING)])
+    except Exception:
+        pass
+
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})

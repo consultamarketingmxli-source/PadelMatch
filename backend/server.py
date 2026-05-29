@@ -37,6 +37,8 @@ from routers.retas import router as retas_router
 from routers.rsvp import router_admin as rsvp_admin_router
 from routers.rsvp import router_public as rsvp_public_router
 from routers.clubes import router as clubes_public_router
+from routers.soporte import router_admin as soporte_admin_router
+from routers.soporte import router_public as soporte_public_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +72,8 @@ api.include_router(export_router)
 api.include_router(rsvp_public_router)
 api.include_router(rsvp_admin_router)
 api.include_router(clubes_public_router)
+api.include_router(soporte_public_router)
+api.include_router(soporte_admin_router)
 
 
 @api.get("/")

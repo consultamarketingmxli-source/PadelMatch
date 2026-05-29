@@ -410,6 +410,91 @@ export const api = {
       method: "POST",
       body,
     }),
+
+  // ===== soporte (Fase B) =====
+  alertarOrganizador: (
+    slug: string,
+    body: { nombre: string; telefono: string; motivo: string },
+  ) =>
+    request<{
+      ok: boolean;
+      enviado_whatsapp: boolean;
+      canal: "whatsapp" | "registro";
+      mensaje: string;
+      alerta_id: string;
+    }>(`/public/retas/${slug}/soporte/alertar-organizador`, {
+      method: "POST",
+      body,
+    }),
+  reportarAusencia: (
+    slug: string,
+    body: { nombre: string; telefono: string; motivo?: string },
+  ) =>
+    request<{
+      ok: boolean;
+      enviado_whatsapp: boolean;
+      canal: "whatsapp" | "registro";
+      mensaje: string;
+      alerta_id: string;
+    }>(`/public/retas/${slug}/soporte/reportar-ausencia`, {
+      method: "POST",
+      body,
+    }),
+  alertasPendientes: (params?: { retaId?: string; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.retaId) sp.set("reta_id", params.retaId);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    const qs = sp.toString() ? `?${sp.toString()}` : "";
+    return request<{
+      items: Array<{
+        id: string;
+        reta_id: string;
+        reta_nombre: string;
+        reta_slug: string;
+        tipo: "alertar_organizador" | "reportar_ausencia";
+        nombre_jugador: string;
+        telefono_jugador: string;
+        motivo: string;
+        canal: "whatsapp" | "registro";
+        enviado_whatsapp: boolean;
+        leida: boolean;
+        creada_en: string;
+      }>;
+      total_pendientes: number;
+    }>(`/admin/alertas/pendientes${qs}`, { auth: true });
+  },
+  marcarAlertaLeida: (alertaId: string) =>
+    request<{ ok: boolean }>(`/admin/alertas/${alertaId}/leida`, {
+      method: "PATCH",
+      auth: true,
+    }),
+  adminMe: () =>
+    request<{ id: string; email: string; telefono_whatsapp: string | null }>(
+      `/admin/me`,
+      { auth: true },
+    ),
+  adminSetWhatsapp: (telefono: string | null) =>
+    request<{ ok: boolean; telefono_whatsapp: string | null }>(
+      `/admin/me/whatsapp`,
+      {
+        method: "PATCH",
+        body: { telefono_whatsapp: telefono },
+        auth: true,
+      },
+    ),
+  patchInscripcionInline: (
+    inscId: string,
+    body: { nombre?: string; telefono?: string; cancha_asignada?: number },
+  ) =>
+    request<{ ok: boolean; inscripcion: Inscripcion }>(
+      `/admin/inscripciones/${inscId}/inline`,
+      { method: "PATCH", body, auth: true },
+    ),
+  confirmarInscripcionManual: (inscId: string, nota?: string) =>
+    request<{ ok: boolean; confirmada_manualmente?: boolean; ya_aprobada?: boolean }>(
+      `/admin/inscripciones/${inscId}/confirmar-manual`,
+      { method: "POST", body: { nota }, auth: true },
+    ),
   joinWaitlist: (retaId: string, body: { reta_id: string; nombre: string; telefono: string }) =>
     request<WaitlistEntry>(`/public/retas/${retaId}/waitlist`, {
       method: "POST",

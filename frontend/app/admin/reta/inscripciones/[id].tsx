@@ -34,6 +34,7 @@ import {
 
 import { Inscripcion, Reta, api } from "@/src/api";
 import { ImportarJugadoresModal } from "@/src/components/ImportarJugadoresModal";
+import { AdminInscripcionSheet } from "@/src/components/AdminInscripcionSheet";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type EstatusConfirm =
@@ -74,6 +75,8 @@ export default function AdminInscripciones() {
   const [refunding, setRefunding] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  // Fase B — Slide-Over Admin para edición inline
+  const [editing, setEditing] = useState<Inscripcion | null>(null);
 
   const esGratisAmigos = reta?.tipo_acceso === "gratis_amigos";
 
@@ -339,14 +342,25 @@ export default function AdminInscripciones() {
             const isRefunding = refunding === item.id;
             return (
               <View style={styles.row}>
-                <View style={{ flex: 1 }}>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => setEditing(item)}
+                  testID={`row-edit-${item.id}`}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.name}>{item.nombre}</Text>
                   <Text style={styles.meta}>{item.telefono}</Text>
                   <View style={styles.estatusRow}>
                     {info.icon}
                     <Text style={[styles.estatus, { color: info.color }]}>{info.label}</Text>
+                    {(item as any).cancha_asignada ? (
+                      <Text style={styles.canchaTag}>· Cancha {(item as any).cancha_asignada}</Text>
+                    ) : null}
+                    {(item as any).pago_manual ? (
+                      <Text style={styles.manualTag}>· Manual</Text>
+                    ) : null}
                   </View>
-                </View>
+                </TouchableOpacity>
                 {canRefund ? (
                   <TouchableOpacity
                     onPress={() => onRefund(item)}
@@ -376,6 +390,18 @@ export default function AdminInscripciones() {
         visible={importOpen}
         onClose={() => setImportOpen(false)}
         onSuccess={() => void load()}
+      />
+
+      {/* Slide-Over Admin — Fase B: edición inline + confirmar pago manual */}
+      <AdminInscripcionSheet
+        visible={editing != null}
+        inscripcion={editing}
+        canchasDisponibles={Number(reta?.canchas_disponibles || 1)}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          void load();
+        }}
       />
     </SafeAreaView>
   );
@@ -505,6 +531,8 @@ const styles = StyleSheet.create({
   meta: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
   estatusRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   estatus: { fontSize: 11, fontWeight: "700" },
+  canchaTag: { fontSize: 11, fontWeight: "600", color: colors.brand.primary },
+  manualTag: { fontSize: 11, fontWeight: "600", color: "#7C3AED" },
   refundBtn: {
     backgroundColor: colors.status.red, borderRadius: radii.md,
     paddingHorizontal: 12, paddingVertical: 8,

@@ -25,6 +25,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { buildPagoReturnUrl } from "@/src/utils/deepLink";
 import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
+import { LifeBuoySupport } from "@/src/components/LifeBuoySupport";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
@@ -791,6 +792,8 @@ export default function RetaDetailScreen() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+      {/* FAB de soporte (Fase B) — flotante sobre toda la vista */}
+      <LifeBuoySupport slug={String(slug)} retaNombre={reta.nombre} />
     </SafeAreaView>
   );
 }

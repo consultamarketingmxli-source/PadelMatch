@@ -213,6 +213,19 @@ class Inscripcion(BaseModel):
     # intención de ser emparejado por el organizador (bolsa free-agents).
     # Mutuamente excluyente con `pareja_grupo_id` no-null.
     es_free_agent: bool = False
+    # ===== Fase B — Operaciones en Vivo =====
+    # Cancha asignada manualmente por el organizador (admin slide-over).
+    # Nullable: jugador puede estar inscrito sin cancha asignada todavía.
+    cancha_asignada: Optional[int] = None
+    # Marcado a True cuando el jugador (o el organizador) reporta que el
+    # jugador no asistirá. Permite al organizador buscar reemplazo.
+    ausencia_reportada: Optional[bool] = None
+    ausencia_motivo: Optional[str] = None
+    ausencia_reportada_en: Optional[str] = None
+    # Confirmación manual (pago en efectivo o caso especial). Si True, el
+    # pago no pasó por Stripe/MP pero el admin lo marcó como Aprobado.
+    pago_manual: Optional[bool] = None
+    pago_manual_nota: Optional[str] = None
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 
 
