@@ -1,0 +1,36 @@
+{
+  "summary": "Iter26 — Fase 3 (debounce/locks) + Fase 4 (CTAs por ambiente) audit. Backend regression suite 5/5 OK; pytest broader suite 81 pass / 6 fail (failures son PRE-EXISTENTES por validación estricta del formato +521TEST..., NO son regresiones de esta iteración). Frontend: AdminPanicButton FAB visible bottom-right en /admin con 3 atajos (Soporte/Mesa/Nueva) y botón cerrar funcionando; LifeBuoy FAB visible en /retas/[slug]; Button tap-lock de 600ms verificado en login admin (3 clicks rápidos → 1 sola request POST /api/auth/login); saveLock en Mesa de Control verificado (3 clicks rápidos en 'Guardar marcador' → 1 sola POST /api/retas/{id}/resultados); move chips de inscripciones abren modal de confirmación una sola vez con rapid taps. /seleccion hub guard (redirect anon → /login) sigue funcionando. Sin issues nuevos detectados.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "test data fixtures", "issue": "6 pruebas pytest pre-existentes fallan con phone '+521TEST10000001' por validación estricta — no es regresión de esta iteración, ya estaba en iter25."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_regression.py",
+    "/app/test_reports/pytest/iter26_regression.xml"
+  ],
+  "action_items": [
+    "Ninguna acción necesaria para el main agent. La Fase 3 + Fase 4 quedaron implementadas correctamente.",
+    "Sugerencia menor: en /admin/login el botón 'Entrar al panel' no expone testID 'admin-login-submit' (ya señalado en iter25). Mejora testing pero no bloquea funcionalidad."
+  ],
+  "critical_code_review_comments": [
+    "Button.tsx tap-lock con ref+Date.now() en 600ms es la implementación correcta — sincrónica, sin esperar repaint. Bien.",
+    "useSyncLock.ts con Set<string> en ref permite locks por slot/id (útil en listas). Patrón aplicado correctamente en saveScore/deleteScore (resultados/[id].tsx) y onMove/onRefund (inscripciones/[id].tsx).",
+    "AdminPanicButton.tsx y LifeBuoySupport.tsx tienen testIDs adecuados (admin-panic-fab, admin-panic-support/mesa/nueva/close, lifebuoy-fab)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_regression.py (nuevo)"
+  ],
+  "success_rate": {"backend": "100% en suite focalizada de iter26 (5/5). Suite global: 93% (81/87 — 6 fallas pre-existentes).", "frontend": "100% — 4/4 features verificadas: AdminPanicFAB, LifeBuoyFAB, Button tap-lock, saveLock Mesa Control."},
+  "seed_data_creation": "Ninguna creada. Se usó reta existente aeba2d6a-bac7-42c4-b1b6-fa96fef01b1c (5 inscritos, 3 partidos) para validar Mesa de Control.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Para testear /seleccion con admin dual-rol: hacer login en /admin/login primero (admin@padelappretas.com/admin123) y luego navegar manualmente a /seleccion (no funciona como entry-point anónimo). Token admin se guarda en localStorage bajo 'ppos.admin.token' (string crudo, no JSON). Para encontrar el botón 'Entrar al panel' en /admin/login (no tiene testID propio), usar evaluate_handle con filtro por innermost textContent. El admin con dual-rol redirige post-login a /seleccion; desde ahí debe presionarse 'Ingresar como Organizador' para llegar a /admin."
+}

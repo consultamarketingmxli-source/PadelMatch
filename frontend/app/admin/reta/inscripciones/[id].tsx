@@ -37,6 +37,7 @@ import { ImportarJugadoresModal } from "@/src/components/ImportarJugadoresModal"
 import { AdminInscripcionSheet } from "@/src/components/AdminInscripcionSheet";
 import { OfflineQueueBanner } from "@/src/components/OfflineQueueBanner";
 import { useOfflineSync } from "@/src/hooks/useOfflineSync";
+import { useSyncLock } from "@/src/hooks/useSyncLock";
 import { runOrQueue } from "@/src/utils/offlineQueue";
 import { confirmDialog } from "@/src/utils/confirmDialog";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -85,6 +86,11 @@ export default function AdminInscripciones() {
   // Fase C — Cola offline para acciones admin críticas.
   const offline = useOfflineSync();
 
+  // Fase 3 — locks síncronos por inscripción id para impedir doble-tap
+  // disparando dos refunds o dos moves del mismo registro.
+  const refundLock = useSyncLock();
+  const moveLock = useSyncLock();
+
   const esGratisAmigos = reta?.tipo_acceso === "gratis_amigos";
 
   const load = useCallback(async () => {
@@ -125,6 +131,8 @@ export default function AdminInscripciones() {
     });
     if (!ok) return;
     if (!id) return;
+    // Fase 3 — lock síncrono por inscripción para evitar dos refunds.
+    if (!refundLock.tryAcquire(insc.id)) return;
     setRefunding(insc.id);
     try {
       const res = await api.refundInscripcion(id, insc.id);
@@ -137,6 +145,7 @@ export default function AdminInscripciones() {
       Alert.alert("Error", e.message ?? "No se pudo procesar el reembolso");
     } finally {
       setRefunding(null);
+      refundLock.release(insc.id);
     }
   };
 
@@ -146,6 +155,9 @@ export default function AdminInscripciones() {
   // responde 4xx/5xx (error de negocio), se propaga el error normalmente.
   const moveTo = async (insc: AsistenciaItem, target: EstatusConfirm) => {
     if (movingId) return;
+    // Fase 3 — lock síncrono que cierra el gap entre el primer onPress y
+    // el repaint con `movingId` ya seteado.
+    if (!moveLock.tryAcquire(insc.id)) return;
     setMovingId(insc.id);
     // Etiqueta humana para el banner offline.
     const labelMap: Record<EstatusConfirm, string> = {
@@ -184,6 +196,7 @@ export default function AdminInscripciones() {
       Alert.alert("No se pudo cambiar", e.message ?? "Inténtalo de nuevo.");
     } finally {
       setMovingId(null);
+      moveLock.release(insc.id);
     }
   };
 

@@ -18,6 +18,7 @@ import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
 import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
+import { AdminPanicButton } from "@/src/components/AdminPanicButton";
 import { useRequireAdmin } from "@/src/hooks/useRequireAdmin";
 import { clearLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -139,6 +140,10 @@ export default function AdminDashboard() {
           }
         />
       )}
+
+      {/* Fase 4 — Asistente de Operación: botón de pánico flotante.
+          Pasa la primera reta activa como atajo directo a Mesa de Control. */}
+      <AdminPanicButton activeRetaId={retas.length > 0 ? retas[0].id : undefined} />
     </SafeAreaView>
   );
 }

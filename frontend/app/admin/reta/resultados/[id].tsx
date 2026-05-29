@@ -49,6 +49,7 @@ import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { PadelPalaIcon } from "@/src/components/PadelPalaIcon";
 import { FixtureMetadataBadge } from "@/src/components/FixtureMetadataBadge";
 import { RecalcularRondasModal } from "@/src/components/RecalcularRondasModal";
+import { useSyncLock } from "@/src/hooks/useSyncLock";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Slot = {
@@ -80,6 +81,11 @@ export default function CapturarResultados() {
   const [loading, setLoading] = useState(true);
   const [canchaActiva, setCanchaActiva] = useState(1);
   const [recalcularVisible, setRecalcularVisible] = useState(false);
+
+  // Auditoría Routing — Fase 3: lock síncrono por partido para prevenir
+  // que un doble-tap rápido cree dos resultados (race entre setState y repaint).
+  const saveLock = useSyncLock();
+  const deleteLock = useSyncLock();
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -170,6 +176,9 @@ export default function CapturarResultados() {
   ) => {
     if (!id) return;
     const k = keyFor(cancha, ronda, idx);
+    // Fase 3 — lock síncrono: si ya hay un guardado en vuelo para este slot,
+    // descarta el segundo tap antes de tocar setState (que es async).
+    if (!saveLock.tryAcquire(k)) return;
     const cur = slots[k];
     if (!cur || cur.a === "" || cur.b === "") {
       setSlots((s) => ({
@@ -179,6 +188,7 @@ export default function CapturarResultados() {
           error: "Ingresa la puntuación de ambas parejas para procesar la ronda",
         },
       }));
+      saveLock.release(k);
       return;
     }
     setSlots((s) => ({ ...s, [k]: { ...cur, saving: true, error: null } }));
@@ -209,6 +219,8 @@ export default function CapturarResultados() {
         ...s,
         [k]: { ...cur, saving: false, error: e.message ?? "No se pudo guardar" },
       }));
+    } finally {
+      saveLock.release(k);
     }
   };
 
@@ -225,6 +237,8 @@ export default function CapturarResultados() {
           text: "Eliminar",
           style: "destructive",
           onPress: async () => {
+            // Fase 3 — lock síncrono por slot para borrado.
+            if (!deleteLock.tryAcquire(k)) return;
             try {
               await api.deleteResultado(id, slot.resultId!);
               setSlots((s) => {
@@ -234,6 +248,8 @@ export default function CapturarResultados() {
               });
             } catch (e: any) {
               Alert.alert("Error", e.message ?? "No se pudo eliminar");
+            } finally {
+              deleteLock.release(k);
             }
           },
         },

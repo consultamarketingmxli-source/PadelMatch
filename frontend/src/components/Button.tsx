@@ -1,7 +1,18 @@
-import React from "react";
+import React, { useCallback, useRef } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextStyle, TouchableOpacity, View } from "react-native";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
+
+/**
+ * Auditoría Routing — Fase 3: Debounce universal en CTAs.
+ *
+ * Tap-lock síncrono (ref) que previene el clásico "doble click" que dispara
+ * dos requests HTTP idénticos. React `setState(loading=true)` es async, así
+ * que entre el primer onPress y el repaint con `disabled=true` existe una
+ * ventana de ~16-100ms donde un segundo tap llega antes de que React lo
+ * pinte deshabilitado. Esta ref cierra esa ventana sincrónicamente.
+ */
+const TAP_LOCK_MS = 600;
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size = "md" | "lg";
@@ -41,6 +52,19 @@ export function Button({
   const labelStyle: TextStyle =
     size === "lg" ? (typography.buttonLg as TextStyle) : (typography.button as TextStyle);
 
+  // Tap-lock síncrono. Si el caller pasa `loading=true`, ya está protegido,
+  // pero entre la primera invocación y el siguiente repaint (~16-100ms) un
+  // segundo tap puede colarse. Esta ref bloquea esa ventana.
+  const lastPressRef = useRef(0);
+  const handlePress = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPressRef.current < TAP_LOCK_MS) {
+      return;
+    }
+    lastPressRef.current = now;
+    onPress();
+  }, [onPress]);
+
   // Color del isotipo según variante (sobre fondo claro queremos color de marca,
   // sobre fondo emerald queremos blanco).
   const brandIconVariant = variant === "primary" || variant === "danger" ? "mono" : "default";
@@ -49,7 +73,7 @@ export function Button({
   return (
     <TouchableOpacity
       testID={testID}
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled || loading}
       activeOpacity={0.85}
       style={[
