@@ -420,8 +420,9 @@ const styles = StyleSheet.create({
   leaderBadgeText: { color: "#fff", fontWeight: "900", fontSize: 11 },
   nameText: { color: colors.text.primary, fontWeight: "700", fontSize: 13 },
   monoText: {
-    color: colors.text.primary,
+    color: colors.text.dataMono,
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontVariant: ["tabular-nums"],
   },
 
   // ===== Empty =====

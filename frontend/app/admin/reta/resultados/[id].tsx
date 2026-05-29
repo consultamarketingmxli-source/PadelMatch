@@ -608,7 +608,9 @@ const styles = StyleSheet.create({
   scoreInput: {
     width: 56, height: 56, textAlign: "center",
     borderWidth: 2, borderColor: colors.border.default, borderRadius: radii.md,
-    fontSize: 24, fontWeight: "900", color: colors.text.primary,
+    // Tipografía mono — spec del Director de Arte para marcadores.
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontSize: 24, fontWeight: "900", color: colors.text.dataMono,
     backgroundColor: colors.bg.elevated,
   },
   scoreInputInvalid: { borderColor: colors.status.amber, backgroundColor: "#FFF8E1" },

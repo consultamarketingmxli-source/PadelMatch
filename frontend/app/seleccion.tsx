@@ -5,13 +5,16 @@
  *
  *   Login (OTP/Email) ─→ /seleccion ─→ {/admin | /}
  *
- * Diseño (per spec del usuario, referencia image_c8e019.png):
- *   • Top block: bg-slate-50 (#F8FAFC), isotipo PadelAppRetas centrado,
+ * Diseño v3 — Blue Club Pro (Director de Arte):
+ *   • Top block: bg-slate-50 (#F8FAFC), BrandLockup PadelAppRetas centrado,
  *     tagline minimalista, dos CTAs grandes con micro-interacciones.
- *   • Botón Organizador: bg-slate-900, text-white → `/admin`.
- *   • Botón Jugador:     bg-emerald-600, text-white → `/`.
- *   • Bottom block: foto angular de cancha de pádel (continuidad con
- *     /admin/login), gradient mask top→transparent.
+ *   • Botón Organizador: bg-slate-900, text-white → `/admin` (corporativo).
+ *   • Botón Jugador:     bg-emerald-600, text-white → `/` (intencional —
+ *     conserva esmeralda como contrapeso visual al cobalto del organizador,
+ *     spec del Director de Arte: "el verde puede mantenerse para los CTAs
+ *     del jugador como acento de semáforo positivo").
+ *   • Bottom block: foto angular de cancha de pádel AZUL VIBRANTE
+ *     (Blue Club Pro v3), gradient mask top→transparent.
  *
  * Reglas de redirección:
  *   • Si el usuario no es organizador, NUNCA llegamos aquí (saltamos
