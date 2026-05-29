@@ -78,30 +78,47 @@ limiter = Limiter(
 #   • Permissions-Policy         — limita APIs sensibles del navegador
 #   • X-Padelapp-Request-Id      — correlación con audit_log
 # ──────────────────────────────────────────────────────────────────
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # Genera un request id correlable para auditoría/errores
+class SecurityHeadersMiddleware:
+    """Pure ASGI: añade headers de seguridad sin usar BaseHTTPMiddleware
+    (que tiene un bug conocido con `Content-Length` en streaming responses,
+    generando `h11.LocalProtocolError: Too much data for declared Content-Length`).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        from starlette.datastructures import MutableHeaders
+
         request_id = uuid.uuid4().hex[:16]
-        request.state.request_id = request_id
+        # Inyecta el request_id en el state (request.state.request_id desde handlers).
+        state = scope.setdefault("state", {})
+        state["request_id"] = request_id
+        method = scope.get("method", "GET")
 
-        response = await call_next(request)
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                if IS_PROD:
+                    headers["strict-transport-security"] = (
+                        "max-age=15552000; includeSubDomains"
+                    )
+                headers["x-content-type-options"] = "nosniff"
+                headers["x-frame-options"] = "DENY"
+                headers["referrer-policy"] = "strict-origin-when-cross-origin"
+                headers["permissions-policy"] = (
+                    "camera=(), microphone=(), geolocation=(self), payment=(self)"
+                )
+                headers["x-padelapp-request-id"] = request_id
+                if method != "GET":
+                    headers["cache-control"] = "no-store"
+            await send(message)
 
-        if IS_PROD:
-            # HSTS: 6 meses + incluye subdominios (Apple/Apple Search también lo exigen)
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=15552000; includeSubDomains"
-            )
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(self), payment=(self)"
-        )
-        response.headers["X-Padelapp-Request-Id"] = request_id
-        # Nunca cachear respuestas autenticadas/mutables
-        if request.method != "GET":
-            response.headers["Cache-Control"] = "no-store"
-        return response
+        await self.app(scope, receive, send_wrapper)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -355,8 +372,9 @@ def _decode_jwt_safe(token: str) -> Optional[dict]:
         return None
 
 
-class AdminMutationAuditMiddleware(BaseHTTPMiddleware):
-    """Audit log automático de mutaciones admin (compliance / GDPR)."""
+class AdminMutationAuditMiddleware:
+    """Pure ASGI: audit log automático de mutaciones admin (compliance / GDPR).
+    Sin BaseHTTPMiddleware para evitar bugs h11 con Content-Length."""
 
     # Normaliza UUIDs / IDs alfanuméricos largos a `:id` para no explotar
     # la cardinalidad de la columna `accion` en `security_logs`.
@@ -374,39 +392,58 @@ class AdminMutationAuditMiddleware(BaseHTTPMiddleware):
             out = pat.sub("/:id", out)
         return out
 
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        # Sólo después de la respuesta, para no impactar latencia.
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        status_code: list[int] = [200]
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_code[0] = int(message.get("status", 200) or 200)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        # Audit log post-respuesta (fire-and-forget; no impacta latencia del cliente).
         try:
+            method = scope.get("method", "")
+            path = scope.get("path", "") or ""
             if (
-                request.method in ("POST", "PUT", "PATCH", "DELETE")
-                and any(request.url.path.startswith(p) for p in _AUDIT_MUTATION_PREFIXES)
-                and not any(request.url.path.endswith(s) for s in _AUDIT_SKIP_SUFFIXES)
+                method in ("POST", "PUT", "PATCH", "DELETE")
+                and any(path.startswith(p) for p in _AUDIT_MUTATION_PREFIXES)
+                and not any(path.endswith(s) for s in _AUDIT_SKIP_SUFFIXES)
             ):
-                auth_hdr = request.headers.get("authorization") or ""
+                headers = {
+                    k.decode("latin-1").lower(): v.decode("latin-1")
+                    for k, v in scope.get("headers", [])
+                }
+                auth_hdr = headers.get("authorization") or ""
                 if auth_hdr.lower().startswith("bearer "):
                     token = auth_hdr.split(" ", 1)[1].strip()
                     payload = _decode_jwt_safe(token)
                     if payload and payload.get("role") == "admin":
-                        result = (
-                            "success" if response.status_code < 400 else "denied"
-                        )
-                        norm_path = self._normalize_path(request.url.path)
+                        from starlette.requests import Request as _StarReq
+
+                        _req = _StarReq(scope)
+                        result = "success" if status_code[0] < 400 else "denied"
+                        norm_path = self._normalize_path(path)
                         await write_security_log(
-                            accion=f"admin_{request.method.lower()}_{norm_path}",
-                            request=request,
+                            accion=f"admin_{method.lower()}_{norm_path}",
+                            request=_req,
                             id_usuario=payload.get("sub"),
                             result=result,
                             extra={
-                                "status": response.status_code,
-                                "raw_path": request.url.path,
+                                "status": status_code[0],
+                                "raw_path": path,
                             },
                         )
         except Exception as e:
             logger.debug("[audit-middleware] skip: %s", e)
-
-        return response
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -420,14 +457,23 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
         result="rate_limited",
         extra={"limit": str(exc.detail)},
     )
-    response = _rate_limit_exceeded_handler(request, exc)
+    # Generamos respuesta nuestra desde cero — NO heredamos headers de slowapi
+    # porque incluyen un `Content-Length` calculado para SU body, no el nuestro
+    # (provocaba `h11.LocalProtocolError: Too much data for declared Content-Length`).
+    # Sólo nos quedamos con los headers útiles: Retry-After + X-RateLimit-*.
+    upstream = _rate_limit_exceeded_handler(request, exc)
+    forward_headers = {
+        k: v
+        for k, v in upstream.headers.items()
+        if k.lower() in {"retry-after", "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset"}
+    }
     return JSONResponse(
-        status_code=response.status_code,
+        status_code=upstream.status_code,
         content={
             "detail": "Demasiados intentos. Por favor espera unos minutos antes de volver a intentar.",
             "retry_after_seconds": 60,
         },
-        headers=dict(response.headers),
+        headers=forward_headers,
     )
 
 
@@ -446,9 +492,13 @@ def install_security(app: FastAPI) -> None:
     """
 
     # 1. Rate limiter (slowapi) — primer middleware añadido = más interno.
+    #    NO instalamos `SlowAPIMiddleware` porque usa `BaseHTTPMiddleware` internamente
+    #    y dispara `h11.LocalProtocolError: Too much data for declared Content-Length`
+    #    al re-streamear respuestas. Como `headers_enabled=False` y los rate limits
+    #    se aplican vía decorador `@limiter.limit()` por endpoint, el middleware es
+    #    redundante. La excepción `RateLimitExceeded` se captura abajo.
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore[arg-type]
-    app.add_middleware(SlowAPIMiddleware)
 
     # 2. Audit log automático de mutaciones admin (Ola B).
     app.add_middleware(AdminMutationAuditMiddleware)

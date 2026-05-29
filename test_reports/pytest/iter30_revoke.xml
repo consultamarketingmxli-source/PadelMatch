@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.084" timestamp="2026-05-29T21:21:00.415530+00:00" hostname="agent-env-6fcfc196-e04f-4efe-af9a-ddc6fdde71ea"><testcase classname="" name="backend.tests.test_iter30_revoke_jwt" time="0.000"><error message="collection failure">backend/tests/test_iter30_revoke_jwt.py:23: in &lt;module&gt;
+    BASE_URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen os&gt;:679: in __getitem__
+    ???
+E   KeyError: 'EXPO_PUBLIC_BACKEND_URL'</error></testcase></testsuite></testsuites>

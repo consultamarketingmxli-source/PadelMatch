@@ -215,6 +215,42 @@ async def logout(request: Request, response: Response):
     return {"ok": True}
 
 
+@router.post("/revoke-all-sessions")
+async def revoke_all_sessions(request: Request, response: Response):
+    """Cierra sesión en TODOS los dispositivos del usuario actual.
+
+    Identifica al usuario por el access token Bearer en `Authorization`.
+    No requiere refresh token (útil cuando el usuario perdió un dispositivo
+    y sólo tiene acceso desde otro). Funciona para admin Y player.
+    """
+    auth_hdr = request.headers.get("authorization") or ""
+    if not auth_hdr.lower().startswith("bearer "):
+        raise HTTPException(401, "Missing token")
+    token = auth_hdr.split(" ", 1)[1].strip()
+
+    import jwt as _jwt
+    from auth import JWT_ALG, JWT_SECRET
+
+    try:
+        payload = _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except _jwt.PyJWTError:
+        raise HTTPException(401, "Invalid token")
+
+    user_id = payload.get("sub") or ""
+    role = payload.get("role") or "?"
+    revoked = await revoke_all_user_tokens(db, user_id)
+    _clear_refresh_cookie(response)
+
+    await write_security_log(
+        accion="revoke_all_sessions",
+        request=request,
+        id_usuario=user_id,
+        result="success",
+        extra={"role": role, "tokens_revoked": revoked},
+    )
+    return {"ok": True, "sessions_revoked": revoked}
+
+
 @router.get("/me")
 async def me(current=Depends(get_current_admin)):
     return {"email": current["sub"], "role": current["role"]}

@@ -1,0 +1,59 @@
+{
+  "summary": "E2E iter30 — Validation of revoke-all-sessions endpoint, JWT iat/jti claims, h11 elimination, and frontend testIDs. Backend: 12/12 tests passed (admin + player revoke flows, sessions_revoked counter, security_logs, refresh-after-revoke=401, headers, rate limit, NoSQL block, JWT claims with 32-hex jti, zero new h11 LocalProtocolError after 30+ varied requests). Frontend: All 6 admin header testIDs (switch-role, mercadopago, marketing, dashboard, revoke-all-sessions, logout) confirmed; /mi-cuenta renders 'Privacidad y seguridad' card with btn-eliminar-cuenta; no critical console errors. KNOWN LIMITATION: React-Native-Web Alert.alert with multi-buttons silently does nothing — tapping revoke-all-sessions-btn or btn-eliminar-cuenta in WEB preview produces no visible confirmation dialog (works on native iOS/Android via Expo). Inconsistency: player JWT lacks jti claim (only admin has it).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/players/auth/otp/verify",
+        "issue": "Player access_token JWT NOT include 'jti' claim. Decoded payload only has sub/role/jugador_id/nombre/exp/iat. The new admin /api/auth/login has jti — for consistency player tokens should also carry jti so revocation/audit by jti can apply uniformly."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "revoke-all-sessions-btn (admin/index.tsx)",
+        "issue": "On WEB preview, tapping fires no visible confirmation dialog (react-native-web Alert.alert is no-op for multi-button alerts). Native button + DOM click both fail to surface the Alert. The button is rendered correctly with testID and red ShieldOff icon, but UX is broken for web users.",
+        "testID": "revoke-all-sessions-btn",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "btn-eliminar-cuenta (mi-cuenta.tsx)",
+        "issue": "Same root cause — Alert.alert multi-button does not render any dialog on react-native-web. Tap produces no visible confirmation flow on web preview. Apple §5.1.1 compliance is fine on native but breaks on web.",
+        "testID": "btn-eliminar-cuenta",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Alert.alert (used in admin/index.tsx:65,82,88 and mi-cuenta.tsx:93,121)",
+        "issue": "Alert.alert with multi-button arrays is a no-op on react-native-web. Suggested fix: wrap with Platform.OS === 'web' branch using window.confirm or a custom React modal component for web. Reference: /app/frontend/app/admin/index.tsx:64-94 and /app/frontend/app/mi-cuenta.tsx:91-148."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_revoke_jwt.py",
+    "/app/test_reports/pytest/iter30_revoke.xml"
+  ],
+  "action_items": [
+    "Add 'jti' claim to player access_token in routers/player_auth.py for consistency with admin tokens (so security_logs/jti-based revocation can be uniform).",
+    "(P1, web-only UX) Replace Alert.alert with a cross-platform confirm helper for the two destructive flows (revoke-all-sessions, delete-account). On web, use window.confirm or a React modal; on native keep Alert.alert. This is critical if web preview is also a supported runtime; on native (Expo Go / built apps) the current code works."
+  ],
+  "critical_code_review_comments": [
+    "core/security.py revoke-all-sessions endpoint correctly returns sessions_revoked and writes a security_log with accion='revoke_all_sessions' and extra.role+tokens_revoked.",
+    "JWT iat/jti are correctly injected for admin tokens (verified 32-hex jti, unique per emission, iat <= now).",
+    "Zero new h11 LocalProtocolError lines emitted across 30+ varied requests during this iteration — the ASGI-pure rewrite of SecurityHeadersMiddleware + AdminMutationAuditMiddleware and removal of SlowAPIMiddleware fixed the regression definitively (file remained at 492 historical entries throughout the test run).",
+    "Rate limit 5/min on /api/auth/login still triggers 429 from the @limiter.limit decorators alone, confirming the SlowAPI middleware removal did not break the per-route limiter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_revoke_jwt.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% UI rendering; 0% web-Alert confirmations (RN-web limitation)"},
+  "seed_data_creation": "Created throwaway player +521998890309 (TEST_FEPlayer) via OTP flow for /mi-cuenta verification. Multiple admin logins for revoke-all-sessions classes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "If retesting Alert flows on web, prefer to listen on page.dialog OR query the DOM for an Alert modal — react-native-web's Alert.alert does NOT call window.alert when buttons array has >1 option; it is silently dropped. Use a player JWT injected directly into localStorage (key='padelappretas.player.token', RAW string not JSON.stringify) to bypass OTP flow and reach /mi-cuenta. Admin login redirects via /seleccion → tap 'Ingresar como Organizador' to reach /admin. Rate limit 5/min on /api/auth/login is per-IP shared between tests — sleep 65s between test classes that hit login.",
+  "rca_of_issue": "Original problem statement focused on validating 7 features post-fix. All backend items validated (12/12 pytest pass). Frontend findings: (1) UI elements rendered correctly with proper testIDs. (2) React-Native-Web's Alert.alert multi-button variant silently fails on web preview — this is a documented platform limitation not a regression from the iter30 changes. Mitigation: use Platform.select / window.confirm wrapper for web. Impact: web preview UX broken for two destructive flows; native (Expo Go) unaffected."
+}

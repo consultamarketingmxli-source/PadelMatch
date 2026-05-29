@@ -504,6 +504,31 @@ export const api = {
     await storage.secureRemove(TOKEN_KEY);
     await setRefreshToken(null);
   },
+
+  /**
+   * Cierra sesión en TODOS los dispositivos del usuario (admin o player).
+   * Revoca todos los refresh tokens en backend + limpia almacenamiento local.
+   * Funciona con cualquier access token Bearer válido (admin o player).
+   */
+  async revokeAllSessions(accessToken: string) {
+    const r = await request<{ ok: boolean; sessions_revoked: number }>(
+      "/auth/revoke-all-sessions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+    // Limpieza local completa.
+    await storage.secureRemove(TOKEN_KEY);
+    await setRefreshToken(null);
+    try {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+    } catch {
+      /* no-op */
+    }
+    return r;
+  },
   async getToken() {
     return (await storage.secureGet<string>(TOKEN_KEY, "")) || null;
   },

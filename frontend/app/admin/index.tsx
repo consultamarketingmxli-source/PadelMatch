@@ -2,6 +2,7 @@
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -11,9 +12,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { BarChart3, Gift, LogOut, Plus, Repeat, Wallet } from "lucide-react-native";
+import { BarChart3, Gift, LogOut, Plus, Repeat, ShieldOff, Wallet } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
+import { storage } from "@/src/utils/storage";
 import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
 import { BrandHeader } from "@/src/components/BrandHeader";
@@ -54,6 +56,43 @@ export default function AdminDashboard() {
     router.replace("/admin/login");
   };
 
+  /**
+   * Cierra sesión en TODOS los dispositivos del admin actual.
+   * Revoca todos los refresh tokens en backend. Cualquier sesión activa
+   * (incluso esta) quedará invalidada al expirar su access token (15min).
+   */
+  const revokeAllSessions = async () => {
+    Alert.alert(
+      "Cerrar sesión global",
+      "Vas a cerrar sesión en TODOS los dispositivos donde ingresaste con esta cuenta de admin. Los tokens activos se invalidarán automáticamente en máximo 15 minutos.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Cerrar todo",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await storage.secureGet<string>("ppos.admin.token", "");
+              if (!token) {
+                router.replace("/admin/login");
+                return;
+              }
+              const r = await api.revokeAllSessions(token);
+              await clearLastRole();
+              Alert.alert(
+                "Sesiones cerradas",
+                `Se cerraron ${r.sessions_revoked} sesiones activas. Inicia sesión nuevamente.`,
+                [{ text: "OK", onPress: () => router.replace("/admin/login") }],
+              );
+            } catch {
+              Alert.alert("Error", "No se pudo cerrar las sesiones. Intenta más tarde.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load();
@@ -87,6 +126,14 @@ export default function AdminDashboard() {
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push("/admin/dashboard" as any)} style={styles.iconBtn} testID="dashboard-btn">
               <BarChart3 size={18} color={colors.brand.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={revokeAllSessions}
+              style={styles.iconBtn}
+              testID="revoke-all-sessions-btn"
+              accessibilityLabel="Cerrar sesión en todos los dispositivos"
+            >
+              <ShieldOff size={18} color={colors.status.red} />
             </TouchableOpacity>
             <TouchableOpacity onPress={logout} style={styles.iconBtn} testID="logout-btn">
               <LogOut size={18} color={colors.status.red} />
