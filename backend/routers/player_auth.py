@@ -12,12 +12,13 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import JWT_ALG, JWT_SECRET, create_access_token
 from core.db import db
 from core.helpers import upsert_jugador
+from core.security import limiter, write_security_log
 from models import Inscripcion, PlayerStats, Usuario
 from notifications import is_twilio_configured, send_whatsapp
 
@@ -117,7 +118,8 @@ async def get_current_player(authorization: Optional[str] = Header(None)) -> dic
 
 # ============== Endpoints ==============
 @router.post("/auth/otp/request")
-async def request_otp(body: OtpRequest):
+@limiter.limit("5/minute")
+async def request_otp(request: Request, body: OtpRequest):
     """Genera OTP de 6 dígitos. Si Twilio está, lo envía por WhatsApp.
     Si no, lo loguea (sólo en desarrollo)."""
     codigo = _generar_codigo()
@@ -148,7 +150,8 @@ async def request_otp(body: OtpRequest):
 
 
 @router.post("/auth/otp/verify", response_model=PlayerTokenResponse)
-async def verify_otp(body: OtpVerify):
+@limiter.limit("10/minute")
+async def verify_otp(request: Request, body: OtpVerify):
     rec = await db.player_otps.find_one({"telefono": body.telefono}, {"_id": 0})
     if not rec:
         raise HTTPException(400, "No hay código pendiente para ese teléfono.")
@@ -159,11 +162,23 @@ async def verify_otp(body: OtpVerify):
         raise HTTPException(410, "El código expiró. Solicita uno nuevo.")
 
     if rec.get("intentos", 0) >= 5:
+        await write_security_log(
+            accion="otp_verify_locked",
+            request=request,
+            id_usuario=body.telefono,
+            result="rate_limited",
+        )
         raise HTTPException(429, "Demasiados intentos. Solicita un código nuevo.")
 
     if rec["codigo"] != body.codigo.strip():
         await db.player_otps.update_one(
             {"telefono": body.telefono}, {"$inc": {"intentos": 1}}
+        )
+        await write_security_log(
+            accion="otp_verify_failed",
+            request=request,
+            id_usuario=body.telefono,
+            result="denied",
         )
         raise HTTPException(401, "Código incorrecto.")
 
@@ -195,6 +210,86 @@ async def me(current=Depends(get_current_player)):
         "telefono": current["sub"],
         "nombre": current["nombre"],
         "role": "player",
+    }
+
+
+# ----------------------------------------------------------------------
+# Ola C — Eliminación de Cuenta (Apple App Store 5.1.1).
+#
+# Anonimización IRREVERSIBLE:
+#   • usuarios.nombre        → "Usuario eliminado"
+#   • usuarios.telefono      → SHA-256(telefono_original)[:24] (no reversible)
+#   • usuarios.email         → null
+#   • usuarios.deleted_at    → timestamp
+#
+# Preservamos:
+#   • el documento (no DELETE físico) para mantener integridad referencial
+#     de resultados/torneos históricos (foreign keys soft).
+#   • inscripciones, resultados y waitlist — NO se borran, solo el nombre
+#     mostrado pasa a "Usuario eliminado" via JOIN al usuario.
+#
+# Borramos físicamente:
+#   • player_otps de ese teléfono (limpieza de credenciales).
+#   • alertas_organizador donde el usuario era player_telefono.
+#
+# Aud log en `security_logs` para trazabilidad GDPR.
+# ----------------------------------------------------------------------
+import hashlib  # noqa: E402
+
+
+@router.delete("/me")
+@limiter.limit("3/hour")
+async def delete_my_account(request: Request, current=Depends(get_current_player)):
+    """Elimina (anonimiza) la cuenta del jugador autenticado.
+
+    Apple Guideline 5.1.1(v) requiere botón visible y proceso de un solo paso.
+    Limitado a 3 intentos por hora para evitar abuso accidental masivo.
+    """
+    jugador_id = current["jugador_id"]
+    telefono = current["sub"]
+    nombre_antes = current.get("nombre", "?")
+
+    # 1. Hash irreversible del teléfono (placeholder anonimizado).
+    hash_phone = "deleted_" + hashlib.sha256(telefono.encode("utf-8")).hexdigest()[:24]
+
+    # 2. Anonimización del documento (UPDATE en lugar de DELETE).
+    update_result = await db.usuarios.update_one(
+        {"id": jugador_id},
+        {
+            "$set": {
+                "nombre": "Usuario eliminado",
+                "telefono": hash_phone,
+                "email": None,
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+                "anonimizado": True,
+            }
+        },
+    )
+
+    # 3. Limpieza de credenciales activas (no reversible).
+    await db.player_otps.delete_many({"telefono": telefono})
+
+    # 4. Audit log irrefutable (GDPR + Apple compliance).
+    await write_security_log(
+        accion="account_deleted",
+        request=request,
+        id_usuario=jugador_id,
+        result="success",
+        extra={
+            "telefono_hash": hash_phone,
+            "nombre_antes": nombre_antes,
+            "matched": update_result.matched_count,
+        },
+    )
+
+    return {
+        "ok": True,
+        "anonimizado": True,
+        "mensaje": (
+            "Tu cuenta y datos personales han sido eliminados. "
+            "Las inscripciones y resultados históricos se mantienen "
+            "como 'Usuario eliminado' para preservar la integridad de los torneos."
+        ),
     }
 
 

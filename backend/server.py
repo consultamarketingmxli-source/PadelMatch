@@ -15,6 +15,7 @@ from auth import hash_password
 from core.db import close as close_db
 from core.db import seed_admin_if_needed, setup_indexes
 from core.helpers import cronjob_expirar_bloqueos, cronjob_recordatorios
+from core.security import install_security
 from routers.admin_dashboard import router as admin_dashboard_router
 from routers.cupones import router_admin as cupones_admin_router
 from routers.cupones import router_cancel as cupones_cancel_router
@@ -47,6 +48,10 @@ logging.basicConfig(
 logger = logging.getLogger("padelappretas-os")
 
 app = FastAPI(title="PadelappRetas API")
+
+# ============== Seguridad (Ola A): Headers + Rate Limit + Errores Genéricos ==============
+install_security(app)
+
 api = APIRouter(prefix="/api")
 
 # Incluir todos los routers bajo /api

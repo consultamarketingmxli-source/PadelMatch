@@ -41,12 +41,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth import get_current_admin
 from core.concurrency import liberar_lugar, reservar_lugar_atomico
 from core.db import db
 from core.helpers import promover_lista_espera
+from core.security import limiter, write_security_log
 from models import (
     Cupon,
     CuponCheckoutRequest,
@@ -269,13 +270,23 @@ async def _validar_cupon_para_reta(codigo: str, reta: dict) -> CuponValidateResp
 
 
 @router_public.post("/{reta_id}/cupon/validar", response_model=CuponValidateResponse)
-async def validar_cupon(reta_id: str, body: CuponValidateRequest):
+@limiter.limit("10/minute")
+async def validar_cupon(request: Request, reta_id: str, body: CuponValidateRequest):
     """Pre-check sin consumir. Devuelve `valido` + `razon` legible si no.
 
+    Rate limit 10/min para evitar brute-force de códigos promocionales.
     Tampoco valida cupos (eso es chequeo soft). El check duro se hace al canjear.
     """
     reta = await _get_reta_or_404(reta_id)
-    return await _validar_cupon_para_reta(body.codigo, reta)
+    result = await _validar_cupon_para_reta(body.codigo, reta)
+    if not result.valido:
+        await write_security_log(
+            accion="cupon_validar_failed",
+            request=request,
+            result="denied",
+            extra={"codigo": body.codigo[:20], "razon": result.razon, "reta_id": reta_id},
+        )
+    return result
 
 
 @router_public.post("/{reta_id}/cupon/canjear", response_model=CuponCheckoutResponse)

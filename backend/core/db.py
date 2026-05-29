@@ -90,6 +90,18 @@ async def setup_indexes() -> None:
     except Exception:
         pass
 
+    # === Security Audit Log (Ola B — DevSecOps) ===
+    # TTL 365 días + índices por acción/usuario/timestamp.
+    try:
+        await db.security_logs.create_index(
+            "timestamp", expireAfterSeconds=365 * 24 * 60 * 60
+        )
+        await db.security_logs.create_index([("accion", ASCENDING), ("timestamp", -1)])
+        await db.security_logs.create_index([("id_usuario", ASCENDING), ("timestamp", -1)])
+        await db.security_logs.create_index([("result", ASCENDING), ("timestamp", -1)])
+    except Exception:
+        pass
+
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})
