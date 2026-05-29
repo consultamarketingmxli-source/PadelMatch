@@ -489,3 +489,80 @@ agent_communication:
         
         Credenciales admin (no necesarias para esto): admin@padelappretas.com / admin123.
         Datos seed: existen al menos "Reta Demo" (Padel Club CDMX) y "Reta MP Test" (Club Test).
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Iter 29 — MÓDULO DE SEGURIDAD ABSOLUTA (Apple App Store §5)
+# ─────────────────────────────────────────────────────────────────────
+backend:
+  - task: "Wave A — HSTS + Security Headers + Rate Limiting (slowapi)"
+    implemented: true
+    working: true
+    file: "/app/backend/core/security.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Verified: strict-transport-security, x-frame-options=DENY, x-content-type-options=nosniff, referrer-policy. Rate limit 5/min en /auth/login y /players/auth/otp/* (slowapi)."
+
+  - task: "Wave B — Admin Mutation Audit Middleware automático"
+    implemented: true
+    working: true
+    file: "/app/backend/core/security.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Auto-loguea POST/PUT/PATCH/DELETE en /api/admin|retas|cupones|auth con id_usuario, IP, UA, status; UUIDs normalizados a :id. Action keys = admin_login_success, admin_login_failed, admin_{method}_{path}, etc."
+
+  - task: "Wave C — Apple 5.1.1 Account Deletion (anonimización)"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/player_auth.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "DELETE /api/players/me anonimiza: nombre='Usuario eliminado', email=null, telefono=hash SHA256, anonimizado=true. Documento NO se elimina (preserva histórico). Refresh tokens del usuario revocados. Rate limited 3/hour."
+
+  - task: "Wave D — NoSQL Injection Sanitizer + MP webhook signature"
+    implemented: true
+    working: true
+    file: "/app/backend/core/security.py /app/backend/routers/mercadopago.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "ASGI middleware bloquea payloads con $-operators y dotted keys (recursivo, hasta 8 niveles). 400 INVALID_PAYLOAD + audit. Skips: /api/webhooks/* y /api/public/retas/*. MP webhook valida HMAC-SHA256 si MP_WEBHOOK_SECRET configurado."
+
+  - task: "Wave E — JWT 15min + Refresh Tokens híbridos"
+    implemented: true
+    working: true
+    file: "/app/backend/core/refresh_tokens.py /app/backend/routers/auth_router.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Access 15min (con iat+jti). Refresh 30d, opaque token, SHA256 en DB. Híbrido: native=JSON+X-Refresh-Token header, web=cookie HttpOnly+Secure+SameSite=Strict. Rotación obligatoria + REUSE detection (revoca TODOS los tokens del usuario). TTL index sobre expires_at. Logout idempotente. Auto-refresh con mutex en frontend api.ts."
+
+frontend:
+  - task: "Auto-refresh JWT (mutex + queue) en src/api.ts"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/api.ts"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Mutex _refreshInFlight previene N llamadas paralelas a /auth/refresh ante 401. Stores refresh_token en SecureStore (native). En web usa credentials:'include' para cookie HttpOnly. Fallback a authExpired event si refresh falla."
+
+  - task: "Botón 'Eliminar mi cuenta' en /mi-cuenta (Apple 5.1.1)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/mi-cuenta.tsx"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Tarjeta roja visible 'Privacidad y seguridad'. Doble confirmación (anti-tap accidental). Llama playerDeleteMyAccount + limpia almacenamiento + redirect a home."
+
+metadata:
+  iteration: 29
+  test_report: "/app/test_reports/iteration_29.json"
+  test_file: "/app/backend/tests/test_iter29_security_olas.py"
+  total_tests: 30
+  passed: 30
+  failed: 0

@@ -40,8 +40,18 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str, role: str = "admin") -> str:
-    exp = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXP_MIN)
-    payload = {"sub": subject, "role": role, "exp": exp}
+    import uuid
+
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(minutes=ACCESS_TOKEN_EXP_MIN)
+    # iat + jti — trazabilidad y unicidad token-per-issue.
+    payload = {
+        "sub": subject,
+        "role": role,
+        "exp": exp,
+        "iat": now,
+        "jti": uuid.uuid4().hex,
+    }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
