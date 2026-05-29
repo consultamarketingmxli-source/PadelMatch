@@ -198,6 +198,71 @@ async def me(current=Depends(get_current_player)):
     }
 
 
+# ----------------------------------------------------------------------
+# Auditoría Routing — Bifurcación inteligente Organizador / Jugador.
+#
+# Determina los roles del usuario autenticado por OTP:
+#   • is_player        → siempre True (autenticado por OTP)
+#   • is_organizer     → True si su teléfono aparece como `organizador_telefono`
+#                         en ≥1 reta, o como `owner_telefono` en ≥1 club,
+#                         o está en la lista SUPER_ADMIN_TELEFONOS env.
+#   • is_super_admin   → True si su teléfono está en SUPER_ADMIN_TELEFONOS.
+#
+# Esto habilita la pantalla `/seleccion` (Hub Bifurcación) y el "salto
+# inteligente" cuando el usuario es estrictamente jugador.
+# ----------------------------------------------------------------------
+def _normalize_phone(p: str) -> str:
+    return "".join(ch for ch in (p or "") if ch.isdigit() or ch == "+").strip()
+
+
+def _super_admin_phones() -> List[str]:
+    raw = os.environ.get("SUPER_ADMIN_TELEFONOS", "") or ""
+    return [_normalize_phone(t) for t in raw.split(",") if t.strip()]
+
+
+@router.get("/me/roles")
+async def my_roles(current=Depends(get_current_player)):
+    """Determina los ambientes a los que puede acceder el usuario.
+
+    Respuesta:
+        {
+          is_player: bool,
+          is_organizer: bool,
+          is_super_admin: bool,
+          stats: { retas_organizadas: int, clubes_propios: int }
+        }
+    """
+    telefono = current["sub"]
+    norm = _normalize_phone(telefono)
+    super_phones = _super_admin_phones()
+    is_super = norm in super_phones
+
+    # Match por teléfono normalizado (tolerante a formato con/sin espacios).
+    # Buscamos en ambos: exacto y normalizado (los registros nuevos pueden no
+    # estar normalizados consistentemente con los antiguos).
+    retas_count = await db.retas.count_documents(
+        {"organizador_telefono": {"$in": [telefono, norm]}}
+    )
+    clubes_count = 0
+    try:
+        clubes_count = await db.clubes.count_documents(
+            {"owner_telefono": {"$in": [telefono, norm]}}
+        )
+    except Exception:
+        clubes_count = 0
+
+    is_organizer = is_super or retas_count > 0 or clubes_count > 0
+    return {
+        "is_player": True,
+        "is_organizer": is_organizer,
+        "is_super_admin": is_super,
+        "stats": {
+            "retas_organizadas": retas_count,
+            "clubes_propios": clubes_count,
+        },
+    }
+
+
 @router.get("/me/inscripciones", response_model=List[PlayerInscripcion])
 async def my_inscripciones(current=Depends(get_current_player)):
     telefono = current["sub"]

@@ -19,6 +19,7 @@ import { ArrowLeft, Phone, ShieldCheck } from "lucide-react-native";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { api } from "@/src/api";
+import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
@@ -54,8 +55,26 @@ export default function PlayerLogin() {
     try {
       const r = await api.playerVerifyOtp({ telefono: telefono.trim(), codigo: codigo.trim() });
       await AsyncStorage.setItem(PLAYER_TOKEN_KEY, r.access_token);
-      await AsyncStorage.setItem(PLAYER_INFO_KEY, JSON.stringify({ jugador_id: r.jugador_id, nombre: r.nombre, telefono: r.telefono }));
-      router.replace("/mi-cuenta" as any);
+      await AsyncStorage.setItem(
+        PLAYER_INFO_KEY,
+        JSON.stringify({ jugador_id: r.jugador_id, nombre: r.nombre, telefono: r.telefono }),
+      );
+
+      // Auditoría Routing — Bifurcación inteligente (rol dual).
+      // 1) Consultamos roles del backend con el token recién emitido.
+      // 2) Si es organizador, vamos al Hub (`/seleccion`) — salvo que ya
+      //    haya elegido un rol previamente (last_role), en cuyo caso
+      //    saltamos directo a ese ambiente para ahorrar 1 clic.
+      // 3) Si NO es organizador, vamos directo a `/` (radar).
+      // 4) Si la consulta falla, fallback seguro a `/mi-cuenta`.
+      try {
+        const roles = await api.playerMyRoles(r.access_token);
+        const lastRole = await getLastRole();
+        const next = decideNextRoute(roles, lastRole);
+        router.replace(next as any);
+      } catch {
+        router.replace("/mi-cuenta" as any);
+      }
     } catch (e: any) {
       Alert.alert("Código incorrecto", e.message ?? "Inténtalo de nuevo o solicita uno nuevo.");
     } finally {

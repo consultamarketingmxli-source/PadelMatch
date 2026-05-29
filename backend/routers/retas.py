@@ -125,6 +125,7 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         latitud=lat_final,
         longitud=lng_final,
         organizador_id=current["sub"],
+        organizador_telefono=body.organizador_telefono,
     )
     doc = reta.model_dump()
     doc["creado_en"] = (
@@ -208,6 +209,7 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
         "observaciones_publicas": body.observaciones_publicas,
         "latitud": lat_final,
         "longitud": lng_final,
+        "organizador_telefono": body.organizador_telefono,
     }
     await db.retas.update_one({"id": reta_id}, {"$set": update})
     new = await db.retas.find_one({"id": reta_id}, {"_id": 0})

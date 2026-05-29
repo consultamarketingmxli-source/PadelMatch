@@ -3,6 +3,40 @@ import { storage } from "@/src/utils/storage";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 const TOKEN_KEY = "ppos.admin.token";
+const PLAYER_TOKEN_KEY_GLOBAL = "padelappretas.player.token";
+
+/* ---------------------------------------------------------------------------
+ * Auditoría Routing — Interceptor global de errores 401 (Stale Session).
+ *
+ * Cuando el backend responde 401 a cualquier petición autenticada, limpiamos
+ * los tokens (admin + player) del storage y emitimos un evento global. Un
+ * listener en `app/_layout.tsx` lo captura y navega al login apropiado con
+ * un toast informativo. Esto evita que la pantalla "se congele" cuando el
+ * JWT caduca silenciosamente.
+ * ------------------------------------------------------------------------- */
+type AuthExpiredListener = () => void;
+const _authExpiredListeners: Set<AuthExpiredListener> = new Set();
+
+export function onAuthExpired(listener: AuthExpiredListener): () => void {
+  _authExpiredListeners.add(listener);
+  return () => _authExpiredListeners.delete(listener);
+}
+
+let _authExpiredDebounce: ReturnType<typeof setTimeout> | null = null;
+function _emitAuthExpired() {
+  // Debounce: si caen 5 peticiones en paralelo con 401, solo emitimos 1 evento.
+  if (_authExpiredDebounce) return;
+  _authExpiredDebounce = setTimeout(() => {
+    _authExpiredDebounce = null;
+    _authExpiredListeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        /* no-op */
+      }
+    });
+  }, 100);
+}
 
 export type FormatoScore = {
   tipo: "PUNTOS" | "TIEMPO";
@@ -321,6 +355,20 @@ async function request<T>(
   });
   if (!res.ok) {
     const txt = await res.text();
+    // Auditoría Routing — Stale Session interceptor.
+    // Sólo limpiamos y notificamos si la petición ERA autenticada o si
+    // el endpoint claramente requiere sesión (mantiene UX limpia en
+    // endpoints públicos que pueden devolver 401 por accidente).
+    if (res.status === 401 && (opts.auth || /Authorization/i.test(JSON.stringify(headers)))) {
+      try {
+        await storage.secureRemove(TOKEN_KEY);
+        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+        await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+      } catch {
+        /* no-op */
+      }
+      _emitAuthExpired();
+    }
     throw new Error(`${res.status}: ${txt}`);
   }
   if (opts.raw) return res as unknown as T;
@@ -724,6 +772,20 @@ export const api = {
     }),
   playerMyWaitlist: (token: string) =>
     request<PlayerWaitlistItem[]>(`/players/me/waitlist`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  /**
+   * Auditoría Routing — Bifurcación inteligente.
+   * Devuelve los roles del usuario autenticado por OTP para decidir si
+   * mostrar el hub `/seleccion` o saltar directo al ambiente correcto.
+   */
+  playerMyRoles: (token: string) =>
+    request<{
+      is_player: boolean;
+      is_organizer: boolean;
+      is_super_admin: boolean;
+      stats: { retas_organizadas: number; clubes_propios: number };
+    }>(`/players/me/roles`, {
       headers: { Authorization: `Bearer ${token}` },
     }),
 

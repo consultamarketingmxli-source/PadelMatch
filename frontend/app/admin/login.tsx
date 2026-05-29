@@ -56,7 +56,9 @@ export default function AdminLogin() {
   useEffect(() => {
     (async () => {
       const t = await api.getToken();
-      if (t) router.replace("/admin");
+      // Si ya hay token, vamos al Hub de bifurcación (no directamente a /admin)
+      // para que el usuario pueda escoger ambiente o usar last_role.
+      if (t) router.replace("/seleccion");
     })();
   }, [router]);
 
@@ -64,7 +66,10 @@ export default function AdminLogin() {
     setLoading(true);
     try {
       await api.login(email, password);
-      router.replace("/admin");
+      // Tras el login NO pre-fijamos rol — el usuario lo elige en el Hub.
+      // Si en sesiones anteriores tocó un CTA, la pantalla /seleccion
+      // detectará el last_role y aplicará el "salto inteligente".
+      router.replace("/seleccion");
     } catch (e: any) {
       Alert.alert("Acceso denegado", e.message ?? "Revisa tus credenciales");
     } finally {

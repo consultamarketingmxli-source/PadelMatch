@@ -100,6 +100,11 @@ class RetaCreate(BaseModel):
     observaciones_publicas: ObservacionesStr = ""
     latitud: Optional[float] = Field(default=None, ge=-90, le=90)
     longitud: Optional[float] = Field(default=None, ge=-180, le=180)
+    # Auditoría Routing — vínculo opcional de organizador por TELÉFONO.
+    # Permite que un usuario autenticado por OTP (rol "player") sea reconocido
+    # como organizador si su teléfono coincide con `organizador_telefono` de
+    # alguna reta. Default None para retrocompat (admin super-user clásico).
+    organizador_telefono: Optional[str] = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def _coherencia_modalidad(self) -> "RetaCreate":
@@ -141,6 +146,8 @@ class Reta(BaseModel):
     observaciones_publicas: str = ""
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    # Auditoría Routing — vínculo opcional de organizador por TELÉFONO.
+    organizador_telefono: Optional[str] = None
     alertas_enviadas: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 

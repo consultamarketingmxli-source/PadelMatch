@@ -11,17 +11,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { BarChart3, Gift, LogOut, Plus, Wallet } from "lucide-react-native";
+import { BarChart3, Gift, LogOut, Plus, Repeat, Wallet } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
 import { RetaCard } from "@/src/components/RetaCard";
 import { Button } from "@/src/components/Button";
 import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
+import { useRequireAdmin } from "@/src/hooks/useRequireAdmin";
+import { clearLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function AdminDashboard() {
   const router = useRouter();
+  useRequireAdmin();
   const [retas, setRetas] = useState<Reta[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,6 +49,7 @@ export default function AdminDashboard() {
 
   const logout = async () => {
     await api.logout();
+    await clearLastRole();
     router.replace("/admin/login");
   };
 
@@ -63,6 +67,17 @@ export default function AdminDashboard() {
         logoSize={32}
         right={
           <>
+            <TouchableOpacity
+              onPress={async () => {
+                await clearLastRole();
+                router.replace("/seleccion");
+              }}
+              style={styles.iconBtn}
+              testID="admin-switch-role-btn"
+              accessibilityLabel="Cambiar de ambiente"
+            >
+              <Repeat size={18} color={colors.text.secondary} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push("/admin/mercadopago" as any)} style={styles.iconBtn} testID="mercadopago-btn">
               <Wallet size={18} color={colors.brand.primary} />
             </TouchableOpacity>

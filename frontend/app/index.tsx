@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ShieldCheck, User } from "lucide-react-native";
+import { ShieldCheck, Repeat, User } from "lucide-react-native";
 
 import { RetaCard } from "@/src/components/RetaCard";
 import { BrandHeader } from "@/src/components/BrandHeader";
@@ -24,10 +24,12 @@ import { EmptyState } from "@/src/components/EmptyState";
 import { SearchBar } from "@/src/components/SearchBar";
 import { Toast } from "@/src/components/Toast";
 import { useHybridSearch } from "@/src/hooks/useHybridSearch";
+import { getLastRole, clearLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [hasDualRole, setHasDualRole] = React.useState(false);
   const {
     retas,
     loading,
@@ -43,6 +45,26 @@ export default function HomeScreen() {
     refresh,
   } = useHybridSearch();
 
+  // Detectar acceso al hub: si el usuario tiene last_role guardado o un
+  // token de admin, mostramos el icono "Cambiar de ambiente" en el header.
+  React.useEffect(() => {
+    (async () => {
+      const last = await getLastRole();
+      if (last) {
+        setHasDualRole(true);
+        return;
+      }
+      // Fallback: si tiene token admin, también consideramos dual.
+      try {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        const adminTok = await AsyncStorage.getItem("ppos.admin.token");
+        if (adminTok) setHasDualRole(true);
+      } catch {
+        /* no-op */
+      }
+    })();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <BrandHeader
@@ -51,6 +73,19 @@ export default function HomeScreen() {
         logoSize={32}
         right={
           <>
+            {hasDualRole ? (
+              <TouchableOpacity
+                testID="nav-switch-role-btn"
+                onPress={async () => {
+                  await clearLastRole();
+                  router.replace("/seleccion" as any);
+                }}
+                style={styles.iconBtn}
+                accessibilityLabel="Cambiar de ambiente"
+              >
+                <Repeat size={18} color={colors.text.secondary} />
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               testID="nav-mi-cuenta-btn"
               onPress={async () => {
