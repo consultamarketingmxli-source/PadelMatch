@@ -566,3 +566,66 @@ metadata:
   total_tests: 30
   passed: 30
   failed: 0
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Iter 30-31 — Plan A: Polish & Validación E2E Módulo Seguridad
+# ─────────────────────────────────────────────────────────────────────
+backend:
+  - task: "Fix h11 LocalProtocolError 'Too much data for declared Content-Length'"
+    implemented: true
+    working: true
+    file: "/app/backend/core/security.py"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Triple fix: (1) SecurityHeadersMiddleware y AdminMutationAuditMiddleware reescritos como ASGI puro (no más BaseHTTPMiddleware); (2) Removido SlowAPIMiddleware completamente — los @limiter.limit() decoradores siguen activos sin él; (3) rate_limit_handler ya no copia Content-Length de la respuesta upstream slowapi. Δ=0 nuevos errores h11 tras 30 requests variadas confirmado."
+
+  - task: "JWT iat + jti claims (paridad admin/player)"
+    implemented: true
+    working: true
+    file: "/app/backend/auth.py /app/backend/routers/player_auth.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Verificado iter31: ambos JWT (admin y player) ahora incluyen iat (timestamp UTC) y jti (uuid4 hex 32 chars, único por emisión). Mejora trazabilidad y previene token replay attacks."
+
+  - task: "Endpoint POST /api/auth/revoke-all-sessions"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/auth_router.py"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Funciona para admin Y player con cualquier JWT Bearer válido. Revoca TODOS los refresh tokens del usuario en DB + borra cookie HttpOnly. Audit log: accion='revoke_all_sessions' + tokens_revoked count en extra. Sin auth → 401 'Missing token'."
+
+frontend:
+  - task: "Cross-platform confirmAlert / infoAlert helper"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/utils/confirmAlert.ts"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Iter30 reportó Alert.alert no-op en react-native-web. Helper detecta Platform.OS === 'web' y delega a window.confirm (sync) o window.alert. En native usa Alert.alert con buttons. Confirmado visualmente en navegador: window.confirm nativo del browser aparece al tap revoke-all-sessions y btn-eliminar-cuenta."
+
+  - task: "Botón 'Cerrar sesión global' (ShieldOff) en header admin"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/index.tsx"
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Icono ShieldOff rojo en header admin/index junto a logout. Tap dispara confirmAlert; al aceptar llama api.revokeAllSessions(token) → muestra alert con N sesiones revocadas → redirect /admin/login. testID='revoke-all-sessions-btn'."
+
+metadata:
+  iteration: 31
+  test_reports:
+    - "/app/test_reports/iteration_30.json"
+    - "/app/test_reports/iteration_31.json"
+  test_files:
+    - "/app/backend/tests/test_iter30_security_e2e.py"
+    - "/app/backend/tests/test_iter31_jwt_jti_regression.py"
+  total_tests_run: 20
+  passed: 20
+  failed: 0
