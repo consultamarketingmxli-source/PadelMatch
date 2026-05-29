@@ -1,0 +1,41 @@
+{
+  "summary": "Iter24 — Retest tras corrección de Alert.alert en web con util confirmDialog. BACKEND: 46 PASS + 2 SKIPPED en suites test_phase_a_rsvp.py, test_fase_b_soporte.py, test_fase_c_blindaje.py, test_fase_c_checkout_guards.py, test_clubes_smart.py (los 2 skipped son tests Fase C que requieren reta-pasada en seed; consistente con iter23, NO son regresiones). FRONTEND WEB CRÍTICO: el fix de confirmDialog FUNCIONA end-to-end — click en testID 'move-{inscId}-lista_espera' dispara window.confirm('Confirmar cambio\\n\\nMover a Andrés Test a “Lista de espera”.'), al aceptar se envía PATCH /api/admin/inscripciones/{id}/estatus → 200 OK y la lista se refresca. 0 console.error JS, OfflineQueueBanner ausente del DOM (estado online + cola vacía), banner verde 'EVENTO GRATUITO · RSVP' visible, 4 secciones renderizando, botón IMPORTAR presente. BUG MENOR ENCONTRADO Y CORREGIDO: el archivo [id].tsx tenía una llave duplicada (`};` extra) en línea 142 que rompía completamente el bundle web — la página quedaba en blanco con error Metro 'return outside of function'. Fue corregido removiendo la línea duplicada. El bug crítico web reportado en iter23 está resuelto.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter24_fase_c_retest.xml",
+    "/app/backend/tests/test_phase_a_rsvp.py",
+    "/app/backend/tests/test_fase_b_soporte.py",
+    "/app/backend/tests/test_fase_c_blindaje.py",
+    "/app/backend/tests/test_fase_c_checkout_guards.py",
+    "/app/backend/tests/test_clubes_smart.py"
+  ],
+  "action_items": [
+    "Ninguno bloqueante. El bug crítico web de iter23 está cerrado. Considerar (no bloqueante) aplicar confirmDialog a los Alert.alert restantes con buttons que aún existan en el proyecto (grep global) para evitar el mismo bug en otros flujos admin web."
+  ],
+  "critical_code_review_comments": [
+    "[FIX YA APLICADO POR TESTING AGENT] /app/frontend/app/admin/reta/inscripciones/[id].tsx línea 142 tenía '};' duplicado tras el cierre del onRefund — rompía todo el bundle web (Metro: 'return outside of function'). Removido. Verificar que en futuras ediciones manuales no se reintroduzca.",
+    "confirmDialog.ts está bien escrito: separa web (window.confirm) de native (Alert.alert con buttons) y maneja fallback SSR. Patrón reutilizable.",
+    "[id].tsx aún tiene ~714 líneas — sigue cerca del límite (>700). Recomendación previa de extraer SectionColumn/PersonRow sigue vigente."
+  ],
+  "updated_files": [
+    "/app/frontend/app/admin/reta/inscripciones/[id].tsx (removida llave duplicada línea 142)"
+  ],
+  "success_rate": {
+    "backend": "100% (46/46 PASS, 2 SKIPPED esperados — sin regresiones)",
+    "frontend": "100% (confirmDialog → PATCH 200 → refresh OK, sin console errors, OfflineQueueBanner hidden cuando corresponde)"
+  },
+  "seed_data_creation": "Ninguna. Usados datos existentes (reta 87a6c2c5-cdb4-4d16-96e8-80f056fe9b14 'Reta Gratis Demo' con Andrés Test y Sofia Rechaza).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fase C blindaje cerrada. Backend 100%. El fix confirmDialog en web está verificado: window.confirm se invoca, PATCH se envía, response 200, lista refresca, 0 errores JS. Único riesgo a vigilar: el bug de la llave duplicada que el testing agent ya corrigió — si el main agent vuelve a editar [id].tsx, verificar que no se reintroduzca. AdminInscripcionSheet (botón Editar) solo aparece en modo paid (no gratis_amigos); su test pasó en iter23 — no se re-probó aquí porque el endpoint admin/login y la pantalla gratis_amigos no exponen row-edit-* en este modo (correcto por diseño).",
+  "rca_of_issue": "RCA confirmDialog fix: la nueva util /app/frontend/src/utils/confirmDialog.ts detecta Platform.OS==='web' y usa window.confirm() (síncrono, devuelve boolean) en lugar de Alert.alert con buttons (cuyos callbacks no se ejecutan en react-native-web 0.21). confirmMove() ahora hace `const ok = await confirmDialog(...)` y solo invoca moveTo si ok===true. Verificado: 1 window.confirm interceptado, 1 PATCH /admin/inscripciones/{id}/estatus → 200, columna se refresca. RCA bug secundario: la línea 142 quedó con `};` extra tras la edición previa que insertó la llamada a confirmDialog en onRefund, causando Metro SyntaxError 'return outside of function'. Corregido inline por el testing agent."
+}

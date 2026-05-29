@@ -38,6 +38,7 @@ import { AdminInscripcionSheet } from "@/src/components/AdminInscripcionSheet";
 import { OfflineQueueBanner } from "@/src/components/OfflineQueueBanner";
 import { useOfflineSync } from "@/src/hooks/useOfflineSync";
 import { runOrQueue } from "@/src/utils/offlineQueue";
+import { confirmDialog } from "@/src/utils/confirmDialog";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type EstatusConfirm =
@@ -114,34 +115,29 @@ export default function AdminInscripciones() {
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   // ===== Refund (modo paga) =====
-  const onRefund = (insc: Inscripcion) => {
-    Alert.alert(
-      "Confirmar reembolso",
-      `¿Reembolsar a ${insc.nombre} (${insc.telefono})? Su lugar se libera y se promueve a la siguiente persona en lista de espera.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Reembolsar",
-          style: "destructive",
-          onPress: async () => {
-            if (!id) return;
-            setRefunding(insc.id);
-            try {
-              const res = await api.refundInscripcion(id, insc.id);
-              Alert.alert(
-                "Reembolso completado",
-                `Stripe procesó ${res.amount_refunded_mxn ? `$${res.amount_refunded_mxn} MXN` : "el reembolso"}.${res.promoted ? "\nSe promovió al siguiente en lista de espera." : ""}`,
-              );
-              await load();
-            } catch (e: any) {
-              Alert.alert("Error", e.message ?? "No se pudo procesar el reembolso");
-            } finally {
-              setRefunding(null);
-            }
-          },
-        },
-      ],
-    );
+  const onRefund = async (insc: Inscripcion) => {
+    const ok = await confirmDialog({
+      title: "Confirmar reembolso",
+      message: `¿Reembolsar a ${insc.nombre} (${insc.telefono})? Su lugar se libera y se promueve a la siguiente persona en lista de espera.`,
+      confirmText: "Reembolsar",
+      cancelText: "Cancelar",
+      destructive: true,
+    });
+    if (!ok) return;
+    if (!id) return;
+    setRefunding(insc.id);
+    try {
+      const res = await api.refundInscripcion(id, insc.id);
+      Alert.alert(
+        "Reembolso completado",
+        `Stripe procesó ${res.amount_refunded_mxn ? `$${res.amount_refunded_mxn} MXN` : "el reembolso"}.${res.promoted ? "\nSe promovió al siguiente en lista de espera." : ""}`,
+      );
+      await load();
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "No se pudo procesar el reembolso");
+    } finally {
+      setRefunding(null);
+    }
   };
 
   // ===== Cambio manual de estatus (modo gratis) =====
@@ -191,15 +187,18 @@ export default function AdminInscripciones() {
     }
   };
 
-  const confirmMove = (insc: AsistenciaItem, target: EstatusConfirm, label: string) => {
-    Alert.alert(
-      "Confirmar cambio",
-      `Mover a ${insc.nombre} a “${label}”.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Sí, mover", onPress: () => void moveTo(insc, target) },
-      ],
-    );
+  const confirmMove = async (insc: AsistenciaItem, target: EstatusConfirm, label: string) => {
+    // Fase C — usa confirmDialog para compatibilidad con react-native-web
+    // (Alert.alert con botones NO ejecuta callbacks en web).
+    const ok = await confirmDialog({
+      title: "Confirmar cambio",
+      message: `Mover a ${insc.nombre} a “${label}”.`,
+      confirmText: "Sí, mover",
+      cancelText: "Cancelar",
+    });
+    if (ok) {
+      void moveTo(insc, target);
+    }
   };
 
   const totales = useMemo(() => {
