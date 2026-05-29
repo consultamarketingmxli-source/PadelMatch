@@ -34,6 +34,8 @@ from routers.public import router as public_router
 from routers.realtime_ws import router as realtime_ws_router
 from routers.resultados import router as resultados_router
 from routers.retas import router as retas_router
+from routers.rsvp import router_admin as rsvp_admin_router
+from routers.rsvp import router_public as rsvp_public_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +66,8 @@ api.include_router(resultados_router)
 api.include_router(realtime_ws_router)
 api.include_router(pdf_router)
 api.include_router(export_router)
+api.include_router(rsvp_public_router)
+api.include_router(rsvp_admin_router)
 
 
 @api.get("/")

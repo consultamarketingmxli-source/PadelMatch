@@ -26,6 +26,7 @@ export type Reta = {
   formato_score?: FormatoScore;
   modalidad_registro?: ModalidadRegistro;
   permitir_individual_en_parejas?: boolean;
+  tipo_acceso?: "paga" | "gratis_amigos";
   url_slug: string;
   organizador_logo_url?: string | null;
   observaciones_publicas: string;
@@ -714,6 +715,49 @@ export const api = {
       summary: { total: number; ok: number; warning: number; critical: number };
       doc_url: string;
     }>("/admin/deploy-readiness", { auth: true }),
+
+  // ===== RSVP — Retas Gratis / Entre Amigos =====
+  rsvpAceptar: (retaId: string, body: { nombre: string; telefono: string }) =>
+    request<{
+      inscripcion_id: string;
+      estatus_confirmacion: "aceptado" | "lista_espera";
+      posicion_lista_espera?: number | null;
+      mensaje: string;
+    }>(`/public/retas/${retaId}/rsvp/aceptar`, { method: "POST", body }),
+
+  rsvpRechazar: (retaId: string, body: { nombre: string; telefono: string }) =>
+    request<{
+      ok: boolean;
+      promoted: boolean;
+      promoted_player?: string | null;
+    }>(`/public/retas/${retaId}/rsvp/rechazar`, { method: "POST", body }),
+
+  /** Vista admin agrupada por estatus de confirmación. */
+  getAsistencia: (retaId: string) =>
+    request<{
+      reta_id: string;
+      confirmados: any[];
+      pendientes: any[];
+      lista_espera: any[];
+      rechazados: any[];
+    }>(`/admin/retas/${retaId}/asistencia`, { auth: true }),
+
+  /** Cambia el estatus_confirmacion de una inscripción (admin). */
+  setEstatusInscripcion: (
+    inscId: string,
+    estatus: "pendiente_invitacion" | "aceptado" | "rechazado" | "lista_espera",
+  ) =>
+    request<{
+      ok: boolean;
+      estatus_confirmacion: string;
+      estatus_pago: string;
+      promoted?: boolean;
+      promoted_player?: string | null;
+    }>(`/admin/inscripciones/${inscId}/estatus`, {
+      method: "PATCH",
+      body: { estatus_confirmacion: estatus },
+      auth: true,
+    }),
 };
 
 /**

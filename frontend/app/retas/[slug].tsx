@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft, Calendar, MapPin, Trophy, DollarSign, Users, Clock, BarChart2,
-  UserPlus, Search,
+  UserPlus, Search, CheckCircle2, XCircle, Gift,
 } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";

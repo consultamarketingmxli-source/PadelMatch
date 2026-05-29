@@ -100,6 +100,10 @@ export default function RetaForm() {
   >("individual");
   const [permitirIndividualEnParejas, setPermitirIndividualEnParejas] = useState(false);
 
+  // Tipo de acceso (Fase A — Retas Gratis / Entre Amigos)
+  const [tipoAcceso, setTipoAcceso] = useState<"paga" | "gratis_amigos">("paga");
+  const esGratis = tipoAcceso === "gratis_amigos";
+
   const esParejas = modalidadRegistro !== "individual";
 
   useEffect(() => {
@@ -140,6 +144,7 @@ export default function RetaForm() {
         // Modalidad de Registro (default individual si la reta es legacy)
         setModalidadRegistro(r.modalidad_registro ?? "individual");
         setPermitirIndividualEnParejas(!!r.permitir_individual_en_parejas);
+        setTipoAcceso(r.tipo_acceso ?? "paga");
       } catch (e: any) {
         Alert.alert("Error", e.message ?? "No se pudo cargar");
         router.back();
@@ -200,6 +205,7 @@ export default function RetaForm() {
       formato_score: { tipo: fsTipo, valor: fsValor, unidad: fsUnidad },
       modalidad_registro: modalidadRegistro,
       permitir_individual_en_parejas: esParejas ? permitirIndividualEnParejas : false,
+      tipo_acceso: tipoAcceso,
       organizador_logo_url: logoUrl || null,
       observaciones_publicas: obs.slice(0, 140),
       latitud: lat ? parseFloat(lat) : null,
@@ -444,7 +450,44 @@ export default function RetaForm() {
             </TouchableOpacity>
           ) : null}
 
-          <Input label="Costo de inscripción $" value={costo} onChangeText={setCosto} keyboardType="decimal-pad" testID="form-costo" />
+          <Input label="Costo de inscripción $" value={costo} onChangeText={setCosto} keyboardType="decimal-pad" testID="form-costo" editable={!esGratis} />
+
+          {/* TIPO DE ACCESO — Fase A: Retas Gratis/Entre Amigos */}
+          <Text style={styles.sectionLabel}>TIPO DE ACCESO</Text>
+          <Text style={styles.hintText}>
+            Elige si esta reta requiere pago o es de invitación entre amigos (sin cobro).
+          </Text>
+          <View style={styles.segGroup}>
+            {(
+              [
+                { key: "paga", label: "Con cobro", hint: "Pasarela Stripe/Mercado Pago" },
+                { key: "gratis_amigos", label: "Gratis · Entre amigos", hint: "Invitación 1-clic, sin pasarela" },
+              ] as const
+            ).map((opt) => {
+              const active = tipoAcceso === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  testID={`form-tipo-acceso-${opt.key}`}
+                  onPress={() => {
+                    setTipoAcceso(opt.key);
+                    if (opt.key === "gratis_amigos") setCosto("0");
+                  }}
+                  activeOpacity={0.7}
+                  style={[styles.seg, active && styles.segActive]}
+                >
+                  <Text style={[styles.segText, active && styles.segTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {esGratis ? (
+            <Text style={styles.subLabel}>
+              ⚡ Costo forzado a $0. El link de la reta abrirá una landing con
+              botones <Text style={{ color: "#10B981", fontWeight: "800" }}>Aceptar</Text> /
+              <Text style={{ color: "#F43F5E", fontWeight: "800" }}> Rechazar</Text> en 1 clic.
+            </Text>
+          ) : null}
 
           {/* FORMATO DE JUEGO (elástico) */}
           <Text style={styles.sectionLabel}>FORMATO DE JUEGO</Text>

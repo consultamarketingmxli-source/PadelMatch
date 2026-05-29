@@ -76,6 +76,10 @@ class RetaCreate(BaseModel):
     modalidad_juego: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
     num_rondas: Literal[5, 6, 7] = 7
     formato_score: FormatoScore = Field(default_factory=_default_formato_score)
+    # ===== Tipo de acceso (Fase A — Retas Gratis/Entre Amigos) =====
+    # paga:          flujo clásico Stripe/MercadoPago/Cupones.
+    # gratis_amigos: invitación 1-click sin pasarela. costo=0, sin webhooks.
+    tipo_acceso: Literal["paga", "gratis_amigos"] = "paga"
     # Modalidad de Registro elástica (Fase 1 — Foundation parejas).
     # individual       → flujo clásico round-robin individual (default, retrocompat).
     # parejas_libres   → inscripción por duplas, sin restricción de género.
@@ -97,6 +101,10 @@ class RetaCreate(BaseModel):
         if self.modalidad_registro == "individual" and self.permitir_individual_en_parejas:
             # Lo silenciamos (no rompemos), simplemente lo apagamos.
             object.__setattr__(self, "permitir_individual_en_parejas", False)
+        # ===== Coherencia tipo_acceso (Fase A) =====
+        # Si la reta es "gratis_amigos" forzamos costo=0 y no permitimos cobro.
+        if self.tipo_acceso == "gratis_amigos" and self.costo_inscripcion > 0:
+            object.__setattr__(self, "costo_inscripcion", 0.0)
         return self
 
 
@@ -112,6 +120,8 @@ class Reta(BaseModel):
     modalidad_juego: Literal["PUNTOS", "TIEMPO"]
     num_rondas: int
     formato_score: FormatoScore = Field(default_factory=_default_formato_score)
+    # Tipo de acceso (Fase A) — default "paga" para retro-compat.
+    tipo_acceso: Literal["paga", "gratis_amigos"] = "paga"
     # Modalidad de Registro — default "individual" para retrocompatibilidad
     # de retas creadas antes de Fase 1.
     modalidad_registro: Literal["individual", "parejas_libres", "parejas_mixtas"] = "individual"
@@ -168,6 +178,16 @@ class Inscripcion(BaseModel):
     nombre: str
     telefono: str
     estatus_pago: Literal["Pendiente", "Aprobado", "Expirado"] = "Pendiente"
+    # ===== Estatus de confirmación (Fase A — Retas Gratis/Entre Amigos) =====
+    # Para retas "gratis_amigos" reemplaza al concepto de pago:
+    #   pendiente_invitacion: el link se compartió pero no han respondido
+    #   aceptado:             el jugador hizo click en "Aceptar" → cupo confirmado
+    #   rechazado:            el jugador hizo click en "Rechazar"
+    #   lista_espera:         el jugador aceptó pero la reta ya estaba llena
+    # Para retas "paga": el ciclo de pago Stripe/MP controla el estado real.
+    estatus_confirmacion: Literal[
+        "pendiente_invitacion", "aceptado", "rechazado", "lista_espera"
+    ] = "aceptado"
     bloqueado_hasta: Optional[str] = None  # ISO
     # ===== Soporte parejas (Fase 1 — Foundation) =====
     # UUID compartido por las DOS inscripciones que pertenecen a la misma
