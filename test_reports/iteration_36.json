@@ -1,0 +1,48 @@
+{
+  "summary": "Iter36 E2E exhaustivo (Jugador + Organizador + cross-rol + seguridad). Backend: 29/30 assertions PASS en pytest contra preview URL real. Cubierto: OTP request/verify (correcto+wrong+second-login), access token validity, refresh rotation one-time-use (header X-Refresh-Token), revocar sesión, búsqueda pública (sin leaks de secrets), detalle 404, admin login OK + lockout 429, CRUD reta (POST/GET/PUT/DELETE), búsqueda pública incluye reta, inscripciones list, /api/admin/metrics, export CSV /rol/csv, security logs+stats, eliminación de reta sin inscripciones, isolation cross-rol (player→admin=403; admin→DELETE /players/me=403), checkout individual (player→admin lo ve), JWT tampering, alg=none, NoSQL injection ($ne), IDOR me, Apple 5.1.1 account delete (anonimización completa+phone hash). Frontend: home (radar), /login (OTP), /admin/login + login real → redirige a /seleccion correctamente. UI 404 = pantalla NEGRA por defecto de expo-router (sin diseño custom). Twilio en daily-limit (5 msgs/día agotados) — OTPs siguen creándose en DB; CRÍTICO para producción real fuera de testing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/players/me/sessions", "issue": "Tras /api/auth/refresh con X-Refresh-Token + X-Client-Platform:native, el listado devuelve count=0 aunque debería incluir la sesión recién rotada. Posiblemente la rotación de refresh en auth_router no preserva el user_id=telefono o el access_token tras refresh tiene sub distinto. Requiere validación. Repro: 1) OTP verify → refresh1; 2) POST /api/auth/refresh con X-Refresh-Token=refresh1 → refresh2 OK; 3) GET /me/sessions con access2 → {count:0}."},
+      {"endpoint": "Twilio WhatsApp OTP", "issue": "Twilio trial account 'exceeded the 5 daily messages limit' (error 63038). El OTP se persiste en DB y verify funciona, pero NINGÚN usuario real recibirá el código. P1 para producción — desactivar trial o documentar."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/+not-found o equivalente", "issue": "Página 404 muestra 'Unmatched Route / Page could not be found' por defecto de expo-router sobre fondo NEGRO. No hay diseño branded. Falta implementar /app/+not-found.tsx con marca PadelAppRetas.", "testID": "n/a", "priority": "P3"},
+      {"component": "app/admin/login.tsx", "issue": "Al entrar a /admin/login después de un logout previo se muestra el banner 'No tienes permisos de administrador' (estado de error persistente). Debería resetear el banner al montar la pantalla de login.", "testID": "admin-login-error-banner", "priority": "P2"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/login", "issues": ["Banner de error en header se solapa con el logo en mobile (revisar margen-top en banner cuando hay error global previo)."]}
+    ],
+    "react_native_issues": [
+      {"component": "estilos globales", "issue": "Warnings de Metro: 'props.pointerEvents is deprecated. Use style.pointerEvents' y '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Ref: expo.err.log durante el bundling."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter36_e2e_full.py",
+    "/app/test_reports/pytest/iter36_e2e.xml"
+  ],
+  "action_items": [
+    "P1: Investigar Twilio daily limit (5/día agotado). Upgrade del trial Twilio o pivote a otro proveedor WhatsApp/SMS antes de producción.",
+    "P2: Revisar GET /api/players/me/sessions tras refresh rotation — count=0 cuando debería ser >=1. Revisar que create_refresh_token_document en auth_router.refresh() use user_id=telefono (mismo que current['sub']).",
+    "P2: Resetear estado de error de admin login al montar /admin/login (UX: banner 'No tienes permisos' persistente entre navegaciones).",
+    "P3: Crear /app/frontend/app/+not-found.tsx con diseño branded en lugar del fallback negro de expo-router.",
+    "P3: Eliminar usos de pointerEvents prop y shadow* CSS props (warnings de Metro)."
+  ],
+  "critical_code_review_comments": [
+    "auth_router.refresh() linea ~188: crea nuevo refresh_token doc con user_id=doc['user_id']. Confirmar que doc['user_id'] para players = telefono normalizado (matching con player_auth.list_my_sessions). De lo contrario el sessions list quedará vacío post-refresh.",
+    "player_auth.py: get_current_player extrae sub=telefono. Si el sub del access_token reemitido en auth_router.refresh() no es exactamente igual al telefono almacenado en refresh_tokens.user_id, hay desincronía silenciosa."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter36_e2e_full.py (nuevo)",
+    "/app/test_reports/pytest/iter36_e2e.xml (nuevo)"
+  ],
+  "success_rate": {"backend": "97% (29/30 assertions)", "frontend": "smoke OK: home, /login, /admin/login + login real → /seleccion. 404 página default expo-router"},
+  "seed_data_creation": "Tests crean teléfono +5215511112222 (player anonimizado tras 1_16), 2 retas QA E2E (1 eliminada, 1 con inscripción de prueba). Limpieza parcial; main agent puede correr db.usuarios y db.retas filtrando por nombres con 'QA' para purgar.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test suite robusto en /app/backend/tests/test_iter36_e2e_full.py cubre el flujo completo. Reusar tal cual. NOTA crítica: el endpoint /api/auth/refresh espera header 'X-Refresh-Token' + 'X-Client-Platform: native' para devolver el refresh_token en el body (web flow usa cookie HttpOnly 'padelapp_refresh'). Endpoints reales validados: POST /api/players/auth/otp/{request,verify}, GET /api/players/me, GET/DELETE /api/players/me/sessions[/{id}], POST /api/auth/{login,refresh,logout}, POST /api/retas (admin), GET /api/retas, PUT /api/retas/{id}, DELETE /api/retas/{id}, GET /api/public/retas/buscar, GET /api/public/retas/{slug}, POST /api/public/retas/{rid}/checkout, GET /api/retas/{rid}/inscripciones, GET /api/admin/metrics, GET /api/retas/{rid}/rol/csv, GET /api/admin/security/{logs,stats}, DELETE /api/players/me. NO existen /api/admin/dashboard (es /metrics), /api/admin/export/inscripciones (es /api/retas/{id}/rol/csv), /api/admin/notify/{rid}/broadcast (es /api/retas/{rid}/notify/recordatorio-general).",
+  "rca_of_issue": "Bug menor (sessions count=0 post-refresh): la rotación en /api/auth/refresh genera un nuevo refresh con user_id=doc['user_id']. Si el user_id original del player NO está canonicalizado igual que el telefono que list_my_sessions usa para filtrar (current['sub']), el filtro queda vacío. Mitigación: agregar normalize_e164 explícito en create_refresh_token_document para role='player', o cambiar list_my_sessions para buscar también por jugador_id en lugar de telefono."
+}
