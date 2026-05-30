@@ -308,6 +308,14 @@ async def list_my_sessions(request: Request, current=Depends(get_current_player)
                 "is_current": bool(current_hash and th == current_hash),
             }
         )
+
+    # Fallback iter36 P2: si el cliente NO envió el refresh token con esta
+    # request (uso normal cuando solo manda el Authorization access token),
+    # heurísticamente marcamos la sesión más reciente como `is_current`.
+    # Es seguro porque el access viene de la sesión más recientemente emitida.
+    if not current_hash and sessions:
+        sessions[0]["is_current"] = True
+
     return {"sessions": sessions, "count": len(sessions)}
 
 

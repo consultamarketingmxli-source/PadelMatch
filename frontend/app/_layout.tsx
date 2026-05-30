@@ -69,6 +69,17 @@ export default function RootLayout() {
     };
   }, [router]);
 
+  // iter36 P2 fix: descartar cualquier toast residual cuando el usuario
+  // llega a una pantalla de login (admin o player). El banner "No tienes
+  // permisos" del guard previo no debe seguir visible mientras intenta
+  // autenticarse.
+  useEffect(() => {
+    const path = (segments || []).join("/");
+    if (path === "admin/login" || path === "login") {
+      setToast(null);
+    }
+  }, [segments]);
+
   useEffect(() => {
     if (ready) {
       SplashScreen.hideAsync();
