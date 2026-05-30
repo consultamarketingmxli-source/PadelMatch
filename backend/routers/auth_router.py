@@ -10,6 +10,12 @@ from auth import (
     verify_password,
 )
 from core.db import db
+from core.login_lockout import (
+    check_lockout,
+    clear_failures,
+    ensure_lockout_indices,
+    register_failed_attempt,
+)
 from core.refresh_tokens import (
     REFRESH_COOKIE_NAME,
     REFRESH_TOKEN_LIFETIME_DAYS,
@@ -49,17 +55,48 @@ def _clear_refresh_cookie(response: Response) -> None:
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login(request: Request, response: Response, body: LoginRequest):
-    admin = await db.admins.find_one({"email": body.username.lower()})
+    # Defense-in-depth (iter35 P2): además del rate-limit por IP,
+    # aplicamos lockout PERSISTENTE por cuenta. Esto detiene ataques
+    # distribuidos que rotan IPs.
+    await ensure_lockout_indices(db)
+    email_lc = body.username.lower()
+    is_locked, locked_until = await check_lockout(db, email_lc)
+    if is_locked:
+        await write_security_log(
+            accion="admin_login_locked",
+            request=request,
+            id_usuario=email_lc,
+            result="denied",
+            extra={"reason": "account_locked", "locked_until": str(locked_until)},
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos fallidos. Intenta de nuevo más tarde.",
+        )
+
+    admin = await db.admins.find_one({"email": email_lc})
     if not admin or not verify_password(body.password, admin["hashed_password"]):
-        # Ola B — audit log de intento fallido (anti-fuerza bruta).
+        new_count, just_locked = await register_failed_attempt(db, email_lc)
         await write_security_log(
             accion="admin_login_failed",
             request=request,
-            id_usuario=body.username.lower(),
+            id_usuario=email_lc,
             result="denied",
-            extra={"reason": "bad_credentials"},
+            extra={
+                "reason": "bad_credentials",
+                "failed_count": new_count,
+                "just_locked": bool(just_locked),
+            },
         )
+        if just_locked:
+            raise HTTPException(
+                status_code=429,
+                detail="Demasiados intentos fallidos. Intenta de nuevo más tarde.",
+            )
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+    # Login exitoso → resetear historial de fallos.
+    await clear_failures(db, email_lc)
 
     access_token = create_access_token(subject=admin["email"], role="admin")
     raw_refresh = generate_refresh_token()
