@@ -1,0 +1,47 @@
+{
+  "summary": "Iter35 — Auditoría general profesional (Capas 1-5). Backend: 21/21 tests passing (100%). Validados: auth admin (login OK + sin user-enumeration + JWT ~900s), OTP player flow end-to-end (request/verify, me, security-activity), refresh rotation one-time-use (segundo uso 401), logout revoca refresh, /api/public/retas/buscar sin auth y sin fugas de secretos (access_token_pasarela, hashed_password, mp_access_token), retas POST sin token → 401, NoSQL injection en /api/auth/login bloqueada por sanitizer, rate-limit 5/min en /otp/request dispara 429, CORS con CORS_ORIGINS=* respeta semántica (credentials OFF), Webhook MP sin firma → 401, con firma inválida → 401, con firma HMAC válida → 200 (idempotente), security headers presentes (HSTS, X-Frame-Options=DENY, X-Content-Type-Options=nosniff, Referrer-Policy, Permissions-Policy, x-padelapp-request-id). DB índices presentes en refresh_tokens/security_logs/usuarios/admins/inscripciones. Frontend smoke: home en 1.59s, /login player UI OK, /admin/login OK, /loader-demo pelota+pala canónica renderiza, ruta inexistente → fallback expo-router 'Unmatched Route' (NO pantalla negra), 0 pageerrors. Warnings de consola: solo deprecations conocidas (shadow*, pointerEvents, useNativeDriver, resizeMode).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "frontend /loader-demo", "issue": "Recurso 404 en consola (imagen/asset roto). No crashea pero conviene rastrear cuál."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "loader-demo", "issues": ["1 recurso 404 (probable asset relativo) — sin impacto funcional"]}
+    ],
+    "react_native_issues": [
+      {"component": "ShadowProps", "issue": "Warnings 'shadow*' style props are deprecated. Use 'boxShadow' — repetidos en home/login/admin/loader-demo. Migración recomendada para evitar warnings ruidosos en CI."},
+      {"component": "pointerEvents", "issue": "props.pointerEvents is deprecated. Use style.pointerEvents — aparece en login/admin/loader-demo."},
+      {"component": "Image.resizeMode", "issue": "Image: style.resizeMode is deprecated. Please use props.resizeMode — visto en loader-demo."},
+      {"component": "Animated useNativeDriver", "issue": "Warning 'useNativeDriver is not supported because the native animated module is missing' en web. No bloqueante en preview, pero verificar que animaciones críticas tienen fallback explícito."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_full_audit.py",
+    "/app/test_reports/pytest/iter35_full_audit.xml"
+  ],
+  "action_items": [
+    "Migrar style 'shadow*' a 'boxShadow' (P3 cosmético, ruido en logs).",
+    "Migrar props.pointerEvents → style.pointerEvents (P3).",
+    "Migrar Image style.resizeMode → props.resizeMode (P3).",
+    "Investigar el 404 de recurso en /loader-demo (asset relativo) — P3.",
+    "Considerar añadir lockout persistente (brute force) además del rate-limit por IP. Hoy /api/auth/login depende del default 120/min global; convendría limiter dedicado 5/min como en OTP (P2)."
+  ],
+  "critical_code_review_comments": [
+    "core/security.py: la lógica de CORS_ORIGINS=* + credentials OFF está correctamente implementada en server.py (no se filtró ACA-Credentials en preflight).",
+    "mercadopago.py webhook: la firma HMAC se valida ANTES de parsear el JSON — bien.",
+    "player_auth.py: write_security_log en otp_verify y revoke registra audit trail; /me/security-activity filtra por id_usuario propio (no IDOR)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter35_full_audit.py (NUEVO)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "smoke OK — 5/5 rutas críticas cargan sin pageerrors"},
+  "seed_data_creation": "Tests crean OTPs en db.player_otps para +5215511223399 y +5219911223xxx (rate-limit suite); inscripciones no se crean (checkout requiere MP conectado).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Toda la suite iter35 corre con `cd /app/backend && EXPO_PUBLIC_BACKEND_URL=<preview> MONGO_URL=<env> DB_NAME=<env> pytest tests/test_iter35_full_audit.py -v`. Cubre Capas 1+2+5. Capa 3 (frontend funcional) y Capa 4 (security UX) se validaron por smoke Playwright — no se hicieron flujos end-to-end de inscripción porque requieren MP conectado en sandbox. Para validar concurrencia atómica de cupos se sugiere un test dedicado con asyncio.gather sobre /checkout-mercadopago (no se ejecutó aquí porque rompe sin MP token de un organizador). Iteración anterior (iter34) ya validó concurrency.py vía pytest dedicado.",
+  "rca_of_issue": "No issues bloqueantes encontrados. Severidades detectadas: P0=0, P1=0, P2=1 (brute-force lockout opcional), P3=4 (deprecations RN + asset 404). Todo el contrato de seguridad documentado (HMAC, CORS, headers, NoSQL sanitizer, refresh rotation one-time-use, audit logs) está funcionando correctamente en producción/preview."
+}
