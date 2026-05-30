@@ -35,6 +35,7 @@ import { api } from "@/src/api";
 import { PadelBallLoader } from "@/src/components/loaders";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 
@@ -133,7 +134,7 @@ export default function SeguridadScreen() {
 
   useEffect(() => {
     (async () => {
-      const t = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+      const t = await playerTokenStore.get();
       if (!t) {
         router.replace("/login" as any);
         return;

@@ -1,0 +1,40 @@
+{
+  "summary": "Iter34 — Audit Committee fixes regression. Backend 8/8 PASS (sanity, CORS hardening, player OTP flow incl. real verify, MP webhook guard). Frontend PASS: app carga sin pantalla blanca en /login, /seleccion, /loader-demo, /mi-cuenta (todas via mobile viewport 390x844). AppErrorBoundary montado correctamente y dormante (no se activa con render normal). Login flow E2E del player avanza de 'Identifícate' → 'Ingresa el código de 6 dígitos' tras POST /api/players/auth/otp/request 200. CORS_ORIGINS='*' responde allow_origin='*' sin allow_credentials (spec-compliant). Webhook MP rechaza 401 sin firma y con firma inválida. NO se detectaron regresiones.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_audit_committee.py",
+    "/app/test_reports/pytest/iter34_audit.xml"
+  ],
+  "action_items": [
+    "(Informativo, no-bloqueante) Cuando se testea desde un origen diferente al backend (ej. http://localhost:3000 → preview URL externa) con CORS_ORIGINS='*' + allow_credentials=False, las llamadas que usan credentials:'include' en api.ts fallarán preflight. Esto es spec-compliant y CORRECTO. En producción, frontend y backend comparten origen (mismo dominio de preview) → 0 CORS, todo funciona. Si en el futuro se necesita exponer la API a un origen frontend distinto con cookies, listar el dominio explícito en CORS_ORIGINS (no usar '*').",
+    "(Cosmético, ya documentado en iter33) Considerar agregar testID a inputs de login.tsx (name/telefono/codigo) y al botón 'Enviarme código' para tests E2E más estables."
+  ],
+  "critical_code_review_comments": [
+    "CORS fix en /app/backend/server.py:119-137 es correcto y spec-compliant: detecta '*' y desactiva allow_credentials. La lista explícita preserva credenciales y añade APP_PUBLIC_URL si está definido.",
+    "playerTokenStore.ts implementa migración silenciosa AsyncStorage→SecureStore con flag idempotente (_migrated) y limpieza del legado. Drop-in API consistente con el resto del código. Sin issues.",
+    "AppErrorBoundary.tsx tiene buena UX: muestra dev box solo bajo __DEV__, ofrece hardReset tras 3 hits en ventana de 10s, limpia los 3 secure tokens conocidos. Sin issues.",
+    "_layout.tsx envuelve toda la app en <AppErrorBoundary> manteniendo Toast/BrandSplash adentro. Render normal verificado: el boundary no introduce wrappers visibles ni altera el layout (screenshots confirman).",
+    "Webhook MP (/api/webhooks/mercadopago) rechaza 401 tanto sin firma como con firma inválida (HMAC mismatch). Guard intacto."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter34_audit_committee.py (nuevo · 8 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 iter34 audit tests)",
+    "frontend": "100% (5/5 pantallas renderizadas + OTP flow avanza)"
+  },
+  "seed_data_creation": "Player de prueba creado on-the-fly con phone +5215599998888 vía OTP real (código leído de db.player_otps). DELETE /api/players/me se intentó pero retornó 429 (rate-limit) en una corrida; en la pasada que pasó, cleanup OK. Sin contaminación persistente relevante.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Los 3 fixes del Comité Élite están validados y SIN regresiones: (1) CORS hardening backend (allow_credentials=False cuando origins='*'), (2) AppErrorBoundary global en _layout.tsx (dormante en render normal), (3) playerTokenStore con SecureStore + migración silenciosa desde AsyncStorage. El flujo OTP del player funciona end-to-end vía preview URL (same-origin). Cookie HttpOnly path=/api (de iter33) sigue intacta. Webhook MP guard intacto (401 sin firma / firma inválida). Atomicidad de cupos NO se tocó. Pantalla /loader-demo accesible con todas las variantes canónicas (pelota Volt/Brand/Mono + pala Negro/Brand/Volt/PadelPalaIcon).",
+  "rca_of_issue": "N/A · sin issues detectados. NOTA INFORMATIVA: si se observan errores CORS en consola al testear desde localhost:3000 contra preview URL, NO es un bug — es la consecuencia esperada del spec-compliant CORS fix (origin='*' + credentials:include es inválido por spec). En producción same-origin no aplica."
+}

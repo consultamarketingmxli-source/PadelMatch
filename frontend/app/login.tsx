@@ -36,6 +36,7 @@ import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
@@ -73,7 +74,7 @@ export default function PlayerLogin() {
     setLoading(true);
     try {
       const r = await api.playerVerifyOtp({ telefono: telefono.trim(), codigo: codigo.trim() });
-      await AsyncStorage.setItem(PLAYER_TOKEN_KEY, r.access_token);
+      await playerTokenStore.set(r.access_token);
       await AsyncStorage.setItem(
         PLAYER_INFO_KEY,
         JSON.stringify({ jugador_id: r.jugador_id, nombre: r.nombre, telefono: r.telefono }),

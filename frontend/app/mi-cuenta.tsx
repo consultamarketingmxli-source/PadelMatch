@@ -39,6 +39,7 @@ import {
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
@@ -53,7 +54,7 @@ export default function MiCuenta() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const t = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+    const t = await playerTokenStore.get();
     const i = await AsyncStorage.getItem(PLAYER_INFO_KEY);
     if (!t || !i) {
       router.replace("/login" as any);
@@ -68,7 +69,7 @@ export default function MiCuenta() {
     ]);
     // Si el token está expirado, las 3 fallarán con 401 → forzamos logout.
     if (insRes.status === "rejected" && stRes.status === "rejected" && wlRes.status === "rejected") {
-      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+      await playerTokenStore.remove();
       await AsyncStorage.removeItem(PLAYER_INFO_KEY);
       router.replace("/login" as any);
       return;
@@ -97,7 +98,7 @@ export default function MiCuenta() {
       destructive: true,
       onConfirm: async () => {
         await api.playerLogout();
-        await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+        await playerTokenStore.remove();
         await AsyncStorage.removeItem(PLAYER_INFO_KEY);
         router.replace("/" as any);
       },
@@ -113,7 +114,7 @@ export default function MiCuenta() {
    * Usa `confirmAlert` (cross-platform: window.confirm en web, Alert.alert nativo).
    */
   const handleDeleteAccount = async () => {
-    const t = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+    const t = await playerTokenStore.get();
     if (!t) {
       router.replace("/login" as any);
       return;
@@ -136,7 +137,7 @@ export default function MiCuenta() {
           onConfirm: async () => {
             try {
               const res = await api.playerDeleteMyAccount(t);
-              await AsyncStorage.removeItem(PLAYER_TOKEN_KEY);
+              await playerTokenStore.remove();
               await AsyncStorage.removeItem(PLAYER_INFO_KEY);
               infoAlert(
                 "Cuenta eliminada",

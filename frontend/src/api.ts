@@ -2,10 +2,10 @@
 import { Platform } from "react-native";
 
 import { storage } from "@/src/utils/storage";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 const TOKEN_KEY = "ppos.admin.token";
-const PLAYER_TOKEN_KEY_GLOBAL = "padelappretas.player.token";
 // Ola E — Refresh Tokens
 const REFRESH_TOKEN_KEY = "ppos.refresh.token"; // SecureStore (native) — vacío en web (cookie)
 const IS_WEB = Platform.OS === "web";
@@ -456,8 +456,7 @@ async function request<T>(
       try {
         await storage.secureRemove(TOKEN_KEY);
         await setRefreshToken(null);
-        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-        await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+        await playerTokenStore.remove();
       } catch {
         /* no-op */
       }
@@ -522,8 +521,7 @@ export const api = {
     await storage.secureRemove(TOKEN_KEY);
     await setRefreshToken(null);
     try {
-      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+      await playerTokenStore.remove();
     } catch {
       /* no-op */
     }
@@ -959,8 +957,7 @@ export const api = {
     await storage.secureRemove(TOKEN_KEY);
     await setRefreshToken(null);
     try {
-      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+      await playerTokenStore.remove();
     } catch {
       /* no-op */
     }
@@ -987,8 +984,7 @@ export const api = {
     }
     await setRefreshToken(null);
     try {
-      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-      await AsyncStorage.removeItem(PLAYER_TOKEN_KEY_GLOBAL);
+      await playerTokenStore.remove();
     } catch {
       /* no-op */
     }

@@ -12,6 +12,7 @@ import { Toast } from "@/src/components/Toast";
 import { onAuthExpired } from "@/src/api";
 import { registerGuardToast } from "@/src/hooks/useRequireAdmin";
 import { clearLastRole } from "@/src/utils/roleSelection";
+import { AppErrorBoundary } from "@/src/components/AppErrorBoundary";
 
 // Silenciar warnings ruidosos provenientes de dependencias (no-blockers).
 // Estos warnings vienen de:
@@ -77,7 +78,7 @@ export default function RootLayout() {
   if (!ready) return null;
 
   return (
-    <>
+    <AppErrorBoundary>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -95,6 +96,6 @@ export default function RootLayout() {
         tone={toast?.tone}
         onHide={() => setToast(null)}
       />
-    </>
+    </AppErrorBoundary>
   );
 }

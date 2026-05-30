@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ShieldCheck, Repeat, User } from "lucide-react-native";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 import { RetaCard } from "@/src/components/RetaCard";
 import { BrandHeader } from "@/src/components/BrandHeader";
@@ -90,8 +91,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               testID="nav-mi-cuenta-btn"
               onPress={async () => {
-                const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-                const tok = await AsyncStorage.getItem("padelappretas.player.token");
+                const tok = await playerTokenStore.get();
                 router.push(tok ? ("/mi-cuenta" as any) : ("/login" as any));
               }}
               style={styles.iconBtn}

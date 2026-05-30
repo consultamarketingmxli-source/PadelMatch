@@ -47,6 +47,7 @@ import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { useRetaRealtime } from "@/src/hooks/useRetaRealtime";
 import { storage } from "@/src/utils/storage";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const ADMIN_TOKEN_KEY = "ppos.admin.token";
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
@@ -91,7 +92,7 @@ export default function TablaEnVivo() {
     if (!reta) return;
     (async () => {
       const adminToken = await storage.secureGet<string>(ADMIN_TOKEN_KEY, "");
-      const playerToken = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+      const playerToken = await playerTokenStore.get();
 
       // Prioridad: si hay admin token, prueba ese (siempre concede acceso).
       if (adminToken) {

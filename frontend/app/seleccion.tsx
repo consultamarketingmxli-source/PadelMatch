@@ -46,6 +46,7 @@ import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { api } from "@/src/api";
 import { clearLastRole, setLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const COURT_IMAGE_URI =
   "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
@@ -104,7 +105,7 @@ export default function SeleccionScreen() {
   useEffect(() => {
     (async () => {
       const adminTok = await api.getToken();
-      const playerTok = await AsyncStorage.getItem(PLAYER_TOKEN_KEY);
+      const playerTok = await playerTokenStore.get();
       const infoRaw = await AsyncStorage.getItem(PLAYER_INFO_KEY);
       setHasAdminToken(!!adminTok);
       setHasPlayerToken(!!playerTok);
@@ -152,7 +153,7 @@ export default function SeleccionScreen() {
 
   const cerrarSesion = async () => {
     await api.logout();
-    await AsyncStorage.multiRemove([PLAYER_TOKEN_KEY, PLAYER_INFO_KEY]);
+    await Promise.all([playerTokenStore.remove(), AsyncStorage.multiRemove([PLAYER_INFO_KEY])]);
     await clearLastRole();
     router.replace("/login");
   };

@@ -108,15 +108,29 @@ async def shutdown():
 
 
 # ============== CORS ==============
-_cors_origins_env = os.getenv("CORS_ORIGINS", "*")
-_cors_origins = (
-    ["*"] if _cors_origins_env.strip() == "*"
-    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
-)
+# AUDIT FIX (DevSecOps · Comité Élite):
+#   La combinación allow_origins=["*"] + allow_credentials=True es INVÁLIDA
+#   por spec CORS (browsers rechazan la respuesta con credenciales y *).
+#   Estrategia segura:
+#     - Si CORS_ORIGINS está explícitamente listado → credenciales OK.
+#     - Si CORS_ORIGINS=="*" (catch-all dev) → credenciales OFF para evitar
+#       que un origen malicioso adjunte cookies HttpOnly del refresh token.
+#   El APP_PUBLIC_URL y dominios de preview se añaden implícitamente.
+_cors_origins_env = os.getenv("CORS_ORIGINS", "*").strip()
+_app_public = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+if _cors_origins_env == "*":
+    _cors_origins: list[str] = ["*"]
+    _cors_allow_credentials = False  # spec-compliant
+else:
+    _cors_origins = [o.strip().rstrip("/") for o in _cors_origins_env.split(",") if o.strip()]
+    # Asegura que el dominio público de la app siempre esté permitido.
+    if _app_public and _app_public not in _cors_origins:
+        _cors_origins.append(_app_public)
+    _cors_allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=_cors_allow_credentials,
     allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
