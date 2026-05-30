@@ -28,7 +28,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Circle, Path } from "react-native-svg";
+import { PadelBallShape } from "@/src/components/brand";
 
 export type PadelBallLoaderProps = {
   /** Diámetro de la pelota en px (default 56). */
@@ -40,7 +40,6 @@ export type PadelBallLoaderProps = {
 };
 
 const VOLT = "#ccff00";
-const SEAM = "#FFFFFF";
 const SHADOW = "#cbd5e1";
 
 export function PadelBallLoader({
@@ -123,58 +122,18 @@ export function PadelBallLoader({
           ]}
           pointerEvents="none"
         >
-          <PadelBallSVG size={ballSize} />
+          {/* Forma canónica (idéntica al brand logo). Solo color cambia. */}
+          <PadelBallShape
+            size={ballSize}
+            color={VOLT}
+            gradient
+            highlight
+          />
         </Animated.View>
       </View>
 
       {label ? <Text style={styles.label}>{label}</Text> : null}
     </View>
-  );
-}
-
-/**
- * SVG plano de la pelota. Geometría:
- *  - Círculo sólido volt.
- *  - DOS costuras blancas en perspectiva 3/4: una superior y una inferior,
- *    desplazadas lateralmente para que NO se crucen en el centro
- *    (replica la asimetría de la foto product_14_2.jpg).
- */
-function PadelBallSVG({ size }: { size: number }) {
-  const r = size / 2;
-  const cx = r;
-  const cy = r;
-  // Costura superior: arco curvado hacia abajo, desplazado a la izquierda.
-  // Costura inferior: arco curvado hacia abajo también, desplazado a la derecha.
-  // El control point Q controla la curvatura.
-  // Path "M start Q control end" en coordenadas SVG (origen top-left).
-  const seamTop = `M ${cx - r * 0.78} ${cy - r * 0.22} Q ${cx - r * 0.05} ${
-    cy - r * 0.78
-  } ${cx + r * 0.72} ${cy - r * 0.32}`;
-  const seamBottom = `M ${cx - r * 0.72} ${cy + r * 0.32} Q ${cx + r * 0.05} ${
-    cy + r * 0.78
-  } ${cx + r * 0.78} ${cy + r * 0.22}`;
-
-  return (
-    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Cuerpo plano */}
-      <Circle cx={cx} cy={cy} r={r - 1} fill={VOLT} />
-      {/* Costura superior */}
-      <Path
-        d={seamTop}
-        stroke={SEAM}
-        strokeWidth={Math.max(1.5, r * 0.13)}
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Costura inferior */}
-      <Path
-        d={seamBottom}
-        stroke={SEAM}
-        strokeWidth={Math.max(1.5, r * 0.13)}
-        strokeLinecap="round"
-        fill="none"
-      />
-    </Svg>
   );
 }
 

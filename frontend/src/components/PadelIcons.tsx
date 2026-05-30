@@ -19,6 +19,7 @@ import Svg, {
   Rect,
 } from "react-native-svg";
 import { colors } from "@/src/theme";
+import { PadelBallShape } from "@/src/components/brand";
 
 type IconProps = { size?: number; color?: string };
 
@@ -191,47 +192,58 @@ export function CourtWatermark({
 
 // =========== Logo / Isotipo PadelappRetas OS (Squircle) ===========
 export function PixelPadelLogo({ size = 48 }: { size?: number }) {
+  // Pelota canónica embebida dentro del squircle.
+  // Mantenemos las 3 líneas de cancha alrededor para conservar la identidad
+  // del logo secundario. La pelota usa la MISMA forma que toda la app.
+  const ballSize = Math.round(size * 0.42);
   return (
-    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-      <Defs>
-        <Pattern id="bg-grad" x={0} y={0} width={64} height={64} patternUnits="userSpaceOnUse">
-          <Rect width={64} height={64} fill="#FFFFFF" />
-        </Pattern>
-      </Defs>
-      {/* Squircle base */}
-      <Path
-        d="M32 2c18 0 30 12 30 30S50 62 32 62 2 50 2 32 14 2 32 2Z"
-        fill="#FFFFFF"
-        stroke={colors.border.default}
-        strokeWidth={1}
-      />
-      {/* Vértice de cancha (3 líneas angulares) */}
-      <Path
-        d="M14 50 L32 14 L50 50"
-        stroke={colors.text.primary}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    <View style={{ width: size, height: size }}>
+      <Svg
+        width={size}
+        height={size}
+        viewBox="0 0 64 64"
         fill="none"
-      />
-      <Line x1={20} y1={50} x2={44} y2={50} stroke={colors.text.primary} strokeWidth={2} strokeLinecap="round" />
-      {/* Pelota de pádel */}
-      <Circle cx={32} cy={34} r={9} fill="#059669" />
-      <Path
-        d="M23 34c0-2 1-4 3-5"
-        stroke="#FFFFFF"
-        strokeWidth={1.4}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Path
-        d="M41 34c0 2-1 4-3 5"
-        stroke="#FFFFFF"
-        strokeWidth={1.4}
-        strokeLinecap="round"
-        fill="none"
-      />
-    </Svg>
+        style={StyleSheet.absoluteFill}
+      >
+        {/* Squircle base */}
+        <Path
+          d="M32 2c18 0 30 12 30 30S50 62 32 62 2 50 2 32 14 2 32 2Z"
+          fill="#FFFFFF"
+          stroke={colors.border.default}
+          strokeWidth={1}
+        />
+        {/* Vértice de cancha */}
+        <Path
+          d="M14 50 L32 14 L50 50"
+          stroke={colors.text.primary}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+        <Line
+          x1={20}
+          y1={50}
+          x2={44}
+          y2={50}
+          stroke={colors.text.primary}
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+      </Svg>
+      {/* Pelota canónica (Volt/Neon) sobreimpuesta sobre el vértice */}
+      <View
+        style={{
+          position: "absolute",
+          left: (size - ballSize) / 2,
+          top: size * 0.46,
+          width: ballSize,
+          height: ballSize,
+        }}
+      >
+        <PadelBallShape size={ballSize} color="#ccff00" />
+      </View>
+    </View>
   );
 }
 
