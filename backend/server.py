@@ -41,6 +41,7 @@ from routers.rsvp import router_public as rsvp_public_router
 from routers.clubes import router as clubes_public_router
 from routers.soporte import router_admin as soporte_admin_router
 from routers.soporte import router_public as soporte_public_router
+from routers.legal_router import router as legal_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,6 +82,8 @@ api.include_router(clubes_public_router)
 api.include_router(soporte_public_router)
 api.include_router(soporte_admin_router)
 api.include_router(security_admin_router)
+# Módulo de cumplimiento legal — montado bajo /api/v1/...
+app.include_router(legal_router, prefix="/api")
 
 
 @api.get("/")

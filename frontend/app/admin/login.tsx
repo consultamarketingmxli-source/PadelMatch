@@ -38,6 +38,8 @@ import { Input } from "@/src/components/Input";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
+import { LegalConsent } from "@/src/components/LegalConsent";
+import { acceptLegal } from "@/src/utils/legalConsent";
 
 /**
  * Foto cancha azul (Director de Arte v3 — Blue Club Pro):
@@ -65,6 +67,8 @@ export default function AdminLogin() {
     setLoading(true);
     try {
       await api.login(email, password);
+      // Registra consentimiento legal (Location A) — best-effort, no bloquea.
+      void acceptLegal(email.trim().toLowerCase());
       // Tras el login NO pre-fijamos rol — el usuario lo elige en el Hub.
       // Si en sesiones anteriores tocó un CTA, la pantalla /seleccion
       // detectará el last_role y aplicará el "salto inteligente".
@@ -129,6 +133,8 @@ export default function AdminLogin() {
                 <Text style={styles.hint}>
                   Demo: admin@padelappretas.com / admin123
                 </Text>
+                {/* Legal consent — Location A (Onboarding) */}
+                <LegalConsent />
               </View>
             </SafeAreaView>
           </View>

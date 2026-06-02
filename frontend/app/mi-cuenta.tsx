@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  FileText,
   Hourglass,
   LogOut,
   ShieldOff,
@@ -259,6 +260,23 @@ export default function MiCuenta() {
             <Text style={styles.linkTitle}>Centro de Privacidad y Seguridad</Text>
             <Text style={styles.linkHint}>
               Ver mis sesiones activas, actividad reciente y configuración.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
+
+        {/* === Legal y Cumplimiento (Location B) === */}
+        <TouchableOpacity
+          onPress={() => router.push("/legal" as any)}
+          style={styles.linkCard}
+          testID="btn-ir-legal"
+          accessibilityLabel="Legal y Cumplimiento"
+        >
+          <FileText size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Legal y Cumplimiento</Text>
+            <Text style={styles.linkHint}>
+              Términos, privacidad, licencias y versión de la app.
             </Text>
           </View>
           <ChevronRight size={16} color={colors.text.tertiary} />

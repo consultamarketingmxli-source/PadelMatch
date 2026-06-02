@@ -37,6 +37,8 @@ import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
+import { LegalConsent } from "@/src/components/LegalConsent";
+import { acceptLegal } from "@/src/utils/legalConsent";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
@@ -79,6 +81,9 @@ export default function PlayerLogin() {
         PLAYER_INFO_KEY,
         JSON.stringify({ jugador_id: r.jugador_id, nombre: r.nombre, telefono: r.telefono }),
       );
+      // Registra consentimiento legal (implícito al crear cuenta / iniciar sesión)
+      // — Location A del flujo de cumplimiento. Best-effort, no bloquea login.
+      void acceptLegal(r.telefono);
       try {
         const roles = await api.playerMyRoles(r.access_token);
         const lastRole = await getLastRole();
@@ -178,6 +183,8 @@ export default function PlayerLogin() {
                 </TouchableOpacity>
               </>
             )}
+            {/* Legal consent — Location A (Onboarding) */}
+            <LegalConsent />
           </View>
 
           {/* FOTO INMERSIVA — cancha azul (pie del scroll) */}
