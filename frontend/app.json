@@ -9,12 +9,17 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": {
+        "light": "./assets/images/icon.png",
+        "tinted": "./assets/images/icon-monochrome.png"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#059669"
+        "monochromeImage": "./assets/images/icon-monochrome.png",
+        "backgroundColor": "#0f172a"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.padelappretas.app"
