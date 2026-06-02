@@ -56,10 +56,10 @@ export default function HomeScreen() {
         setHasDualRole(true);
         return;
       }
-      // Fallback: si tiene token admin, también consideramos dual.
+      // Fallback: si tiene token admin (en SecureStore), también consideramos dual.
       try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        const adminTok = await AsyncStorage.getItem("ppos.admin.token");
+        const { storage } = await import("@/src/utils/storage");
+        const adminTok = await storage.secureGet<string>("ppos.admin.token", "");
         if (adminTok) setHasDualRole(true);
       } catch {
         /* no-op */
