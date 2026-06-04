@@ -142,7 +142,7 @@ export default function AdminLogin() {
           {/* ================================================================
               BLOQUE INFERIOR — 50% pantalla, foto inmersiva con mask.
               ================================================================ */}
-          <View style={styles.bottomBlock} pointerEvents="box-none">
+          <View style={[styles.bottomBlock, { pointerEvents: "box-none" }]}>
             {/* Foto base */}
             <Image
               source={{ uri: COURT_IMAGE_URI }}
@@ -159,12 +159,11 @@ export default function AdminLogin() {
                 "rgba(248, 250, 252, 0)",
               ]}
               locations={[0, 0.35, 1]}
-              style={styles.bottomGradient}
-              pointerEvents="none"
+              style={[styles.bottomGradient, { pointerEvents: "none" }]}
             />
 
             {/* Cinta inferior con isotipo */}
-            <View style={styles.footerStrip} pointerEvents="none">
+            <View style={[styles.footerStrip, { pointerEvents: "none" }]}>
               <View style={styles.footerBadge}>
                 <BrandLogo size={18} />
                 <BrandWordmark size="sm" />

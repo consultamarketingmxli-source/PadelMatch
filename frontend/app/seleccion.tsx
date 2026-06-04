@@ -254,10 +254,9 @@ export default function SeleccionScreen() {
           <LinearGradient
             colors={["#F8FAFC", "rgba(248, 250, 252, 0.85)", "rgba(248, 250, 252, 0)"]}
             locations={[0, 0.35, 1]}
-            style={styles.bottomGradient}
-            pointerEvents="none"
+            style={[styles.bottomGradient, { pointerEvents: "none" }]}
           />
-          <View style={styles.footerStrip} pointerEvents="none">
+          <View style={[styles.footerStrip, { pointerEvents: "none" }]}>
             <View style={styles.footerBadge}>
               <BrandLogo size={18} />
               <BrandWordmark size="sm" />

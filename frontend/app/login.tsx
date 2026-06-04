@@ -188,7 +188,7 @@ export default function PlayerLogin() {
           </View>
 
           {/* FOTO INMERSIVA — cancha azul (pie del scroll) */}
-          <View style={styles.courtImageWrap} pointerEvents="none">
+          <View style={[styles.courtImageWrap, { pointerEvents: "none" }]}>
             <Image
               source={{ uri: COURT_IMG }}
               style={styles.courtImage}
@@ -254,10 +254,7 @@ const styles = StyleSheet.create({
     // Premium shadow V2 (Director de Arte): "shadow-[0_12px_40px_-6px_rgba(30,41,59,0.04)]"
     ...Platform.select({
       ios: {
-        shadowColor: "#1E293B",
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.04,
-        shadowRadius: 40,
+        boxShadow: "0px 12px 40px rgba(30,41,59,0.04)",
       },
       android: { elevation: 2 },
       web: { boxShadow: "0 12px 40px -6px rgba(30,41,59,0.04)" } as any,

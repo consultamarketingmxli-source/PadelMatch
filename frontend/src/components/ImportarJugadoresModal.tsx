@@ -148,7 +148,7 @@ export function ImportarJugadoresModal({ retaId, visible, onClose, onSuccess }: 
   if (!visible) return null;
 
   return (
-    <View style={styles.backdrop} pointerEvents="auto">
+    <View style={[styles.backdrop, { pointerEvents: "auto" }]}>
       <View style={styles.card}>
         {/* Header */}
         <View style={styles.header}>
@@ -317,10 +317,7 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: { boxShadow: "0 20px 50px rgba(0,0,0,0.25)" as any },
       ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.25,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 12 },
+        boxShadow: "0px 12px 24px rgba(0,0,0,0.25)",
       },
       android: { elevation: 12 },
     }),

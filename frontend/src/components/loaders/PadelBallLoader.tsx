@@ -107,20 +107,19 @@ export function PadelBallLoader({
               height: shadowH,
               borderRadius: shadowH / 2,
               bottom: 2,
+              pointerEvents: "none",
             },
             shadowStyle,
           ]}
-          pointerEvents="none"
         />
 
         {/* Pelota (animada) */}
         <Animated.View
           style={[
             styles.ballWrap,
-            { width: ballSize, height: ballSize, bottom: shadowH + 2 },
+            { width: ballSize, height: ballSize, bottom: shadowH + 2, pointerEvents: "none" },
             ballStyle,
           ]}
-          pointerEvents="none"
         >
           {/* Forma canónica (idéntica al brand logo). Solo color cambia. */}
           <PadelBallShape

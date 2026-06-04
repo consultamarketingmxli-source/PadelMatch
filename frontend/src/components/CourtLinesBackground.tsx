@@ -39,7 +39,7 @@ export function CourtLinesBackground({
 }: Props) {
   if (!visible) return null;
   return (
-    <View pointerEvents="none" style={[styles.abs, style]}>
+    <View style={[styles.abs, style, { pointerEvents: "none" }]}>
       <Svg
         width="100%"
         height="100%"

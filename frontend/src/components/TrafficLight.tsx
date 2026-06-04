@@ -8,20 +8,14 @@
  *   • Sutil reflejo speccular vía borde blanco (50% alpha) en el núcleo.
  */
 import React from "react";
-import { Platform, View, Text, StyleSheet } from "react-native";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { View, Text, StyleSheet } from "react-native";
+import { colors, radii, spacing, typography, hexA } from "@/src/theme";
 
 // Glow LED multiplataforma. En web React Native usa `boxShadow` (props
-// shadow* quedaron deprecadas); en native seguimos con shadow*.
-const ledGlow = (color: string, radius: number) =>
-  Platform.OS === "web"
-    ? { boxShadow: `0 0 ${radius}px ${color}` as any }
-    : {
-        shadowColor: color,
-        shadowOpacity: radius >= 6 ? 0.6 : 0.5,
-        shadowRadius: radius,
-        shadowOffset: { width: 0, height: 0 },
-      };
+// shadow* quedaron deprecadas, ahora `boxShadow` cross-platform (RN 0.76+).
+const ledGlow = (color: string, radius: number) => ({
+  boxShadow: `0px 0px ${radius}px ${hexA(color, radius >= 6 ? 0.6 : 0.5)}`,
+});
 
 // Anillo concéntrico relieve (v2). RGBA del color al 10%.
 const HALO: Record<"VERDE" | "AMARILLO" | "ROJO", string> = {

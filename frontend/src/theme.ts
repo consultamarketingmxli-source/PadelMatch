@@ -241,62 +241,45 @@ export const typography: Record<string, TextStyle> = {
 };
 
 export const shadows = {
-  card: Platform.select({
-    ios: {
-      shadowColor: "#0F172A",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 20,
-    },
-    android: { elevation: 2 },
-    web: { boxShadow: "0 4px 20px -4px rgba(15,23,42,0.05)" } as any,
-    default: {},
-  }),
-  cardHover: Platform.select({
-    ios: {
-      shadowColor: "#0F172A",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-    },
-    android: { elevation: 3 },
-    web: { boxShadow: "0 4px 12px rgba(15,23,42,0.08)" } as any,
-    default: {},
-  }),
-  cta: Platform.select({
-    ios: {
-      shadowColor: "#2563EB",     // blue-600 — Azul Eléctrico
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.25,
-      shadowRadius: 14,
-    },
-    android: { elevation: 6 },
-    web: { boxShadow: "0 6px 14px rgba(37,99,235,0.25)" } as any,
-    default: {},
-  }),
-  premium: Platform.select({
-    ios: {
-      shadowColor: "#0F172A",
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.02,
-      shadowRadius: 30,
-    },
-    android: { elevation: 1 },
-    web: { boxShadow: "0 8px 30px rgba(15,23,42,0.02)" } as any,
-    default: {},
-  }),
+  // RN 0.76+ admite `boxShadow` cross-platform (iOS + Android + Web), por lo
+  // que ya no necesitamos `shadowColor/shadowOffset/shadowOpacity/shadowRadius`
+  // (deprecados). Mantenemos `elevation` en Android para conservar el look
+  // Material si en algún build futuro vuelve a tener semántica distinta.
+  card: {
+    boxShadow: "0px 4px 20px rgba(15,23,42,0.05)",
+    elevation: 2,
+  } as any,
+  cardHover: {
+    boxShadow: "0px 4px 12px rgba(15,23,42,0.08)",
+    elevation: 3,
+  } as any,
+  cta: {
+    boxShadow: "0px 6px 14px rgba(37,99,235,0.25)",
+    elevation: 6,
+  } as any,
+  premium: {
+    boxShadow: "0px 8px 30px rgba(15,23,42,0.02)",
+    elevation: 1,
+  } as any,
   // V2 spec del Director de Arte:
   //   "shadow-[0_12px_40px_-6px_rgba(30,41,59,0.04)]"
   // Mini-sombra cohesionada para look de software premium internacional.
-  premiumV2: Platform.select({
-    ios: {
-      shadowColor: "#1E293B",
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.04,
-      shadowRadius: 40,
-    },
-    android: { elevation: 2 },
-    web: { boxShadow: "0 12px 40px -6px rgba(30,41,59,0.04)" } as any,
-    default: {},
-  }),
+  premiumV2: {
+    boxShadow: "0px 12px 40px rgba(30,41,59,0.04)",
+    elevation: 2,
+  } as any,
 } as const;
+
+/**
+ * Convierte un color hex (#RGB / #RRGGBB) + alpha a `rgba(r,g,b,a)`.
+ * Útil para construir `boxShadow` dinámicos sin depender de Platform.select.
+ */
+export function hexA(hex: string, alpha = 1): string {
+  let h = (hex || "").replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}

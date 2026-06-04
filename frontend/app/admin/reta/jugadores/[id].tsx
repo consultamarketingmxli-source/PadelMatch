@@ -53,7 +53,7 @@ import {
 import { Reta, RolResponse, api } from "@/src/api";
 import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
 import { PadelPalaIcon } from "@/src/components/PadelPalaIcon";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { colors, radii, spacing, typography, hexA } from "@/src/theme";
 
 type JugadorItem = {
   key: string;       // id estable
@@ -408,7 +408,7 @@ export default function DistribucionJugadores() {
 
         {/* ============ Modal de Vista Previa del Rol Round Robin ============ */}
         {previewOpen ? (
-          <View style={styles.modalBackdrop} pointerEvents="auto">
+          <View style={[styles.modalBackdrop, { pointerEvents: "auto" }]}>
             <View style={styles.modalCard}>
               <View style={styles.modalHeader}>
                 <Eye size={16} color={colors.brand.primary} />
@@ -583,10 +583,7 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: { boxShadow: "0 6px 16px rgba(5,150,105,0.18)" as any },
       ios: {
-        shadowColor: colors.brand.primary,
-        shadowOpacity: 0.18,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
+        boxShadow: `0px 4px 8px ${hexA(colors.brand.primary, 0.18)}`,
       },
       android: { elevation: 4 },
     }),
@@ -700,10 +697,7 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: { boxShadow: "0 20px 50px rgba(0,0,0,0.25)" as any },
       ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.25,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 12 },
+        boxShadow: "0px 12px 24px rgba(0,0,0,0.25)",
       },
       android: { elevation: 12 },
     }),
