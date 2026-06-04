@@ -377,11 +377,19 @@ async def my_security_activity(
     items = []
     async for d in cursor:
         ts = d.get("timestamp")
+        # Enriquecimiento iter37: agregar location vía geo lookup cacheado.
+        ip = d.get("ip_origen")
+        geo = None
+        if ip:
+            from core.ip_geo import resolve_ip_geo, format_location
+            geo_dict = await resolve_ip_geo(ip)
+            geo = format_location(geo_dict)
         items.append(
             {
                 "accion": d.get("accion"),
                 "result": d.get("result"),
-                "ip": d.get("ip_origen"),
+                "ip": ip,
+                "location": geo or "—",
                 "user_agent": (d.get("user_agent") or "")[:80],
                 "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else None,
             }
