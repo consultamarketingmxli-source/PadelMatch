@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,9 +15,10 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, Trophy, Target, Activity } from "lucide-react-native";
 
 import { api, PlayerStats } from "@/src/api";
-import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { CTAButton } from "@/src/components/brand/CTAButton";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -54,20 +54,13 @@ export default function ProfileScreen() {
             <View style={{ width: 40 }} />
           </View>
 
-          <View style={styles.avatarWrap}>
-            <Image
-              source={{
-                uri: "https://images.unsplash.com/photo-1549505415-e16dbd446231?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwzfHxhdGhsZXRlJTIwcG9ydHJhaXQlMjBkYXJrbmVzc3xlbnwwfHx8fDE3Nzk4MzgzMjV8MA&ixlib=rb-4.1.0&q=85",
-              }}
-              style={styles.avatar}
-            />
-            <Text style={styles.title}>
-              {stats?.nombre || "Identifícate"}
-            </Text>
-            <Text style={styles.subtitle}>
-              Consulta tus estadísticas históricas en PadelappRetas
-            </Text>
-          </View>
+          <HeroBanner
+            eyebrow="PADELAPPRETAS · PERFIL DE JUGADOR"
+            title={stats?.nombre || "Identifícate"}
+            subtitle="Consulta tus estadísticas históricas, partidos jugados, victorias y efectividad."
+            height={180}
+            style={{ marginBottom: spacing.lg }}
+          />
 
           <Input
             label="Tu teléfono"
@@ -77,7 +70,15 @@ export default function ProfileScreen() {
             keyboardType="phone-pad"
             testID="profile-tel-input"
           />
-          <Button title="Buscar mis stats" onPress={load} loading={loading} testID="profile-load-btn" />
+          <CTAButton
+            label="Buscar mis stats"
+            onPress={load}
+            loading={loading}
+            fullWidth
+            size="lg"
+            testID="profile-load-btn"
+            style={{ marginTop: spacing.md }}
+          />
 
           {loading ? (
             <ActivityIndicator color={colors.brand.primary} style={{ marginTop: spacing.lg }} />
@@ -127,25 +128,24 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md,
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.blueHairline,
     alignItems: "center", justifyContent: "center",
   },
-  brand: { color: colors.brand.primary, fontWeight: "900", letterSpacing: 2, fontSize: 14 },
-  avatarWrap: { alignItems: "center", marginBottom: spacing.lg, gap: 8 },
-  avatar: {
-    width: 88, height: 88, borderRadius: 44,
-    borderWidth: 2, borderColor: colors.brand.primaryBorder,
-    marginBottom: spacing.sm,
-  },
-  title: { ...typography.h2, color: colors.text.primary, textTransform: "uppercase" },
-  subtitle: { color: colors.text.secondary, textAlign: "center", paddingHorizontal: spacing.lg },
+  brand: { ...typography.label, color: colors.brand.azure, fontSize: 11, letterSpacing: 2 },
   statsWrap: { marginTop: spacing.lg, gap: spacing.md },
   statCard: {
-    backgroundColor: colors.bg.card, borderRadius: radii.md, padding: spacing.lg,
-    borderWidth: 1, borderColor: colors.border.default,
+    backgroundColor: colors.bg.card, borderRadius: radii.card, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border.blueHairline,
+    ...(shadows.card as object),
   },
   statAccent: { borderColor: colors.brand.primaryBorder, backgroundColor: colors.brand.primarySoft },
   statHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: spacing.sm },
   statLabel: { ...typography.label, color: colors.text.secondary, fontSize: 11 },
-  statValue: { color: colors.text.primary, fontSize: 32, fontWeight: "900" },
+  statValue: {
+    fontFamily: typography.monoBold.fontFamily,
+    fontVariant: ["tabular-nums"],
+    color: colors.brand.sapphire,
+    fontSize: 32,
+    letterSpacing: -0.8,
+  },
 });

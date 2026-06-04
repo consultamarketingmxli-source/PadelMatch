@@ -45,11 +45,17 @@ import { BrandLogo } from "@/src/components/BrandLogo";
 import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { api } from "@/src/api";
 import { clearLastRole, setLastRole } from "@/src/utils/roleSelection";
-import { colors, radii, shadows, spacing, typography } from "@/src/theme";
+import {
+  brandAssets,
+  colors,
+  radii,
+  shadows,
+  spacing,
+  typography,
+} from "@/src/theme";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
-const COURT_IMAGE_URI =
-  "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
+const COURT_IMAGE_URI = brandAssets.courtHero;
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
@@ -58,7 +64,7 @@ type RoleCardProps = {
   testID: string;
   label: string;
   sub: string;
-  tone: "slate" | "emerald";
+  tone: "sapphire" | "azure";
   onPress: () => void;
   icon: React.ReactNode;
 };
@@ -68,8 +74,10 @@ function RoleCard({ testID, label, sub, tone, onPress, icon }: RoleCardProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const onIn = () => Animated.spring(scale, { toValue: 1.02, useNativeDriver: true, friction: 6 }).start();
   const onOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 6 }).start();
-  const bg = tone === "slate" ? "#0F172A" : "#059669"; // slate-900 / emerald-600
-  const bgPressed = tone === "slate" ? "#1E293B" : "#047857";
+  // Rebrand v3: ambas tarjetas usan la paleta Sapphire/Azure.
+  // Sapphire (organizador) = deep premium · Azure (jugador) = brand active.
+  const bg = tone === "sapphire" ? colors.brand.sapphire : colors.brand.azure;
+  const bgPressed = tone === "sapphire" ? "#162B66" : "#2563EB";
   return (
     <Animated.View style={{ transform: [{ scale }], width: "100%" }}>
       <Pressable
@@ -80,6 +88,9 @@ function RoleCard({ testID, label, sub, tone, onPress, icon }: RoleCardProps) {
         accessibilityRole="button"
         style={({ pressed }) => [
           styles.roleCard,
+          tone === "azure"
+            ? (shadows.btn as object)
+            : (shadows.hero as object),
           { backgroundColor: pressed ? bgPressed : bg },
         ]}
       >
@@ -204,7 +215,7 @@ export default function SeleccionScreen() {
             <View style={styles.ctaStack}>
               <RoleCard
                 testID="seleccion-organizador"
-                tone="slate"
+                tone="sapphire"
                 label="Ingresar como Organizador"
                 sub="Crear retas, controlar marcadores, gestionar pagos."
                 onPress={goAdmin}
@@ -212,7 +223,7 @@ export default function SeleccionScreen() {
               />
               <RoleCard
                 testID="seleccion-jugador"
-                tone="emerald"
+                tone="azure"
                 label="Ingresar como Jugador"
                 sub="Buscar retas cerca, aceptar invitaciones y jugar."
                 onPress={goPlayer}

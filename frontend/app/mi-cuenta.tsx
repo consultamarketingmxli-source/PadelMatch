@@ -38,7 +38,8 @@ import {
 } from "lucide-react-native";
 
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
@@ -193,13 +194,19 @@ export default function MiCuenta() {
         }
       >
         <View style={styles.topBar}>
-          <View>
-            <Text style={styles.hello}>¡Hola, {info?.nombre}!</Text>
-            <Text style={styles.subtle}>{info?.telefono}</Text>
+          <View style={{ flex: 1 }}>
+            <HeroBanner
+              eyebrow="MI CUENTA"
+              title={`Hola, ${info?.nombre ?? "Jugador"}`}
+              subtitle={info?.telefono}
+              height={160}
+              right={
+                <TouchableOpacity onPress={logout} style={styles.heroLogoutBtn} testID="logout-btn">
+                  <LogOut size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              }
+            />
           </View>
-          <TouchableOpacity onPress={logout} style={styles.iconBtn} testID="logout-btn">
-            <LogOut size={16} color={colors.text.primary} />
-          </TouchableOpacity>
         </View>
 
         {/* Stats hero — efectividad gigante */}
@@ -415,26 +422,39 @@ const styles = StyleSheet.create({
   },
   hello: { color: colors.text.primary, fontSize: 22, fontWeight: "900" },
   subtle: { color: colors.text.secondary, fontSize: 12, marginTop: 2 },
+  heroLogoutBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.32)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   heroCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.brand.primaryBorder,
-    borderRadius: radii.lg,
+    borderRadius: radii.card,
     padding: spacing.lg,
+    marginTop: spacing.md,
     marginBottom: spacing.md,
+    ...(shadows.card as object),
   },
   heroLabel: {
     ...typography.label,
-    color: colors.text.secondary,
+    color: colors.brand.azure,
     fontSize: 11,
     marginBottom: 4,
   },
   heroValue: {
-    color: colors.brand.primary,
+    fontFamily: typography.monoBold.fontFamily,
+    fontVariant: ["tabular-nums"],
+    color: colors.brand.sapphire,
     fontSize: 48,
-    fontWeight: "900",
-    letterSpacing: -1,
+    letterSpacing: -1.4,
     lineHeight: 52,
   },
   heroBarBg: {
@@ -452,13 +472,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radii.md,
+    borderColor: colors.border.blueHairline,
+    borderRadius: radii.card,
     padding: spacing.md,
     alignItems: "center",
+    ...(shadows.card as object),
   },
-  statValue: { color: colors.text.primary, fontSize: 22, fontWeight: "900" },
-  statLabel: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
+  statValue: {
+    fontFamily: typography.monoBold.fontFamily,
+    fontVariant: ["tabular-nums"],
+    color: colors.text.primary,
+    fontSize: 22,
+    letterSpacing: -0.4,
+  },
+  statLabel: { ...typography.label, color: colors.text.secondary, fontSize: 10, marginTop: 4 },
 
   section: {
     ...typography.h2,
@@ -474,10 +501,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radii.md,
+    borderColor: colors.border.blueHairline,
+    borderRadius: radii.card,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    ...(shadows.card as object),
   },
   waitRow: {
     borderColor: colors.status.amber,
@@ -501,34 +529,37 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radii.md,
+    borderColor: colors.border.blueHairline,
+    borderRadius: radii.card,
     padding: spacing.xl,
     alignItems: "center",
     gap: spacing.sm,
+    ...(shadows.card as object),
   },
   emptyTitle: { ...typography.h2, color: colors.text.primary, fontSize: 16, textAlign: "center" },
   emptyText: { color: colors.text.secondary, fontSize: 12, textAlign: "center" },
   cta: {
-    backgroundColor: colors.brand.primary,
+    backgroundColor: colors.brand.azure,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: radii.pill,
     marginTop: spacing.sm,
+    ...(shadows.btn as object),
   },
   ctaText: { color: colors.text.inverse, fontWeight: "800" },
 
   // === Privacy / Apple 5.1.1 ===
   linkCard: {
     backgroundColor: colors.bg.card,
-    borderRadius: radii.md,
+    borderRadius: radii.card,
     padding: spacing.md,
     marginTop: spacing.sm,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     borderWidth: 1,
-    borderColor: colors.border.default,
+    borderColor: colors.border.blueHairline,
+    ...(shadows.card as object),
   },
   linkTitle: { ...typography.bodyBold, fontSize: 13, color: colors.text.primary },
   linkHint: { color: colors.text.secondary, fontSize: 11, marginTop: 1 },

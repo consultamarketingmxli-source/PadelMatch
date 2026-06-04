@@ -26,7 +26,8 @@ import {
 } from "lucide-react-native";
 
 import { AdminMetrics, RetaKPI, api } from "@/src/api";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 const fmtMxn = (v: number) =>
   v.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
@@ -73,6 +74,14 @@ export default function AdminDashboard() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
       >
+        <HeroBanner
+          eyebrow="PADELAPPRETAS · ADMIN"
+          title="Panel de Control"
+          subtitle={`Ingresos ${fmtMxn(data.ingresos_totales_mxn)} · ${data.pagos_aprobados} pagos · ${data.jugadores_unicos} jugadores`}
+          height={172}
+          style={{ marginBottom: spacing.lg }}
+        />
+
         {/* Acceso rápido a Mercado Pago */}
         <TouchableOpacity
           onPress={() => router.push("/admin/mercadopago" as any)}
@@ -228,31 +237,37 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md,
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.blueHairline,
     alignItems: "center", justifyContent: "center",
   },
   title: { ...typography.h2, color: colors.text.primary, fontSize: 18 },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
   kpiRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   kpi: {
-    flex: 1, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md,
+    flex: 1, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.blueHairline,
+    borderRadius: radii.card, padding: spacing.md,
+    ...(shadows.card as object),
   },
   kpiHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
-  kpiLabel: { color: colors.text.secondary, fontSize: 11, fontWeight: "600" },
-  kpiValue: { ...typography.monoLarge, color: colors.text.primary } as any,
+  kpiLabel: { ...typography.label, color: colors.text.secondary, fontSize: 10 },
+  kpiValue: { ...typography.monoLarge, color: colors.brand.sapphire } as any,
   section: { ...typography.h2, color: colors.text.primary, fontSize: 16, marginTop: spacing.lg, marginBottom: spacing.sm },
   empty: { color: colors.text.secondary, padding: spacing.md, textAlign: "center", fontSize: 12 },
   retaRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.sm,
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.blueHairline,
+    borderRadius: radii.card, padding: spacing.md, marginBottom: spacing.sm,
+    ...(shadows.card as object),
   },
   semDot: { width: 10, height: 10, borderRadius: 5 },
   retaName: { color: colors.text.primary, fontWeight: "700", fontSize: 14 },
   retaMeta: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
   retaMoney: { alignItems: "flex-end" },
-  retaIngreso: { color: colors.brand.primary, fontWeight: "800", fontSize: 14 },
+  retaIngreso: {
+    fontFamily: typography.monoBold.fontFamily,
+    fontVariant: ["tabular-nums"],
+    color: colors.brand.sapphire, fontSize: 14,
+  },
   retaRefund: { color: colors.status.red, fontSize: 10, marginTop: 2 },
   mpCard: {
     flexDirection: "row",
@@ -261,19 +276,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand.primarySoft,
     borderWidth: 1,
     borderColor: colors.brand.primaryBorder,
-    borderRadius: radii.md,
+    borderRadius: radii.card,
     padding: spacing.md,
     marginBottom: spacing.md,
+    ...(shadows.card as object),
   },
   mpIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.brand.primary,
+    borderRadius: radii.icon,
+    backgroundColor: colors.brand.azure,
     alignItems: "center",
     justifyContent: "center",
   },
-  mpTitle: { color: colors.text.primary, fontWeight: "900", fontSize: 14, letterSpacing: -0.3 },
+  mpTitle: { color: colors.brand.sapphire, fontWeight: "900", fontSize: 14, letterSpacing: -0.3 },
   mpDesc: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },
-  mpArrow: { color: colors.text.secondary, fontSize: 22, fontWeight: "300" },
+  mpArrow: { color: colors.brand.azure, fontSize: 22, fontWeight: "300" },
 });

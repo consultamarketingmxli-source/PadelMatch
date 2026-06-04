@@ -46,7 +46,8 @@ import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
 import { LifeBuoySupport } from "@/src/components/LifeBuoySupport";
 import { RsvpCard, type RsvpResult } from "@/src/components/retas/RsvpCard";
 import { CheckoutCard, type RegMode, type CuponState } from "@/src/components/retas/CheckoutCard";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
   const router = useRouter();
@@ -442,6 +443,14 @@ export default function RetaDetailScreen() {
               <TrafficLight status={reta.semaforo} capacidadPct={reta.capacidad_pct} />
             </View>
           </View>
+
+          <HeroBanner
+            eyebrow={`PADELAPPRETAS · ${(reta.modalidad_juego || "RETA").toUpperCase()}`}
+            title={reta.nombre}
+            subtitle={`${reta.club} · ${fechaStr} · ${horaStr}`}
+            height={188}
+            style={{ marginBottom: spacing.lg }}
+          />
 
           <View style={styles.heroRow}>
             <View style={styles.logoBox}>
