@@ -16,7 +16,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from auth import get_current_admin
 from core.db import db
@@ -91,14 +95,26 @@ async def list_security_logs(
         .skip(skip)
         .limit(limit)
     )
+    # iter37: enriquecemos con location vía caché ip-api.
+    from core.ip_geo import format_location, resolve_ip_geo
+
     items = []
     async for d in cursor:
+        ip = d.get("ip_origen")
+        loc = "—"
+        if ip:
+            try:
+                geo = await resolve_ip_geo(ip)
+                loc = format_location(geo)
+            except Exception:  # noqa: BLE001
+                pass
         items.append(
             {
                 "accion": d.get("accion"),
                 "id_usuario": d.get("id_usuario"),
                 "result": d.get("result"),
-                "ip_origen": d.get("ip_origen"),
+                "ip_origen": ip,
+                "location": loc,
                 "user_agent": (d.get("user_agent") or "")[:120],
                 "timestamp": _iso(d.get("timestamp")),
                 "extra": d.get("extra") or {},
@@ -199,3 +215,120 @@ async def security_stats(
         },
         "active_sessions": active_sessions,
     }
+
+
+
+# ---------------------------------------------------------------------------
+# GET /api/admin/security/logs.csv — Exportación CSV de Audit Logs (iter37)
+# ---------------------------------------------------------------------------
+#
+# Devuelve los eventos como CSV con BOM UTF-8 (compatible Excel/Numbers).
+# Mismos filtros que /logs, sin paginación (cap a 10k filas hard limit).
+#
+# Auth: igual que /logs — solo admin JWT. Audita el acceso con la acción
+# `admin_security_logs_exported` para trazabilidad GDPR.
+# ---------------------------------------------------------------------------
+_CSV_HARD_LIMIT = 10_000
+
+
+@router.get("/logs.csv")
+async def export_security_logs_csv(
+    request: Request,
+    accion: Optional[str] = Query(None),
+    id_usuario: Optional[str] = Query(None),
+    result: Optional[str] = Query(None),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    current=Depends(get_current_admin),
+):
+    """Exporta el audit log filtrado a CSV (UTF-8 con BOM)."""
+    q: dict = {}
+    if accion:
+        q["accion"] = {"$regex": f"^{accion}", "$options": "i"}
+    if id_usuario:
+        q["id_usuario"] = id_usuario
+    if result:
+        q["result"] = result
+    rng: dict = {}
+    f = _parse_iso(from_date)
+    t = _parse_iso(to_date)
+    if f:
+        rng["$gte"] = f
+    if t:
+        rng["$lte"] = t
+    if rng:
+        q["timestamp"] = rng
+
+    cursor = (
+        db.security_logs.find(q, {"_id": 0})
+        .sort("timestamp", -1)
+        .limit(_CSV_HARD_LIMIT)
+    )
+
+    # Resolución de geolocation (cacheada).
+    from core.ip_geo import format_location, resolve_ip_geo
+
+    buf = io.StringIO()
+    # BOM para que Excel detecte UTF-8 automáticamente.
+    buf.write("\ufeff")
+    writer = csv.writer(buf, lineterminator="\n", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "timestamp",
+        "accion",
+        "id_usuario",
+        "result",
+        "ip_origen",
+        "location",
+        "user_agent",
+        "extra",
+    ])
+
+    row_count = 0
+    async for d in cursor:
+        ip = d.get("ip_origen")
+        loc = "—"
+        if ip:
+            try:
+                geo = await resolve_ip_geo(ip)
+                loc = format_location(geo)
+            except Exception:  # noqa: BLE001
+                pass
+        extra_obj = d.get("extra") or {}
+        try:
+            extra_str = str(extra_obj)[:500]
+        except Exception:  # noqa: BLE001
+            extra_str = ""
+        writer.writerow([
+            _iso(d.get("timestamp")) or "",
+            d.get("accion") or "",
+            d.get("id_usuario") or "",
+            d.get("result") or "",
+            ip or "",
+            loc,
+            (d.get("user_agent") or "")[:200],
+            extra_str,
+        ])
+        row_count += 1
+
+    # Audit: el acto de exportar queda registrado.
+    await write_security_log(
+        accion="admin_security_logs_exported",
+        request=request,
+        id_usuario=current["sub"],
+        result="success",
+        extra={
+            "rows": row_count,
+            "filter": str({k: str(v) for k, v in q.items()})[:200] if q else None,
+        },
+    )
+
+    filename = f"padelappretas-security-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )

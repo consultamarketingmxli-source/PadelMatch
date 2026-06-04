@@ -195,6 +195,37 @@ async def verify_otp(request: Request, response: Response, body: OtpVerify):
     # OK: borrar OTP y devolver token
     await db.player_otps.delete_one({"telefono": body.telefono})
 
+    # Reset lockout / known device fingerprint y notificar si es device nuevo.
+    # Best-effort: no rompe el flujo si falla.
+    try:
+        from core.new_device_alert import (
+            check_and_register_device,
+            notify_new_device,
+        )
+
+        ua = (request.headers.get("user-agent") or "")[:200]
+        ip_hdr = request.headers.get("x-forwarded-for")
+        ip_addr = (ip_hdr.split(",")[0].strip() if ip_hdr else (request.client.host if request.client else None))
+        is_new, fp = await check_and_register_device(
+            user_id=body.telefono, ip=ip_addr, user_agent=ua
+        )
+        if is_new:
+            await write_security_log(
+                accion="new_device_login",
+                request=request,
+                id_usuario=body.telefono,
+                result="success",
+                extra={"fingerprint": fp[:12], "role": "player"},
+            )
+            # Notif WhatsApp en background (no awaitamos, no debe bloquear).
+            import asyncio as _asyncio  # noqa: WPS433
+
+            _asyncio.create_task(
+                notify_new_device(body.telefono, ip_addr, ua, role="player")
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
     jugador = await db.usuarios.find_one({"telefono": body.telefono}, {"_id": 0})
     if not jugador:
         # Edge: usuario sin registro previo (no debería pasar)
@@ -291,10 +322,22 @@ async def list_my_sessions(request: Request, current=Depends(get_current_player)
     sessions = []
     async for d in cursor:
         th = d.get("token_hash", "")
+        ip = d.get("ip")
+        # Enriquecimiento iter37: location (cacheado, no rompe si falla).
+        location_str = "—"
+        if ip:
+            try:
+                from core.ip_geo import format_location, resolve_ip_geo
+
+                geo_dict = await resolve_ip_geo(ip)
+                location_str = format_location(geo_dict)
+            except Exception:  # noqa: BLE001
+                pass
         sessions.append(
             {
                 "id": th[:16],
-                "ip": d.get("ip"),
+                "ip": ip,
+                "location": location_str,
                 "user_agent": (d.get("user_agent") or "")[:120],
                 "created_at": (d.get("created_at") or now).isoformat()
                 if hasattr(d.get("created_at"), "isoformat")

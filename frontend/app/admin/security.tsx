@@ -23,9 +23,11 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  Download,
   Filter,
   Globe,
   Lock,
+  MapPin,
   RefreshCw,
   ShieldAlert,
   User,
@@ -35,6 +37,7 @@ import {
 import { api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { infoAlert } from "@/src/utils/confirmAlert";
+import { downloadAdminCsv } from "@/src/utils/downloadCsv";
 
 type Stats = Awaited<ReturnType<typeof api.adminSecurityStats>>;
 type LogItem = Awaited<ReturnType<typeof api.adminSecurityLogs>>["items"][number];
@@ -83,6 +86,7 @@ export default function AdminSecurityScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const PAGE = 25;
 
@@ -146,6 +150,30 @@ export default function AdminSecurityScreen() {
     setLoadingMore(true);
     await loadLogs(false);
     setLoadingMore(false);
+  };
+
+  const onExportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const path = api.adminSecurityLogsCsvPath({
+        accion: accion || undefined,
+        result: result || undefined,
+        id_usuario: userFilter || undefined,
+      });
+      const r = await downloadAdminCsv(path);
+      infoAlert(
+        "Exportación lista",
+        `Archivo ${r.filename} generado correctamente.`,
+      );
+    } catch (e: any) {
+      infoAlert(
+        "Error al exportar",
+        String(e?.message || "No se pudo descargar el CSV."),
+      );
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -293,9 +321,29 @@ export default function AdminSecurityScreen() {
           ) : null}
         </View>
 
-        <Text style={styles.totalLabel}>
-          {total.toLocaleString("es-MX")} eventos
-        </Text>
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>
+            {total.toLocaleString("es-MX")} eventos
+          </Text>
+          <TouchableOpacity
+            onPress={onExportCsv}
+            disabled={exporting || items.length === 0}
+            style={[
+              styles.exportBtn,
+              (exporting || items.length === 0) && styles.exportBtnDisabled,
+            ]}
+            testID="export-csv-btn"
+          >
+            {exporting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Download size={12} color="#fff" />
+                <Text style={styles.exportBtnText}>Exportar CSV</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
 
         {/* === Lista === */}
         {items.map((it, idx) => (
@@ -334,6 +382,14 @@ export default function AdminSecurityScreen() {
                 <View style={styles.logMetaCell}>
                   <Globe size={10} color={colors.text.secondary} />
                   <Text style={styles.logMeta}>{it.ip_origen}</Text>
+                </View>
+              )}
+              {it.location && it.location !== "—" && (
+                <View style={styles.logMetaCell}>
+                  <MapPin size={10} color={colors.brand.primary} />
+                  <Text style={[styles.logMeta, { color: colors.brand.primary }]}>
+                    {it.location}
+                  </Text>
                 </View>
               )}
             </View>
@@ -489,6 +545,25 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: 4,
   },
+  totalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.brand.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    minHeight: 28,
+  },
+  exportBtnDisabled: { opacity: 0.5 },
+  exportBtnText: { color: "#fff", fontSize: 11, fontWeight: "800" },
 
   logCard: {
     backgroundColor: colors.bg.card,

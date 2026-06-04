@@ -42,6 +42,7 @@ const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 type Session = {
   id: string;
   ip: string | null;
+  location?: string;
   user_agent: string;
   created_at: string | null;
   last_used_at: string | null;
@@ -53,6 +54,7 @@ type Activity = {
   accion: string;
   result: string;
   ip: string | null;
+  location?: string;
   user_agent: string;
   timestamp: string | null;
 };
@@ -71,6 +73,7 @@ const ACTION_LABELS: Record<string, string> = {
   player_session_revoked: "Revocaste una sesión",
   account_deletion_completed: "Eliminaste tu cuenta",
   rate_limit_exceeded: "Demasiados intentos",
+  new_device_login: "🆕 Inicio desde un nuevo dispositivo",
 };
 
 function labelFor(accion: string): string {
@@ -231,7 +234,11 @@ export default function SeguridadScreen() {
                   </View>
                   <View style={styles.metaRow}>
                     <Globe size={11} color={colors.text.secondary} />
-                    <Text style={styles.meta}>{s.ip || "IP desconocida"}</Text>
+                    <Text style={styles.meta} numberOfLines={1}>
+                      {s.location && s.location !== "—"
+                        ? `${s.location} · ${s.ip || "IP ?"}`
+                        : s.ip || "IP desconocida"}
+                    </Text>
                   </View>
                   <View style={styles.metaRow}>
                     <Clock size={11} color={colors.text.secondary} />
@@ -282,8 +289,13 @@ export default function SeguridadScreen() {
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.activityLabel}>{labelFor(a.accion)}</Text>
-                  <Text style={styles.activityMeta}>
-                    {formatRelative(a.timestamp)} · {a.ip || "IP ?"}
+                  <Text style={styles.activityMeta} numberOfLines={1}>
+                    {formatRelative(a.timestamp)}
+                    {a.location && a.location !== "—"
+                      ? ` · ${a.location}`
+                      : a.ip
+                      ? ` · ${a.ip}`
+                      : " · IP ?"}
                   </Text>
                 </View>
               </View>

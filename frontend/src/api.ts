@@ -341,6 +341,16 @@ async function tokenHeader(): Promise<Record<string, string>> {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+/** Devuelve el access token admin crudo (para descargas con header custom). */
+export async function getAdminAccessToken(): Promise<string | null> {
+  return (await storage.secureGet<string>(TOKEN_KEY, "")) || null;
+}
+
+/** URL absoluta del backend (sin /api). Útil para componer endpoints custom. */
+export function backendBaseUrl(): string {
+  return BASE;
+}
+
 /* ---------------------------------------------------------------------------
  * Ola E — Refresh Token Mutex + Auto-Refresh on 401
  *
@@ -1004,6 +1014,7 @@ export const api = {
       sessions: Array<{
         id: string;
         ip: string | null;
+        location?: string;
         user_agent: string;
         created_at: string | null;
         last_used_at: string | null;
@@ -1037,6 +1048,7 @@ export const api = {
         accion: string;
         result: string;
         ip: string | null;
+        location?: string;
         user_agent: string;
         timestamp: string | null;
       }>;
@@ -1082,6 +1094,7 @@ export const api = {
         id_usuario: string | null;
         result: string;
         ip_origen: string | null;
+        location?: string;
         user_agent: string;
         timestamp: string | null;
         extra: Record<string, any>;
@@ -1091,6 +1104,26 @@ export const api = {
       skip: number;
       has_more: boolean;
     }>(`/admin/security/logs?${qs.toString()}`, { auth: true });
+  },
+
+  /**
+   * Devuelve la URL absoluta del endpoint CSV con los filtros aplicados.
+   * El header Authorization lo añade quien la consuma (fetch + Blob en
+   * web, FileSystem.downloadAsync con header en native).
+   */
+  adminSecurityLogsCsvPath: (params: {
+    accion?: string;
+    id_usuario?: string;
+    result?: string;
+    from?: string;
+    to?: string;
+  } = {}): string => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    });
+    const tail = qs.toString();
+    return `/admin/security/logs.csv${tail ? `?${tail}` : ""}`;
   },
 
   // ===== pdf =====

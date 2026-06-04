@@ -98,6 +98,27 @@ async def login(request: Request, response: Response, body: LoginRequest):
     # Login exitoso → resetear historial de fallos.
     await clear_failures(db, email_lc)
 
+    # iter37: detección de dispositivo nuevo + audit log (best-effort).
+    try:
+        from core.new_device_alert import check_and_register_device
+
+        ua = (request.headers.get("user-agent") or "")[:200]
+        ip_hdr = request.headers.get("x-forwarded-for")
+        ip_addr = (ip_hdr.split(",")[0].strip() if ip_hdr else (request.client.host if request.client else None))
+        is_new, fp = await check_and_register_device(
+            user_id=admin["email"], ip=ip_addr, user_agent=ua
+        )
+        if is_new:
+            await write_security_log(
+                accion="new_device_login",
+                request=request,
+                id_usuario=admin["email"],
+                result="success",
+                extra={"fingerprint": fp[:12], "role": "admin"},
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
     access_token = create_access_token(subject=admin["email"], role="admin")
     raw_refresh = generate_refresh_token()
     await create_refresh_token_document(
