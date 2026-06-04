@@ -33,19 +33,27 @@ export const colors = {
     surface: "#FAFAFA",        // alt soft background
   },
   brand: {
-    // ── BLUE CLUB PRO V2 ─────────────────────────────────────────
-    primary: "#2563EB",        // blue-600 — Azul Eléctrico
-    primaryHover: "#1D4ED8",   // blue-700
-    primaryMuted: "rgba(37, 99, 235, 0.10)",
-    primaryBorder: "rgba(37, 99, 235, 0.30)",
+    // ── REBRAND v3 — SAPPHIRE / AZURE PREMIUM ──────────────────
+    // Master spec: Sapphire #1E3A8A (hero, prices, deep CTAs)
+    //              Azure   #3B82F6 (buttons, badges, active states)
+    primary: "#3B82F6",        // Azure — botones primarios y estados activos
+    primaryHover: "#1E3A8A",   // Sapphire — hover deep state
+    primaryMuted: "rgba(59, 130, 246, 0.10)",
+    primaryBorder: "rgba(59, 130, 246, 0.30)",
     primarySoft: "#EFF6FF",    // blue-50
-    accent: "#3B82F6",         // blue-500 acento secundario
-    // Gradiente premium (login, CTAs hero)
-    gradientFrom: "#2563EB",   // blue-600
-    gradientVia:  "#1E40AF",   // blue-800
-    gradientTo:   "#312E81",   // indigo-900 — Azul Cobalto Real
-    cobalt: "#312E81",         // indigo-900
-    midnight: "#1E1B4B",       // indigo-950 (text titles ultra premium)
+    accent: "#60A5FA",         // Azure Light — íconos secundarios
+    // Tokens explícitos del rebrand (uso directo en componentes nuevos)
+    sapphire: "#1E3A8A",       // azul zafiro — precios, hero bg, deep accent
+    azure: "#3B82F6",          // azul azure — CTAs, badges
+    azureLight: "#60A5FA",     // azul claro — hover / secundarios
+    bone: "#F8FAFC",           // hueso casi blanco — fondo app
+    ink: "#0F172A",            // tinta — texto principal
+    // Gradiente premium Sapphire → Azure (CTAs, hero overlays)
+    gradientFrom: "#3B82F6",   // azure top
+    gradientVia:  "#2563EB",   // blue-600 mid
+    gradientTo:   "#1E3A8A",   // sapphire bottom
+    cobalt: "#1E3A8A",         // alias legacy → sapphire
+    midnight: "#0F172A",       // ink (text titles ultra premium)
     onPrimary: "#FFFFFF",
   },
   text: {
@@ -107,15 +115,48 @@ export const radii = {
   xl: 20,
   squircle: 22,
   pill: 999,
+  // ── REBRAND v3 — radios específicos del Master Design ──
+  hero: 28,     // hero banner, modales principales
+  card: 24,     // tarjetas de reta
+  button: 14,   // botones primarios
+  icon: 13,     // contenedor de íconos
+  input: 12,    // inputs y selects
+} as const;
+
+/**
+ * URLs de assets del rebrand v3 (imágenes externas curadas).
+ * Servidas desde Emergent customer-assets CDN — públicas.
+ */
+export const brandAssets = {
+  /** Cancha de pádel ángulo alto (fondo del Hero Banner). */
+  courtHero:
+    "https://customer-assets.emergentagent.com/job_padel-tournament-hub-9/artifacts/lbsdpc8k_campo-padel-alto-angulo_23-2149458998.avif",
+} as const;
+
+/**
+ * Chips semánticos del rebrand. Cada variante = {bg, text, border}.
+ * Usar con el componente <Chip variant="mid"/> para garantizar consistencia.
+ */
+export const chipPalette = {
+  beginner:  { bg: "#F0FDF4", text: "#15803D" },
+  mid:       { bg: "#EFF6FF", text: "#1D4ED8" },
+  advanced:  { bg: "#FDF4FF", text: "#7E22CE" },
+  elite:     { bg: "#FFF7ED", text: "#C2410C" },
+  available: { bg: "#F0FDF4", text: "#15803D" },
+  full:      { bg: "#FEF2F2", text: "#DC2626" },
+  premium:   { bg: "#FFF7ED", text: "#C2410C" },
+  today:     { bg: "#EFF6FF", text: "#1D4ED8" },
 } as const;
 
 export const fonts = {
-  sansRegular: "Inter_400Regular",
-  sansMedium: "Inter_500Medium",
-  sansSemiBold: "Inter_600SemiBold",
-  sansBold: "Inter_700Bold",
-  sansExtraBold: "Inter_800ExtraBold",
-  sansBlack: "Inter_900Black",
+  // ── REBRAND v3 — Plus Jakarta Sans (todos los nombres preservados) ──
+  sansRegular: "PlusJakartaSans_400Regular",
+  sansMedium: "PlusJakartaSans_500Medium",
+  sansSemiBold: "PlusJakartaSans_600SemiBold",
+  sansBold: "PlusJakartaSans_700Bold",
+  sansExtraBold: "PlusJakartaSans_800ExtraBold",
+  // PJS no tiene Black 900 — usamos ExtraBold como su tope (look equivalente).
+  sansBlack: "PlusJakartaSans_800ExtraBold",
   monoRegular: "JetBrainsMono_400Regular",
   monoSemiBold: "JetBrainsMono_600SemiBold",
   monoBold: "JetBrainsMono_700Bold",
@@ -241,29 +282,38 @@ export const typography: Record<string, TextStyle> = {
 };
 
 export const shadows = {
-  // RN 0.76+ admite `boxShadow` cross-platform (iOS + Android + Web), por lo
-  // que ya no necesitamos `shadowColor/shadowOffset/shadowOpacity/shadowRadius`
-  // (deprecados). Mantenemos `elevation` en Android para conservar el look
-  // Material si en algún build futuro vuelve a tener semántica distinta.
+  // ── REBRAND v3 — Shadow System (Sapphire-tinted) ──
+  // Tono base #0F286E rgba(15,40,110,X) en lugar de gris neutro,
+  // para dar la sensación premium "azul profundo iluminado".
   card: {
-    boxShadow: "0px 4px 20px rgba(15,23,42,0.05)",
+    boxShadow:
+      "0px 1px 2px rgba(15,40,110,0.04), 0px 4px 12px rgba(15,40,110,0.07), 0px 16px 40px rgba(15,40,110,0.09)",
     elevation: 2,
   } as any,
   cardHover: {
-    boxShadow: "0px 4px 12px rgba(15,23,42,0.08)",
-    elevation: 3,
+    boxShadow:
+      "0px 2px 4px rgba(15,40,110,0.06), 0px 8px 24px rgba(15,40,110,0.12), 0px 28px 56px rgba(15,40,110,0.13)",
+    elevation: 4,
   } as any,
   cta: {
-    boxShadow: "0px 6px 14px rgba(37,99,235,0.25)",
+    boxShadow: "0px 4px 14px rgba(59,130,246,0.35)",
     elevation: 6,
   } as any,
+  // Hero / elementos grandes — multi-capa premium con inner highlight.
+  hero: {
+    boxShadow:
+      "0px 2px 4px rgba(15,40,110,0.10), 0px 8px 20px rgba(15,40,110,0.18), 0px 28px 56px rgba(15,40,110,0.28)",
+    elevation: 12,
+  } as any,
+  // Botón CTA principal — sombra de color Azure.
+  btn: {
+    boxShadow: "0px 6px 20px rgba(59,130,246,0.40)",
+    elevation: 8,
+  } as any,
   premium: {
-    boxShadow: "0px 8px 30px rgba(15,23,42,0.02)",
+    boxShadow: "0px 8px 30px rgba(15,40,110,0.04)",
     elevation: 1,
   } as any,
-  // V2 spec del Director de Arte:
-  //   "shadow-[0_12px_40px_-6px_rgba(30,41,59,0.04)]"
-  // Mini-sombra cohesionada para look de software premium internacional.
   premiumV2: {
     boxShadow: "0px 12px 40px rgba(30,41,59,0.04)",
     elevation: 2,

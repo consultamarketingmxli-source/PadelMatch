@@ -1,24 +1,25 @@
 /**
- * PadelPalaShape — Forma CANÓNICA de pala de pádel para toda la app.
+ * PadelPalaShape — Forma CANÓNICA de pala de pádel (Rebrand v3).
  *
  * SINGLE SOURCE OF TRUTH: ningún otro componente debe redibujar la pala.
  * La FORMA es inmutable; solo el COLOR puede cambiar por contexto.
  *
- * Referencia visual: Pala de Padel.png
- *   • Cabezal teardrop / lágrima (más ancho arriba, se afina hacia el cuello).
- *   • Grid 8×8 uniforme de perforaciones blancas (~56 visibles tras recorte
- *     a la silueta del cabezal).
- *   • Mango cilíndrico con cap superior + cap inferior (knob).
- *   • Cordón de muñeca saliendo lateralmente del knob.
- *   • SIN muesca en V (no aparece en la referencia).
+ * Spec del Master Design Sapphire/Azure:
+ *   • Cabezal teardrop con cuello estrecho hacia el grip.
+ *   • Highlight rim lateral (brillo blanco 20% en el borde izquierdo).
+ *   • Grid 3×5 de perforaciones blancas con falloff de opacidad.
+ *   • Grip cilíndrico con 4 grip-wrap lines (vendaje).
+ *   • Cordón de muñeca curvo + lazo ovalado.
+ *
+ * API DE PROPS PRESERVADA — drop-in compatible con todos los imports.
  */
 import React from "react";
-import Svg, { Circle, G, Path, Rect } from "react-native-svg";
+import Svg, { Circle, Ellipse, Line, Path } from "react-native-svg";
 
 export type PadelPalaShapeProps = {
-  /** Alto en px (default 64). El ancho se calcula con aspect 4:5. */
+  /** Alto en px (default 64). El ancho se calcula con aspect 4:7. */
   size?: number;
-  /** Color principal de cuerpo, grip y cordón (default negro pádel). */
+  /** Color principal de cuerpo y grip (default Sapphire). */
   color?: string;
   /** Override del color del grip (default = `color`). */
   gripColor?: string;
@@ -30,85 +31,102 @@ export type PadelPalaShapeProps = {
   opacity?: number;
 };
 
-const HEAD_PATH =
-  "M 40 4 C 26 4, 14 16, 8 32 C 5 42, 5 50, 8 56 " +
-  "C 11 64, 20 71, 32 72 L 48 72 " +
-  "C 60 71, 69 64, 72 56 C 75 50, 75 42, 72 32 " +
-  "C 66 16, 54 4, 40 4 Z";
+const HEAD_AND_GRIP_PATH =
+  "M50 3 " +
+  "C20 3 2 25 2 52 " +
+  "C2 75 15 92 33 100 " +
+  "C35.5 101.2 37 103.5 37 106 " +
+  "L37 110 " +
+  "C37 112.5 35 114.5 32.5 114.5 " +
+  "L29 114.5 " +
+  "C24.5 114.5 21 118 21 122.5 " +
+  "L21 144 " +
+  "C21 149.5 25.5 153 31 153 " +
+  "L69 153 " +
+  "C74.5 153 79 149.5 79 144 " +
+  "L79 122.5 " +
+  "C79 118 75.5 114.5 71 114.5 " +
+  "L67.5 114.5 " +
+  "C65 114.5 63 112.5 63 110 " +
+  "L63 106 " +
+  "C63 103.5 64.5 101.2 67 100 " +
+  "C85 92 98 75 98 52 " +
+  "C98 25 80 3 50 3Z";
 
 export function PadelPalaShape({
   size = 64,
-  color = "#1E1B4B",
+  color = "#1E3A8A",
   gripColor,
   holeColor = "#FFFFFF",
   cordColor,
   opacity = 1,
 }: PadelPalaShapeProps) {
-  // Aspect ratio 4:5 (viewBox 80×100).
-  const w = (size * 4) / 5;
+  // ViewBox 100×175 (aspect 4:7). El ancho proporcional al alto.
   const h = size;
-  const gripFill = gripColor ?? color;
-  const cordFill = cordColor ?? color;
+  const w = (size * 100) / 175;
+  const cord = cordColor ?? color;
+  void gripColor;
 
   return (
-    <Svg width={w} height={h} viewBox="0 0 80 100" fill="none">
-      {/* Cabezal teardrop */}
-      <Path d={HEAD_PATH} fill={color} opacity={opacity} />
+    <Svg width={w} height={h} viewBox="0 0 100 175" fill="none">
+      {/* Silueta principal (cabezal + cuello + grip integrados) */}
+      <Path d={HEAD_AND_GRIP_PATH} fill={color} opacity={opacity} />
 
-      {/* Perforaciones — grid 8×8 recortado a la silueta del cabezal. */}
-      <HoleGrid color={holeColor} />
-
-      {/* Grip — cap superior, cilindro y knob inferior. */}
-      <Rect x={35} y={72} width={10} height={2.5} rx={1} fill={gripFill} />
-      <Rect x={36} y={74.5} width={8} height={16} rx={1.8} fill={gripFill} />
-      <Rect x={34} y={90.5} width={12} height={3} rx={1.4} fill={gripFill} />
-
-      {/* Cordón de muñeca — sale lateralmente del knob. */}
+      {/* Highlight rim — brillo lateral izquierdo (efecto carbono pulido) */}
       <Path
-        d="M 45 92 C 56 93, 62 97, 60 100 C 58 97, 52 96, 47 95"
-        stroke={cordFill}
-        strokeWidth={1.6}
+        d="M50 8 C23 8 7 28 7 52 C7 73 19 89 36 97"
+        stroke="rgba(255,255,255,0.20)"
+        strokeWidth={3}
         strokeLinecap="round"
         fill="none"
       />
+
+      {/* Grid 3×5 de perforaciones con falloff de opacidad */}
+      {/* Fila 1 */}
+      <Circle cx={35} cy={34} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={50} cy={34} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={65} cy={34} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      {/* Fila 2 */}
+      <Circle cx={35} cy={48} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={50} cy={48} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={65} cy={48} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      {/* Fila 3 */}
+      <Circle cx={35} cy={62} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={50} cy={62} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      <Circle cx={65} cy={62} r={6.2} fill={holeColor} fillOpacity={0.28} />
+      {/* Fila 4 (atenuada) */}
+      <Circle cx={35} cy={76} r={6.2} fill={holeColor} fillOpacity={0.22} />
+      <Circle cx={50} cy={76} r={6.2} fill={holeColor} fillOpacity={0.22} />
+      <Circle cx={65} cy={76} r={6.2} fill={holeColor} fillOpacity={0.22} />
+      {/* Fila 5 parcial (extremo) */}
+      <Circle cx={42} cy={89} r={5.5} fill={holeColor} fillOpacity={0.16} />
+      <Circle cx={58} cy={89} r={5.5} fill={holeColor} fillOpacity={0.16} />
+
+      {/* Grip wrap lines — vendaje del mango */}
+      <Line x1={30} y1={124} x2={70} y2={124} stroke="rgba(255,255,255,0.18)" strokeWidth={1.5} />
+      <Line x1={30} y1={131} x2={70} y2={131} stroke="rgba(255,255,255,0.18)" strokeWidth={1.5} />
+      <Line x1={30} y1={138} x2={70} y2={138} stroke="rgba(255,255,255,0.18)" strokeWidth={1.5} />
+      <Line x1={30} y1={145} x2={70} y2={145} stroke="rgba(255,255,255,0.12)" strokeWidth={1.2} />
+
+      {/* Cordón de muñeca con lazo ovalado */}
+      <Path
+        d="M50 153 Q50 159 45 161 Q37 165 37 170 Q37 174 42 174"
+        stroke={cord}
+        strokeWidth={2.8}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.65}
+      />
+      <Ellipse
+        cx={43}
+        cy={173}
+        rx={6}
+        ry={4}
+        stroke={cord}
+        strokeWidth={2.2}
+        fill="none"
+        opacity={0.55}
+      />
     </Svg>
-  );
-}
-
-/**
- * Grid 8 columnas × 8 filas de perforaciones, centrado y recortado a la
- * elipse interior del cabezal teardrop. Replica el patrón uniforme de la
- * referencia (~56 huecos visibles).
- */
-function HoleGrid({ color }: { color: string }) {
-  const cx = 40;
-  const cy = 38;
-  const cols = 8;
-  const rows = 8;
-  const stepX = 6.2;
-  const stepY = 6.6;
-  const dotR = 1.7;
-  // Elipse de recorte (área interior útil del cabezal).
-  const rxClip = 26;
-  const ryClip = 30;
-
-  const dots: { x: number; y: number }[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = cx + (c - (cols - 1) / 2) * stepX;
-      const y = cy + (r - (rows - 1) / 2) * stepY;
-      const dx = (x - cx) / rxClip;
-      const dy = (y - cy) / ryClip;
-      if (dx * dx + dy * dy <= 0.95) {
-        dots.push({ x, y });
-      }
-    }
-  }
-  return (
-    <G>
-      {dots.map((d, i) => (
-        <Circle key={i} cx={d.x} cy={d.y} r={dotR} fill={color} />
-      ))}
-    </G>
   );
 }
