@@ -19,7 +19,8 @@ import { useRouter } from "expo-router";
 import { ShieldCheck, Repeat, User } from "lucide-react-native";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
-import { RetaCard } from "@/src/components/RetaCard";
+import { RetaCardPremium } from "@/src/components/brand/RetaCardPremium";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
 import { SearchBar } from "@/src/components/SearchBar";
@@ -122,6 +123,14 @@ export default function HomeScreen() {
           loading={loading}
           skeleton={
             <ScrollView contentContainerStyle={styles.listContent}>
+              <View style={styles.heroWrap}>
+                <HeroBanner
+                  eyebrow="PADELAPPRETAS · TEMPORADA 2025"
+                  title="Encuentra tu próxima reta de pádel"
+                  subtitle="Conecta con clubes premium, sube en el ranking y juega entre los mejores."
+                  height={188}
+                />
+              </View>
               <Skeleton.RetaCard />
               <Skeleton.RetaCard />
               <Skeleton.RetaCard />
@@ -142,12 +151,22 @@ export default function HomeScreen() {
             />
           }
           renderItem={({ item }) => (
-            <RetaCard
+            <RetaCardPremium
               reta={item}
               testID={`reta-card-${item.url_slug}`}
               onPress={() => router.push(`/retas/${item.url_slug}` as any)}
             />
           )}
+          ListHeaderComponent={
+            <View style={styles.heroWrap}>
+              <HeroBanner
+                eyebrow="PADELAPPRETAS · TEMPORADA 2025"
+                title="Encuentra tu próxima reta de pádel"
+                subtitle="Conecta con clubes premium, sube en el ranking y juega entre los mejores."
+                height={188}
+              />
+            </View>
+          }
           ListEmptyComponent={
             <EmptyState
               testID="empty-radar"
@@ -182,6 +201,10 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
+  heroWrap: {
+    marginBottom: spacing.md,
+    marginTop: spacing.xs,
+  },
   contextLine: {
     ...typography.label,
     color: colors.text.secondary,
