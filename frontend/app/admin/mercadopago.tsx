@@ -33,6 +33,8 @@ import {
 
 import { api, MpStatus } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { Chip } from "@/src/components/brand/Chip";
 
 const MP_DEVELOPERS_URL = "https://www.mercadopago.com.mx/developers/panel/app";
 
@@ -153,6 +155,23 @@ export default function MercadoPagoScreen() {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
+          <HeroBanner
+            eyebrow="PADELAPPRETAS · PAGOS"
+            title="Mercado Pago"
+            subtitle={status.connected
+              ? `Vinculado · ${status.nickname ?? status.mp_user_id ?? "cuenta lista"}`
+              : "Vincula tu cuenta para recibir el 100% del cobro directo"}
+            height={172}
+            right={
+              <Chip
+                label={status.connected ? "Conectado" : "Sin vincular"}
+                variant={status.connected ? "available" : "premium"}
+                dot
+                size="md"
+              />
+            }
+            style={{ marginBottom: spacing.lg }}
+          />
           {/* Estado de conexión */}
           <View
             style={[
@@ -208,7 +227,7 @@ export default function MercadoPagoScreen() {
               </TouchableOpacity>
               <Text style={styles.steps}>
                 1. Crea (o abre) tu aplicación de Checkout Pro.{"\n"}
-                2. Ve a "Credenciales de prueba" o "Productivas".{"\n"}
+                2. Ve a {"\u201C"}Credenciales de prueba{"\u201D"} o {"\u201C"}Productivas{"\u201D"}.{"\n"}
                 3. Copia el <Text style={{ fontWeight: "700" }}>Access Token</Text> (empieza con
                 APP_USR- o TEST-).{"\n"}
                 4. Pégalo abajo y presiona Vincular.

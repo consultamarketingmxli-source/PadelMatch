@@ -40,9 +40,10 @@ import {
 } from "lucide-react-native";
 
 import { Cupon, Reta, api } from "@/src/api";
-import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
-import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { CTAButton } from "@/src/components/brand/CTAButton";
+import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 export default function AdminMarketing() {
   const router = useRouter();
@@ -212,10 +213,17 @@ export default function AdminMarketing() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
       >
+        <HeroBanner
+          eyebrow="PADELAPPRETAS · ADMIN"
+          title="Marketing & Premios"
+          subtitle={`${stats.disponibles} disponibles · ${stats.usados} redimidos · ${stats.total} emitidos`}
+          height={172}
+          style={{ marginBottom: spacing.lg }}
+        />
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: colors.brand.primarySoft }]}>
-            <Text style={[styles.statValue, { color: colors.brand.primary }]}>{stats.disponibles}</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.brand.primarySoft, borderColor: colors.brand.primaryBorder }]}>
+            <Text style={[styles.statValue, { color: colors.brand.sapphire }]}>{stats.disponibles}</Text>
             <Text style={styles.statLabel}>Disponibles</Text>
           </View>
           <View style={styles.statCard}>
@@ -288,21 +296,23 @@ export default function AdminMarketing() {
           </View>
 
           <View style={styles.actionsRow}>
-            <Button
-              title="Generar Código Al Azar"
+            <CTAButton
+              label="Generar Código Al Azar"
               onPress={handleGenerateRandom}
               variant="secondary"
-              icon={<Dice5 size={14} color={colors.brand.primary} />}
+              leading={<Dice5 size={14} color={colors.brand.azure} />}
               disabled={submitting}
               testID="cupon-random-btn"
+              style={{ flex: 1 }}
             />
-            <Button
-              title={codigoInput.trim() ? "Crear con código" : "Crear automático"}
+            <CTAButton
+              label={codigoInput.trim() ? "Crear con código" : "Crear automático"}
               onPress={handleCreate}
               variant="primary"
-              icon={<Tag size={14} color="#fff" />}
+              leading={<Tag size={14} color="#fff" />}
               loading={submitting}
               testID="cupon-create-btn"
+              style={{ flex: 1 }}
             />
           </View>
         </View>
@@ -430,7 +440,7 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     width: 40, height: 40, borderRadius: radii.md, backgroundColor: colors.bg.card,
-    borderWidth: 1, borderColor: colors.border.default,
+    borderWidth: 1, borderColor: colors.border.blueHairline,
     alignItems: "center", justifyContent: "center",
   },
   title: { ...typography.h2, color: colors.text.primary, fontSize: 17 },
@@ -439,16 +449,24 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: spacing.sm },
   statCard: {
     flex: 1, backgroundColor: colors.bg.card,
-    borderWidth: 1, borderColor: colors.border.default,
-    borderRadius: radii.md, padding: spacing.md, alignItems: "center",
+    borderWidth: 1, borderColor: colors.border.blueHairline,
+    borderRadius: radii.card, padding: spacing.md, alignItems: "center",
+    ...(shadows.card as object),
   },
-  statValue: { ...typography.h2, fontSize: 22, color: colors.text.primary },
-  statLabel: { color: colors.text.secondary, fontSize: 11, marginTop: 4 },
+  statValue: {
+    fontFamily: typography.monoBold.fontFamily,
+    fontVariant: ["tabular-nums"],
+    fontSize: 26,
+    color: colors.brand.sapphire,
+    letterSpacing: -0.6,
+  },
+  statLabel: { ...typography.label, color: colors.text.secondary, fontSize: 10, marginTop: 4 },
 
   card: {
-    backgroundColor: colors.bg.card, borderRadius: radii.lg,
-    borderWidth: 1, borderColor: colors.border.default,
+    backgroundColor: colors.bg.card, borderRadius: radii.card,
+    borderWidth: 1, borderColor: colors.border.blueHairline,
     padding: spacing.md,
+    ...(shadows.card as object),
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   cardTitle: { ...typography.h3, color: colors.text.primary, fontSize: 15 },
@@ -458,11 +476,11 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: spacing.md },
   chip: {
     paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: radii.sm, borderWidth: 1,
-    borderColor: colors.border.default, backgroundColor: colors.bg.app,
+    borderRadius: radii.pill, borderWidth: 1,
+    borderColor: colors.border.blueHairline, backgroundColor: colors.bg.app,
     minWidth: 44, alignItems: "center", maxWidth: 240,
   },
-  chipActive: { backgroundColor: colors.brand.primary, borderColor: colors.brand.primary },
+  chipActive: { backgroundColor: colors.brand.azure, borderColor: colors.brand.azure, ...(shadows.btn as object) },
   chipText: { color: colors.text.primary, fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: "#fff" },
 
@@ -470,22 +488,22 @@ const styles = StyleSheet.create({
 
   emptyMini: {
     paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
-    backgroundColor: colors.bg.app, borderRadius: radii.sm,
-    borderWidth: 1, borderStyle: "dashed", borderColor: colors.border.default,
+    backgroundColor: colors.bg.app, borderRadius: radii.input,
+    borderWidth: 1, borderStyle: "dashed", borderColor: colors.brand.primaryBorder,
   },
   emptyMiniTxt: { color: colors.text.secondary, fontSize: 12, textAlign: "center", lineHeight: 16 },
 
   cuponCard: {
-    backgroundColor: colors.bg.app, borderRadius: radii.md,
-    borderWidth: 1, borderColor: colors.border.default,
+    backgroundColor: colors.bg.app, borderRadius: radii.input,
+    borderWidth: 1, borderColor: colors.border.blueHairline,
     padding: spacing.sm + 2, gap: spacing.sm,
   },
   cuponCardUsed: { opacity: 0.7 },
   cuponHead: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   cuponCodigoRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   cuponCodigo: {
-    fontFamily: "monospace",
-    color: colors.brand.primary, fontSize: 16, fontWeight: "900", letterSpacing: 1,
+    fontFamily: typography.monoBold.fontFamily,
+    color: colors.brand.sapphire, fontSize: 16, letterSpacing: 1,
   },
   cuponDesc: { color: colors.text.primary, fontSize: 12, marginTop: 2 },
   cuponMeta: { color: colors.text.secondary, fontSize: 11, marginTop: 2 },

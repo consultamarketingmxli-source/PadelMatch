@@ -36,6 +36,7 @@ import {
 
 import { api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { infoAlert } from "@/src/utils/confirmAlert";
 import { downloadAdminCsv } from "@/src/utils/downloadCsv";
 
@@ -203,6 +204,17 @@ export default function AdminSecurityScreen() {
         contentContainerStyle={{ paddingBottom: spacing.xl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        <HeroBanner
+          eyebrow="PADELAPPRETAS · SEGURIDAD"
+          title="Centro de Seguridad"
+          subtitle={
+            stats
+              ? `${stats.total_events ?? 0} eventos · ${stats.active_sessions ?? 0} sesiones · ${stats.failed_logins ?? 0} fallidos (${stats.window_days}d)`
+              : "Auditoría, sesiones y rate-limit"
+          }
+          height={172}
+          style={{ marginTop: spacing.md, marginBottom: spacing.lg }}
+        />
         {/* === KPIs Top === */}
         {stats && (
           <>

@@ -34,6 +34,8 @@ import {
 import { api } from "@/src/api";
 import { Button } from "@/src/components/Button";
 import { colors, radii, spacing, typography } from "@/src/theme";
+import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { Chip } from "@/src/components/brand/Chip";
 
 type DeployReadiness = Awaited<ReturnType<typeof api.getDeployReadiness>>;
 type Integration = DeployReadiness["integrations"][number];
@@ -94,6 +96,27 @@ export default function AdminDeployReadiness() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
       >
+        <HeroBanner
+          eyebrow="PADELAPPRETAS · DEPLOYMENT"
+          title="Estado de Deployment"
+          subtitle={`${data.summary.ok} listas · ${data.summary.warning} en TEST · ${data.summary.critical} críticas`}
+          height={172}
+          right={
+            <Chip
+              label={overallInfo.label}
+              variant={
+                data.summary.critical > 0
+                  ? "full"
+                  : data.summary.warning > 0
+                  ? "premium"
+                  : "available"
+              }
+              dot
+              size="md"
+            />
+          }
+          style={{ marginBottom: spacing.lg }}
+        />
         {/* Hero estado */}
         <View style={[styles.hero, { borderColor: overallInfo.color + "60", backgroundColor: overallInfo.color + "10" }]} testID="deploy-hero">
           {overallInfo.icon}

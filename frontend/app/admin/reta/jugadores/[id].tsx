@@ -334,7 +334,7 @@ export default function DistribucionJugadores() {
             <Lock size={14} color={colors.status.amberText} />
             <Text style={styles.bannerLockText}>
               Distribución bloqueada: ya hay resultados capturados. Elimina los
-              marcadores en "Mesa de Control" para reorganizar canchas.
+              marcadores en {"\u201C"}Mesa de Control{"\u201D"} para reorganizar canchas.
             </Text>
           </View>
         ) : (
