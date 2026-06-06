@@ -108,6 +108,16 @@ export default function RetaForm() {
   const [tipoAcceso, setTipoAcceso] = useState<"paga" | "gratis_amigos">("paga");
   const esGratis = tipoAcceso === "gratis_amigos";
 
+  // ====== Fase 1 (Sección 1) — Parametrización extendida ======
+  // 1 = ganador absoluto, 2 = podio, 3 = top-3 por cancha.
+  const [numGanadoresPorCancha, setNumGanadoresPorCancha] = useState<1 | 2 | 3>(1);
+  // A = Puntos netos individual · B = Puntos netos por pareja · C = Ratio favor/contra
+  const [criterioDesempate, setCriterioDesempate] = useState<"A" | "B" | "C">("A");
+  // Jugadores por cancha (default 4 = pádel clásico)
+  const [jugadoresPorCancha, setJugadoresPorCancha] = useState<number>(4);
+  // KO 3-0 (solo aplicable a formato PUNTOS con cap=5)
+  const [koEnabled, setKoEnabled] = useState<boolean>(false);
+
   const esParejas = modalidadRegistro !== "individual";
 
   useEffect(() => {
@@ -151,6 +161,11 @@ export default function RetaForm() {
         setModalidadRegistro(r.modalidad_registro ?? "individual");
         setPermitirIndividualEnParejas(!!r.permitir_individual_en_parejas);
         setTipoAcceso(r.tipo_acceso ?? "paga");
+        // Fase 1 (Sección 1) — Parametrización extendida
+        setNumGanadoresPorCancha((r.num_ganadores_por_cancha ?? 1) as 1 | 2 | 3);
+        setCriterioDesempate((r.criterio_desempate ?? "A") as "A" | "B" | "C");
+        setJugadoresPorCancha(r.jugadores_por_cancha ?? 4);
+        setKoEnabled(!!r.formato_score?.ko_enabled);
       } catch (e: any) {
         Alert.alert("Error", e.message ?? "No se pudo cargar");
         router.back();
@@ -210,7 +225,16 @@ export default function RetaForm() {
       costo_inscripcion: parseFloat(costo) || 0,
       modalidad_juego: fsTipo, // espejo del FormatoScore.tipo
       num_rondas: rondas,
-      formato_score: { tipo: fsTipo, valor: fsValor, unidad: fsUnidad },
+      formato_score: {
+        tipo: fsTipo,
+        valor: fsValor,
+        unidad: fsUnidad,
+        // Fase 1 (Sección 1) — KO 3-0 sólo aplicable a PUNTOS.
+        // Si KO está activo en PUNTOS, fijamos cap_total al `valor`
+        // (umbral de cierre del partido). Para TIEMPO ignoramos.
+        cap_total: fsTipo === "PUNTOS" && koEnabled ? fsValor : null,
+        ko_enabled: fsTipo === "PUNTOS" ? koEnabled : false,
+      },
       modalidad_registro: modalidadRegistro,
       permitir_individual_en_parejas: esParejas ? permitirIndividualEnParejas : false,
       tipo_acceso: tipoAcceso,
@@ -218,6 +242,10 @@ export default function RetaForm() {
       observaciones_publicas: obs.slice(0, 140),
       latitud: lat ? parseFloat(lat) : null,
       longitud: lng ? parseFloat(lng) : null,
+      // ===== Fase 1 (Sección 1) — Parametrización extendida =====
+      num_ganadores_por_cancha: numGanadoresPorCancha,
+      criterio_desempate: criterioDesempate,
+      jugadores_por_cancha: jugadoresPorCancha,
     };
     try {
       if (isNew) {
@@ -605,6 +633,112 @@ export default function RetaForm() {
               );
             })}
           </View>
+
+          {/* KO 3-0 — solo PUNTOS. Fase 1 (Sección 1). */}
+          {fsTipo === "PUNTOS" ? (
+            <TouchableOpacity
+              testID="form-ko-toggle"
+              onPress={() => setKoEnabled((v) => !v)}
+              activeOpacity={0.7}
+              style={[styles.toggleRow, koEnabled && styles.toggleRowActive]}
+            >
+              <View style={[styles.toggleBox, koEnabled && styles.toggleBoxActive]}>
+                {koEnabled ? <Text style={styles.toggleCheck}>✓</Text> : null}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Regla KO {fsValor}-0 (Knock-Out)</Text>
+                <Text style={styles.toggleSub}>
+                  Si un equipo llega a {Math.floor(fsValor / 2) + 1} juegos y el rival a 0,
+                  el partido se cierra automáticamente. El marcador se bloquea y se
+                  marca como terminado por KO en la captura de resultados.
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* ====== Fase 1 (Sección 1) — Parametrización extendida ====== */}
+          <Text style={styles.sectionLabel}>JUGADORES POR CANCHA</Text>
+          <Text style={styles.hintText}>
+            <Users size={11} color={colors.text.secondary} />
+            {"  "}En pádel clásico son 4 (2 vs 2). Configurable si juegas en variantes.
+          </Text>
+          <View style={styles.chipsRow}>
+            {[2, 4, 6, 8].map((n) => {
+              const active = jugadoresPorCancha === n;
+              return (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => setJugadoresPorCancha(n)}
+                  style={[styles.chipSmall, active && styles.chipActive]}
+                  activeOpacity={0.7}
+                  testID={`form-jpc-${n}`}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{n}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.sectionLabel}>GANADORES POR CANCHA</Text>
+          <Text style={styles.hintText}>
+            Cuántos jugadores ascienden / se reconocen por cancha al cierre de la reta.
+          </Text>
+          <View style={styles.segGroup}>
+            {(
+              [
+                { key: 1, label: "1 · Solo el ganador", hint: "Top 1" },
+                { key: 2, label: "2 · Podio", hint: "Top 2" },
+                { key: 3, label: "3 · Top-3", hint: "Top 3" },
+              ] as const
+            ).map((opt) => {
+              const active = numGanadoresPorCancha === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  testID={`form-ngc-${opt.key}`}
+                  onPress={() => setNumGanadoresPorCancha(opt.key)}
+                  activeOpacity={0.7}
+                  style={[styles.seg, active && styles.segActive]}
+                >
+                  <Text style={[styles.segText, active && styles.segTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.sectionLabel}>CRITERIO DE DESEMPATE</Text>
+          <Text style={styles.hintText}>
+            Cuando dos jugadores quedan empatados en puntos al final del torneo.
+          </Text>
+          <View style={styles.segGroup}>
+            {(
+              [
+                { key: "A", label: "A · Puntos netos individuales", hint: "Σ (Juegos ganados − perdidos)" },
+                { key: "B", label: "B · Puntos netos por pareja", hint: "Net por dupla acumulado" },
+                { key: "C", label: "C · Rendimiento técnico", hint: "Juegos a favor / en contra" },
+              ] as const
+            ).map((opt) => {
+              const active = criterioDesempate === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  testID={`form-cd-${opt.key}`}
+                  onPress={() => setCriterioDesempate(opt.key)}
+                  activeOpacity={0.7}
+                  style={[styles.seg, active && styles.segActive]}
+                >
+                  <Text style={[styles.segText, active && styles.segTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.subLabel}>
+            {criterioDesempate === "A"
+              ? "Suma de juegos ganados menos perdidos por jugador individual."
+              : criterioDesempate === "B"
+                ? "Suma de juegos ganados menos perdidos por pareja fija."
+                : "Ratio de juegos a favor sobre juegos en contra."}
+          </Text>
 
           {/* EXTENSIÓN */}
           <Text style={styles.sectionLabel}>EXTENSIÓN DEL TORNEO</Text>

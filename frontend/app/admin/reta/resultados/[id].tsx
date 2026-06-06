@@ -60,6 +60,8 @@ type Slot = {
   saving?: boolean;
   dirty?: boolean;
   error?: string | null;
+  /** Fase 2 (Sección 4) — Partido cerrado por KO. Bloquea edición. */
+  koClosed?: boolean;
 };
 
 const keyFor = (cancha: number, ronda: number, idx: number) => `${cancha}:${ronda}:${idx}`;
@@ -105,6 +107,7 @@ export default function CapturarResultados() {
           resultId: r.id,
           saved: true,
           dirty: false,
+          koClosed: !!r.terminado_por_ko,
         };
       });
       setSlots(initial);
@@ -120,7 +123,15 @@ export default function CapturarResultados() {
   }, [load]);
 
   const isTiempo = reta?.formato_score?.tipo === "TIEMPO" || reta?.modalidad_juego === "TIEMPO";
-  const maxScore = isTiempo ? 99 : Math.max(20, (reta?.formato_score?.valor ?? 9) + 5);
+  // Fase 2 (Sección 4) — Reglas avanzadas del formato.
+  const capTotal = reta?.formato_score?.cap_total ?? null;
+  const koEnabled = !!reta?.formato_score?.ko_enabled;
+  const ventajaKo = capTotal != null ? Math.floor(capTotal / 2) + 1 : null;
+  const maxScore = isTiempo
+    ? 99
+    : capTotal != null
+      ? capTotal
+      : Math.max(20, (reta?.formato_score?.valor ?? 9) + 5);
 
   const setField = (k: string, field: "a" | "b", value: string) => {
     setSlots((s) => {
@@ -191,6 +202,22 @@ export default function CapturarResultados() {
       saveLock.release(k);
       return;
     }
+    // Fase 2 (Sección 4) — Validación cap_total en cliente (defensiva).
+    if (capTotal != null) {
+      const sa = parseInt(cur.a, 10) || 0;
+      const sb = parseInt(cur.b, 10) || 0;
+      if (sa + sb > capTotal) {
+        setSlots((s) => ({
+          ...s,
+          [k]: {
+            ...cur,
+            error: `La suma de marcadores (${sa}+${sb}) excede el tope del formato (${capTotal}).`,
+          },
+        }));
+        saveLock.release(k);
+        return;
+      }
+    }
     setSlots((s) => ({ ...s, [k]: { ...cur, saving: true, error: null } }));
     try {
       const res = await api.upsertResultado(id, {
@@ -212,6 +239,7 @@ export default function CapturarResultados() {
           saving: false,
           dirty: false,
           error: null,
+          koClosed: !!res.terminado_por_ko,
         },
       }));
     } catch (e: any) {
@@ -293,6 +321,8 @@ export default function CapturarResultados() {
             <Text style={styles.subtle}>
               {guardados} / {totalPartidos} partidos
               {reta ? ` · ${reta.formato_score?.tipo === "TIEMPO" ? `${reta.formato_score?.valor}min` : `a ${reta.formato_score?.valor} ${reta.formato_score?.unidad ?? "juegos"}`}` : ""}
+              {capTotal != null ? `  ·  cap ${capTotal}` : ""}
+              {koEnabled && ventajaKo != null ? `  ·  KO ${ventajaKo}-0` : ""}
             </Text>
           </View>
           <View style={styles.topBarActions}>
@@ -349,15 +379,24 @@ export default function CapturarResultados() {
                 const k = keyFor(canchaData.cancha, ronda.ronda, idx);
                 const st = slots[k] ?? { a: "", b: "" };
                 const hasError = !!st.error;
+                const locked = !!st.koClosed;
                 return (
                   <View
                     key={k}
                     style={[
                       styles.partidoCard,
-                      st.saved && !st.dirty && styles.partidoCardSaved,
+                      st.saved && !st.dirty && !locked && styles.partidoCardSaved,
+                      locked && styles.partidoCardKo,
                       hasError && styles.partidoCardError,
                     ]}
                   >
+                    {locked ? (
+                      <View style={styles.koBanner}>
+                        <Text style={styles.koBannerText}>
+                          ⚡ KO {st.a}-{st.b}  ·  Partido cerrado por knock-out
+                        </Text>
+                      </View>
+                    ) : null}
                     {/* Pareja A */}
                     <View style={styles.parejaRow}>
                       <View style={{ flex: 1 }}>
@@ -372,6 +411,7 @@ export default function CapturarResultados() {
                         onMinus={() => bump(k, "a", -1)}
                         onPlus={() => bump(k, "a", +1)}
                         invalid={hasError && st.a === ""}
+                        disabled={locked}
                         testID={`stepper-${k}-a`}
                       />
                     </View>
@@ -420,10 +460,11 @@ export default function CapturarResultados() {
                       <TouchableOpacity
                         testID={`save-${k}`}
                         onPress={() => saveScore(canchaData.cancha, ronda.ronda, idx, p.pareja_a, p.pareja_b)}
-                        disabled={!!st.saving || (st.saved === true && !st.dirty)}
+                        disabled={!!st.saving || locked || (st.saved === true && !st.dirty)}
                         style={[
                           styles.saveBtn,
-                          st.saved && !st.dirty && styles.saveBtnDone,
+                          st.saved && !st.dirty && !locked && styles.saveBtnDone,
+                          locked && styles.saveBtnLocked,
                           st.saving && { opacity: 0.6 },
                         ]}
                       >
@@ -433,7 +474,13 @@ export default function CapturarResultados() {
                           <>
                             <Check size={14} color={colors.text.inverse} />
                             <Text style={styles.saveBtnText}>
-                              {st.saved && !st.dirty ? "✓ Guardado" : st.dirty && st.saved ? "Actualizar" : "Guardar marcador"}
+                              {locked
+                                ? "🔒 Cerrado por KO"
+                                : st.saved && !st.dirty
+                                  ? "✓ Guardado"
+                                  : st.dirty && st.saved
+                                    ? "Actualizar"
+                                    : "Guardar marcador"}
                             </Text>
                           </>
                         )}
@@ -479,12 +526,15 @@ function ScoreStepper(props: {
   onMinus: () => void;
   onPlus: () => void;
   invalid?: boolean;
+  disabled?: boolean;
   testID?: string;
 }) {
+  const d = !!props.disabled;
   return (
-    <View style={styles.stepper}>
+    <View style={[styles.stepper, d && { opacity: 0.55 }]}>
       <TouchableOpacity
         onPress={props.onMinus}
+        disabled={d}
         style={styles.stepBtn}
         activeOpacity={0.6}
         testID={props.testID ? `${props.testID}-minus` : undefined}
@@ -494,6 +544,7 @@ function ScoreStepper(props: {
       <TextInput
         value={props.value}
         onChangeText={props.onChange}
+        editable={!d}
         keyboardType="number-pad"
         maxLength={2}
         style={[styles.scoreInput, props.invalid && styles.scoreInputInvalid]}
@@ -503,6 +554,7 @@ function ScoreStepper(props: {
       />
       <TouchableOpacity
         onPress={props.onPlus}
+        disabled={d}
         style={styles.stepBtn}
         activeOpacity={0.6}
         testID={props.testID ? `${props.testID}-plus` : undefined}
@@ -567,6 +619,25 @@ const styles = StyleSheet.create({
     borderColor: colors.status.amber,
     borderWidth: 2,
   },
+  partidoCardKo: {
+    borderColor: colors.brand.primary,
+    borderWidth: 2,
+    backgroundColor: "rgba(37, 99, 235, 0.05)",
+  },
+  koBanner: {
+    backgroundColor: colors.brand.primary,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  koBannerText: {
+    color: colors.text.inverse,
+    fontWeight: "800",
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
   parejaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   parejaLabel: {
     color: colors.text.muted,
@@ -628,6 +699,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6,
   },
   saveBtnDone: { backgroundColor: colors.status.green },
+  saveBtnLocked: { backgroundColor: colors.text.muted },
   saveBtnText: { color: colors.text.inverse, fontWeight: "800", fontSize: 13 },
   deleteBtn: {
     width: 44, height: 44, borderRadius: radii.md,

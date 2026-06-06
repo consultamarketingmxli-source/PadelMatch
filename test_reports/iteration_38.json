@@ -1,0 +1,39 @@
+{
+  "summary": "Iter38 — Backend acceptance of Fase 1 (Reta parametrization: num_ganadores_por_cancha / criterio_desempate / jugadores_por_cancha) and Fase 2 (Dynamic Results: cap_total enforcement + KO 3-0 auto-detection + edit lock). All 8 pytest cases PASS against the public Kubernetes ingress (admin@padelappretas.com / admin123). Coverage: (1) POST /api/retas persists new fields (3 / 'C' / 6) and roundtrip GET returns them with formato_score.cap_total=5 + ko_enabled=true. (2) PUT /api/retas/{id} updates the new fields (verified via GET). (3) PUNTOS reta cap=5 ko_enabled: score 3-0 → 200 + terminado_por_ko=True + ganador='A'. (4) Same reta: score 6-0 → 422 with message about cap_total exceeded. (5) After a KO match, re-POST same (cancha, ronda, partido_idx) with score 2-2 → 409 'Este partido está cerrado por KO'. (6) DELETE /api/retas/{rid}/resultados/{result_id} on the KO match → 200 ok=true, and re-capturing the same slot works post-delete. (7) TIEMPO reta (15 min): 2-2 → 200, terminado_por_ko=False, ganador in {EMPATE, E}. (8) Legacy reta sin cap_total acepta marcadores libres (9-6 y 20-0) sin disparar KO.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_fase1_fase2.py",
+    "/app/test_reports/pytest/iter38_fase1_fase2.xml"
+  ],
+  "action_items": [
+    "No backend action items — Fase 1 + Fase 2 acceptance criteria met. Main agent can proceed with frontend integration of these flows."
+  ],
+  "critical_code_review_comments": [
+    "models.FormatoScore._coherencia mutates ko_enabled silently when tipo != PUNTOS or cap_total is None (object.__setattr__). This is convenient for retro-compat but hides client mistakes — consider logging at INFO level so the admin UI can surface a toast when KO is silently disabled.",
+    "routers/resultados.registrar_resultado: the auto-KO flag is ALWAYS recomputed from FormatoScore and overrides whatever the client sends (good — prevents tampering). The PartidoResultadoCreate.terminado_por_ko field in the input model is therefore effectively read-only; consider removing it from the request schema to avoid client confusion, or document it explicitly.",
+    "routers/resultados.registrar_resultado: cap_total validation uses strict > (score_a+score_b > cap_total). Edge case: exactly cap_total is allowed, which is the intended behaviour (e.g. 5-0 valid, 3-2 valid). Confirmed by tests.",
+    "routers/resultados.borrar_resultado does not enforce that the partido was KO before allowing delete — this is correct per spec (delete is the unlock path), but worth keeping in mind for audit logs.",
+    "routers/retas.update_reta: persists formato_score via .model_dump() which correctly re-runs FormatoScore validators on PUT (verified). Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter38_fase1_fase2.py (new — 8 pytest cases covering Fase 1 + Fase 2)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8)",
+    "frontend": "not tested (per request)"
+  },
+  "seed_data_creation": "Each test creates its own TEST_-prefixed reta and deletes it in fixture teardown via DELETE /api/retas/{id} (cascade also wipes resultados). No residual data expected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter38_fase1_fase2.py as the Fase 1+2 regression suite. Notes for follow-ups: (a) The default FormatoScore is PUNTOS / 9 / juegos with cap_total=None — that's why a 'legacy' reta accepts any score. (b) KO ventaja formula is (cap_total // 2) + 1 → cap=5 gives 3-0, cap=9 gives 5-0. Tests assume cap=5. (c) Frontend (NOT tested in this iteration) must surface (i) the 409 'Este partido está cerrado por KO' as a non-blocking toast with 'Eliminar para recapturar' CTA, (ii) the 422 cap-exceeded error in the score capture form, and (iii) hide/disable the KO badge for TIEMPO retas (where ko_enabled is silently False).",
+  "rca_of_issue": "N/A — no defects found; the backend Fase 1 + Fase 2 implementation passes the full acceptance matrix."
+}

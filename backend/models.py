@@ -38,10 +38,23 @@ class FormatoScore(BaseModel):
 
     El frontend adapta los marcadores en vivo según `tipo` (contadores
     incrementales para PUNTOS, timer regresivo para TIEMPO).
+
+    Fase 1++ (Sección 1) — Flags semánticos:
+      • cap_total : suma máxima score_a + score_b (solo PUNTOS).
+                    Si != None, el formulario de captura bloquea entradas
+                    cuando score_a + score_b > cap_total.
+      • ko_enabled: regla KO (Knock-Out). Si un equipo alcanza una ventaja
+                    de cap_total-N (ej: 3-0 con cap=5) el partido se marca
+                    como terminado por KO y se bloquea la edición.
+                    Por convención el "ventaja KO" = ceil(cap_total/2)+1.
+                    Para cap=5 → ventaja 3 (3-0 KO).
     """
     tipo: Literal["PUNTOS", "TIEMPO"] = "PUNTOS"
     valor: int = Field(default=9, ge=1, le=180)
     unidad: Literal["juegos", "sets", "minutos"] = "juegos"
+    # === Fase 1 (Sección 1) — Reglas avanzadas opcionales ===
+    cap_total: Optional[int] = Field(default=None, ge=2, le=50)
+    ko_enabled: bool = False
 
     @model_validator(mode="after")
     def _coherencia(self) -> "FormatoScore":
@@ -55,11 +68,51 @@ class FormatoScore(BaseModel):
             raise ValueError("Sets válidos: 1..5.")
         if self.unidad == "juegos" and not (1 <= self.valor <= 21):
             raise ValueError("Juegos válidos: 1..21.")
+        # KO solo aplica con PUNTOS y cap_total definido.
+        if self.ko_enabled and (self.tipo != "PUNTOS" or self.cap_total is None):
+            object.__setattr__(self, "ko_enabled", False)
+        # cap_total >= valor (defensivo).
+        if self.cap_total is not None and self.tipo == "PUNTOS":
+            if self.cap_total < self.valor:
+                object.__setattr__(self, "cap_total", self.valor)
         return self
 
 
 def _default_formato_score() -> FormatoScore:
     return FormatoScore(tipo="PUNTOS", valor=9, unidad="juegos")
+
+
+# Helpers de preset — útiles para frontend defaults y para test fixtures.
+def preset_formato_tiempo_15() -> FormatoScore:
+    """Default Fase 1 — Formato por Tiempo (15 minutos por partido)."""
+    return FormatoScore(tipo="TIEMPO", valor=15, unidad="minutos")
+
+
+def preset_formato_puntos_ko5() -> FormatoScore:
+    """Default Fase 1 — Formato por Puntos a 5 con KO 3-0."""
+    return FormatoScore(
+        tipo="PUNTOS", valor=5, unidad="juegos",
+        cap_total=5, ko_enabled=True,
+    )
+
+
+# Helper: ¿este score dispara KO?
+def es_ko_3_cero(formato: FormatoScore, score_a: int, score_b: int) -> bool:
+    """Detecta el escenario KO 3-0 (o equivalente según cap_total).
+
+    Para cap_total=5 → ventaja KO = 3 (3-0).
+    Para cap_total=9 → ventaja KO = 5 (5-0).
+    Solo aplica si `formato.ko_enabled` y `formato.tipo == 'PUNTOS'`.
+    """
+    if not formato.ko_enabled or formato.tipo != "PUNTOS":
+        return False
+    cap = formato.cap_total or formato.valor
+    ventaja_ko = (cap // 2) + 1  # cap=5→3, cap=9→5, cap=11→6
+    if score_a >= ventaja_ko and score_b == 0:
+        return True
+    if score_b >= ventaja_ko and score_a == 0:
+        return True
+    return False
 
 
 class RetaCreate(BaseModel):
@@ -105,6 +158,17 @@ class RetaCreate(BaseModel):
     # como organizador si su teléfono coincide con `organizador_telefono` de
     # alguna reta. Default None para retrocompat (admin super-user clásico).
     organizador_telefono: Optional[str] = Field(default=None, max_length=20)
+    # ====== Fase 1 (Sección 1) — Parametrización extendida ======
+    # Número de ganadores reconocidos por cancha (1=ganador absoluto, 2=podio,
+    # 3=top-3). Aplica al cálculo automático de ganadores en cierre de reta.
+    num_ganadores_por_cancha: Literal[1, 2, 3] = 1
+    # Criterio de desempate seleccionable (Sección 4.2):
+    #   A = Puntos netos por jugador (individual)
+    #   B = Puntos netos por pareja
+    #   C = Rendimiento técnico (juegos a favor / en contra)
+    criterio_desempate: Literal["A", "B", "C"] = "A"
+    # Jugadores por cancha (default 4 = pádel clásico, configurable 2..8).
+    jugadores_por_cancha: int = Field(default=4, ge=2, le=8)
 
     @model_validator(mode="after")
     def _coherencia_modalidad(self) -> "RetaCreate":
@@ -148,6 +212,10 @@ class Reta(BaseModel):
     longitud: Optional[float] = None
     # Auditoría Routing — vínculo opcional de organizador por TELÉFONO.
     organizador_telefono: Optional[str] = None
+    # ====== Fase 1 (Sección 1) — Parametrización extendida (espejo) ======
+    num_ganadores_por_cancha: Literal[1, 2, 3] = 1
+    criterio_desempate: Literal["A", "B", "C"] = "A"
+    jugadores_por_cancha: int = 4
     alertas_enviadas: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 
@@ -291,6 +359,10 @@ class PartidoResultadoCreate(BaseModel):
     pareja_b: List[str]  # nombres (2)
     score_a: int = Field(ge=0, le=99)
     score_b: int = Field(ge=0, le=99)
+    # === Fase 2 (Sección 4) — Flag KO ===
+    # Se marca True automáticamente cuando el score cumple la regla KO 3-0
+    # (o equivalente al cap_total/2+1). Bloquea ediciones posteriores en UI.
+    terminado_por_ko: bool = False
 
     @model_validator(mode="after")
     def _no_self_play(self) -> "PartidoResultadoCreate":

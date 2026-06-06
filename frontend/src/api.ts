@@ -48,9 +48,15 @@ export type FormatoScore = {
   tipo: "PUNTOS" | "TIEMPO";
   valor: number;
   unidad: "juegos" | "sets" | "minutos";
+  /** Fase 1 (Sección 1) — suma máxima score_a + score_b (solo PUNTOS). */
+  cap_total?: number | null;
+  /** Fase 1 — KO 3-0 (o equivalente cap/2+1). */
+  ko_enabled?: boolean;
 };
 
 export type ModalidadRegistro = "individual" | "parejas_libres" | "parejas_mixtas";
+export type CriterioDesempate = "A" | "B" | "C";
+export type NumGanadoresPorCancha = 1 | 2 | 3;
 
 /** Directorio de Clubes (Selector Inteligente). */
 export type ClubDir = {
@@ -87,6 +93,10 @@ export type Reta = {
   latitud?: number | null;
   longitud?: number | null;
   alertas_enviadas: boolean;
+  /** Fase 1 (Sección 1) — Parametrización extendida. */
+  num_ganadores_por_cancha?: NumGanadoresPorCancha;
+  criterio_desempate?: CriterioDesempate;
+  jugadores_por_cancha?: number;
   inscritos_count: number;
   waitlist_count: number;
   capacidad_pct: number;
@@ -174,6 +184,8 @@ export type PartidoResultado = {
   score_a: number;
   score_b: number;
   ganador: "A" | "B" | "EMPATE";
+  /** Fase 2 (Sección 4) — partido cerrado por KO (3-0 o equivalente cap/2+1). */
+  terminado_por_ko?: boolean;
   creado_en: string;
 };
 

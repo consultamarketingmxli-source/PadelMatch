@@ -22,7 +22,7 @@ from core.fixture_engine import generar_fixture, generar_fixture_parejas
 from core.realtime import manager
 from core.standings import compute_duo_standings, compute_individual_standings
 from logica_torneo import generar_rol_multi_cancha, generar_rol_multi_cancha_parejas
-from models import PartidoResultado, PartidoResultadoCreate, TablaPosicionEntry
+from models import FormatoScore, PartidoResultado, PartidoResultadoCreate, TablaPosicionEntry, es_ko_3_cero
 
 router = APIRouter(tags=["resultados"])
 
@@ -497,7 +497,17 @@ async def registrar_resultado(
     current=Depends(get_current_admin),
 ):
     """Registra o actualiza el score de un partido. Idempotente por
-    (reta_id, cancha, ronda, partido_idx). Solo admin."""
+    (reta_id, cancha, ronda, partido_idx). Solo admin.
+
+    Fase 2 (Sección 4) — Reglas de formato:
+      • Si `formato_score.tipo == 'PUNTOS'` y `cap_total != None`,
+        rechazamos `score_a + score_b > cap_total` con 422.
+      • Si `formato_score.ko_enabled` y la combinación dispara KO 3-0
+        (helper `es_ko_3_cero`), marcamos `terminado_por_ko=True`
+        independientemente de lo que mande el cliente.
+      • Si un partido YA está marcado como terminado_por_ko, bloqueamos
+        ediciones posteriores (409) salvo que el admin lo borre primero.
+    """
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada")
@@ -506,6 +516,28 @@ async def registrar_resultado(
         raise HTTPException(400, "Cancha fuera de rango")
     if body.ronda < 1 or body.ronda > reta.get("num_rondas", 7):
         raise HTTPException(400, "Ronda fuera de rango")
+
+    # === Fase 2 — Validación contra FormatoScore ===
+    # Parseamos el formato persistido en la reta. Si no existe (retas legacy)
+    # cae al default PUNTOS-juegos-9 sin cap.
+    fs_raw = reta.get("formato_score") or {}
+    try:
+        formato = FormatoScore(**fs_raw) if fs_raw else FormatoScore()
+    except Exception:
+        formato = FormatoScore()
+
+    # 1) Cap_total: score_a + score_b <= cap_total (solo PUNTOS).
+    if formato.tipo == "PUNTOS" and formato.cap_total is not None:
+        if (body.score_a + body.score_b) > formato.cap_total:
+            raise HTTPException(
+                422,
+                f"La suma de marcadores ({body.score_a}+{body.score_b}) excede "
+                f"el tope del formato ({formato.cap_total}).",
+            )
+
+    # 2) KO 3-0 (o equivalente cap/2+1). El motor SIEMPRE manda la verdad,
+    # ignoramos lo que venga del cliente para evitar manipulación.
+    auto_ko = es_ko_3_cero(formato, body.score_a, body.score_b)
 
     ganador = _calcular_ganador(body.score_a, body.score_b)
 
@@ -516,6 +548,14 @@ async def registrar_resultado(
         "partido_idx": body.partido_idx,
     })
 
+    # 3) Bloqueo de edición si ya está terminado por KO.
+    if existing and existing.get("terminado_por_ko"):
+        raise HTTPException(
+            409,
+            "Este partido está cerrado por KO. Elimina el marcador (Eliminar) "
+            "para volver a capturarlo.",
+        )
+
     if existing:
         update = {
             "pareja_a": body.pareja_a,
@@ -524,6 +564,7 @@ async def registrar_resultado(
             "score_b": body.score_b,
             "ganador": ganador,
             "partido_jugado": True,
+            "terminado_por_ko": bool(auto_ko),
         }
         await db.resultados.update_one({"id": existing["id"]}, {"$set": update})
         existing.pop("_id", None)
@@ -534,6 +575,7 @@ async def registrar_resultado(
             match_id=existing["id"],
             ronda=body.ronda,
             cancha=body.cancha,
+            ko=bool(auto_ko),
         )
         return PartidoResultado(**existing)
 
@@ -548,6 +590,7 @@ async def registrar_resultado(
         score_b=body.score_b,
         ganador=ganador,
         partido_jugado=True,
+        terminado_por_ko=bool(auto_ko),
     )
     doc = res.model_dump()
     doc["creado_en"] = doc["creado_en"].isoformat()
@@ -558,6 +601,7 @@ async def registrar_resultado(
         match_id=res.id,
         ronda=body.ronda,
         cancha=body.cancha,
+        ko=bool(auto_ko),
     )
     return res
 
