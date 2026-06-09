@@ -634,13 +634,19 @@ async def listar_resultados_admin(reta_id: str, current=Depends(get_current_admi
 async def _build_standings(reta_id: str) -> List[TablaPosicionEntry]:
     """Construye standings. Si la reta es de parejas, agrupa por dúo fijo
     ("PlayerA & PlayerB"). Si es individual, agrupa por jugador.
+
+    Fase 3 — Tie-breaker engine: aplica `criterio_desempate` (A/B/C) leído
+    del documento de la reta. Si no está definido (retas legacy) usa "A".
     """
     reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
+    criterio = (reta or {}).get("criterio_desempate", "A")
+    if criterio not in ("A", "B", "C"):
+        criterio = "A"
     if reta and _es_reta_de_parejas(reta):
-        return compute_duo_standings(docs, ordenar=True)
-    return compute_individual_standings(docs, ordenar=True)
+        return compute_duo_standings(docs, ordenar=True, criterio=criterio)
+    return compute_individual_standings(docs, ordenar=True, criterio=criterio)
 
 
 @router.get("/public/retas/{reta_id}/tabla", response_model=List[TablaPosicionEntry])

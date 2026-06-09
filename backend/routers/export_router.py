@@ -159,10 +159,10 @@ async def export_clasificacion_csv(
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
     if _es_reta_de_parejas(reta):
-        standings = compute_duo_standings(docs, ordenar=True)
+        standings = compute_duo_standings(docs, ordenar=True, criterio=reta.get("criterio_desempate", "A"))
         col_titulo = "Pareja"
     else:
-        standings = compute_individual_standings(docs, ordenar=True)
+        standings = compute_individual_standings(docs, ordenar=True, criterio=reta.get("criterio_desempate", "A"))
         col_titulo = "Jugador"
 
     rows: List[List[str]] = [[
@@ -203,9 +203,9 @@ async def export_clasificacion_pdf(
     cursor = db.resultados.find({"reta_id": reta_id}, {"_id": 0}).limit(2000)
     docs = [d async for d in cursor]
     if _es_reta_de_parejas(reta):
-        standings_entries = compute_duo_standings(docs, ordenar=True)
+        standings_entries = compute_duo_standings(docs, ordenar=True, criterio=reta.get("criterio_desempate", "A"))
     else:
-        standings_entries = compute_individual_standings(docs, ordenar=True)
+        standings_entries = compute_individual_standings(docs, ordenar=True, criterio=reta.get("criterio_desempate", "A"))
 
     # Convertir a dicts simples para el generador (evita pydantic en pdf).
     standings = [

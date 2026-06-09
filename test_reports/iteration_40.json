@@ -1,0 +1,42 @@
+{
+  "summary": "Iter40 — Fase 3 Tie-breaker engine (criterios A/B/C) backend validation. 9/9 pytest cases PASS after fixing one real bug in core/standings.py. Coverage: (1) Direct unit tests on compute_individual_standings with X/Y/Z PG-tied (PG=1) but DG/ratio different — A orders Z>X>Y by DG+GF, B orders Z>X>Y by DG only, C orders Z>X>Y by ratio GF/GC. (2) A divergence scenario (zeta vs alpha, both PG=1 and DG=+4, different GF/ratio) proves the three criterios actually diverge: A→zeta>alpha (GF tiebreak), B→alpha>zeta (alphabetic, no GF), C→alpha>zeta (ratio 2.0>1.667). (3) Endpoint GET /api/retas/{id}/clasificacion with criterio_desempate='C' returns Z>X>Y. (4) Retro-compat: reta created without sending criterio_desempate defaults to 'A' (response carries 'A' and ordering is Z>X>Y by DG). (5) Endpoint criterio='B' with zeta/alpha returns alpha>zeta (verifies B uses ONLY DG, not GF). (6) Public endpoint GET /api/public/retas/{id}/tabla (no auth) respects criterio_desempate of the reta for both B and C scenarios. BUG FOUND AND FIXED: compute_individual_standings was accepting the `criterio` parameter but the final `sorted(...)` call hard-coded criterion A's key tuple, completely ignoring criterio B/C for individual retas. The `_sort_key` helper existed but was only wired into compute_duo_standings. One-line fix applied: `key=lambda e: _sort_key(e, criterio)`. After fix, all 9 tests pass against the public Kubernetes ingress.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter40_tie_breaker_engine.py",
+    "/app/test_reports/pytest/iter40_tie_breaker.xml"
+  ],
+  "action_items": [
+    "Bug already fixed by testing agent in /app/backend/core/standings.py (one line). No further action needed for the Fase 3 acceptance criteria, but main agent should review the diff and decide whether to keep it (recommended).",
+    "Consider adding `criterio_desempate` to the response payload of GET /api/retas/{id} (RetaPublic model already inherits it via Reta) so the frontend can show the active criterion to organizers — already exposed, just confirming the contract is stable.",
+    "Consider documenting in the OpenAPI schema that GET /api/public/retas/{id}/tabla applies the reta's criterio_desempate (currently only mentioned in the resultados.py docstring)."
+  ],
+  "critical_code_review_comments": [
+    "core/standings.compute_individual_standings (lines 152-160 BEFORE fix): the final `sorted(...)` ignored the `criterio` argument and hard-coded criterion A's tuple. This made criterio='B' and 'C' silently degrade to 'A' for INDIVIDUAL retas — exactly the regression scenario this iteration was supposed to validate. compute_duo_standings was correct (uses _sort_key). Bug is now fixed by replacing the hard-coded key with `lambda e: _sort_key(e, criterio)`. Recommend a defensive guard: if criterio not in ('A','B','C') fall back to 'A' (already done in routers/resultados._build_standings, but doing it inside the pure function would harden the API).",
+    "routers/resultados._build_standings (line 644-646): defensive normalization of criterio_desempate is good (`if criterio not in (\"A\", \"B\", \"C\"): criterio = \"A\"`). Keep this — it shields against legacy docs with bad data.",
+    "models.RetaCreate.criterio_desempate uses Literal['A','B','C'] with default 'A' (line 169). Coherent with Reta model (line 217) so create→read roundtrip preserves the value. Good.",
+    "core/standings._ratio_gf_gc: edge case GF=GC=0 returns 0.0 (bottom). For brand-new entries with no matches this is fine; for entries that ONLY have empates 0-0 (unlikely) they'd also rank last under C, which seems intentional.",
+    "core/standings.compute_individual_standings does NOT enforce a stable type for `criterio` — passing 'a' (lowercase) silently falls into the 'C' branch (else clause). Recommend `.upper()` normalization or a runtime check that raises ValueError. Low priority — the router already normalizes."
+  ],
+  "updated_files": [
+    "/app/backend/core/standings.py (one-line bug fix: compute_individual_standings final sort now uses _sort_key(e, criterio) instead of hard-coded criterion A tuple)",
+    "/app/backend/tests/test_iter40_tie_breaker_engine.py (new — 9 pytest cases covering Fase 3 tie-breaker engine: 4 unit + 5 endpoint, including default-A retro-compat and public-table)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 after fix)",
+    "frontend": "not tested (per request)"
+  },
+  "seed_data_creation": "Tests create their own TEST_Iter40_*-prefixed retas (5 retas total: 1 for criterio='C', 1 for default-A, 1 for criterio='B', 2 for public-table). Each reta uses tipo_acceso='gratis_amigos' so no payment gateway is touched. Results are POSTed via /api/retas/{id}/resultados using synthetic player names (X/Y/Z/zeta/alpha + 18 placeholder partners). No real inscripciones are created; the resultados router doesn't enforce that pareja_a/pareja_b players are inscribed, which is fine for this isolated tie-breaker test. No teardown — retas remain in DB but are clearly prefixed TEST_Iter40_ for future cleanup. No impact on other test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter40_tie_breaker_engine.py as the Fase 3 regression suite. Key facts: (a) Reta.num_rondas Literal[5,6,7] — use 5 in payloads. (b) RetaCreate.criterio_desempate has default 'A' — to test retro-compat just omit the field. (c) The bug fixed this iteration was in core/standings.compute_individual_standings — the final sorted() ignored the criterio arg; verify it still uses _sort_key(e, criterio) before any future refactor. (d) Players names ARE case-sensitive in the standings dict (key is the raw name string from pareja_a/pareja_b); the sort uses .lower() for tiebreaks. (e) Public endpoint /api/public/retas/{id}/tabla does NOT require auth but does require the reta to exist (404 otherwise). (f) When PG ties with DG also tied, criterio B falls through to alphabetic (nombre.lower()) — important to remember when designing PG/DG tied tests. (g) The XYZ scenario (Z>X>Y) cannot distinguish A from C alone because all three criteria order them identically — to validate divergence you need the zeta/alpha scenario where A vs B vs C give different orders.",
+  "rca_of_issue": "BUG RCA — core/standings.compute_individual_standings was refactored to accept a `criterio` parameter and a `_sort_key(e, criterio)` helper was added; compute_duo_standings was updated to call `_sort_key`, BUT compute_individual_standings's final sorted() call kept the original hard-coded key tuple `(-pg, -diferencia, -gf, name)`. Symptom: criterio B and C had ZERO effect on individual reta standings; they silently behaved like A. Reproduction: create a reta with criterio_desempate='B', register results yielding PG-tie + DG-tie with different GF (e.g. zeta with GF=10 vs alpha with GF=8, both DG=+4), and GET /api/retas/{id}/clasificacion — expected alpha>zeta (alphabetic), observed zeta>alpha (A's GF tiebreak). Mitigation applied: one-line change to use `lambda e: _sort_key(e, criterio)` in the final sorted() call, mirroring compute_duo_standings. Verified by 9/9 pytest pass."
+}

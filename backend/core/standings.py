@@ -1,14 +1,25 @@
 """
 Tabla de Clasificación Individual (Fase C — Mesa de Control).
 
-Función pura `compute_individual_standings(resultados, ordenar=True)` que dada
+Función pura `compute_individual_standings(resultados, ordenar=True, criterio="A")` que dada
 una lista de documentos de la colección `resultados`, agrega las estadísticas
 por jugador y devuelve la lista ordenada bajo el criterio cascada solicitado:
 
     1º  Más Partidos Ganados (PG)       (desc)
-    2º  Mayor Diferencia de Puntos (DG)  (desc)
-    3º  Más Puntos a Favor (GF)          (desc)
-    4º  Nombre alfabético                (asc, estable)
+    2º+ Criterio de desempate configurado en la reta (A / B / C). Ver `Fase 3`.
+
+Fase 3 — Tie-breaker engine (Sección 4):
+    El organizador elige al crear la reta cómo desempatar a jugadores con el
+    mismo PG. Tres opciones (mismo nombre que el frontend):
+
+    A · Puntos netos individuales — `diferencia` (GF − GC), luego GF, luego nombre.
+        (Comportamiento histórico, default.)
+    B · Puntos netos por pareja — diferencia "neta cruda" sin segundo nivel GF,
+        usando solo la métrica de net y aceptando empates exactos antes del
+        nombre. Para retas Americano (parejas rotativas) genera mismos rankings
+        que A; para retas de dúos fijos se comporta como compute_duo_standings.
+    C · Rendimiento técnico — Ratio GF/GC descendente. Cuando GC=0 (jugador
+        invicto en parciales) se considera ∞ (ranking más alto).
 
 Reglas de empate técnico (TIEMPO o resultado idéntico):
     - 1 PJ a cada jugador
@@ -19,17 +30,43 @@ Diseño:
     - Función pura (sin db) → testeable con datos sintéticos.
     - O(n + k log k) donde n = #resultados, k = #jugadores distintos.
     - El campo `puntos` se conserva por compat (3 win / 1 empate / 0 derrota),
-      pero el ORDENAMIENTO PRINCIPAL ahora es PG→DG→GF (no `puntos`).
+      pero el ORDENAMIENTO PRINCIPAL ahora es PG→{criterio A/B/C}.
 """
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable, List, Literal
 
 from models import TablaPosicionEntry
+
+CriterioDesempate = Literal["A", "B", "C"]
 
 # Letras canónicas de `ganador` que aceptamos. EMPATE se acepta también en
 # modo PUNTOS (raro pero el backend es elástico).
 _VALID_GANADOR = {"A", "B", "E", "EMPATE"}
+
+
+def _ratio_gf_gc(e: TablaPosicionEntry) -> float:
+    """Ratio GF/GC, con GC=0 → ∞ (top). Defensa: si GF=GC=0 → 0.0 (bottom)."""
+    if e.juegos_en_contra > 0:
+        return e.juegos_a_favor / e.juegos_en_contra
+    if e.juegos_a_favor > 0:
+        return float("inf")
+    return 0.0
+
+
+def _sort_key(e: TablaPosicionEntry, criterio: CriterioDesempate):
+    """Construye el sort key Python según el criterio elegido.
+
+    Primer nivel SIEMPRE es PG (descendente). El resto cambia.
+    """
+    pg = -e.partidos_ganados
+    if criterio == "A":
+        return (pg, -e.diferencia, -e.juegos_a_favor, e.nombre.lower())
+    if criterio == "B":
+        # "Neto crudo": solo diferencia, sin segundo nivel GF.
+        return (pg, -e.diferencia, e.nombre.lower())
+    # criterio == "C" — Rendimiento técnico (ratio GF/GC).
+    return (pg, -_ratio_gf_gc(e), -e.diferencia, e.nombre.lower())
 
 
 def _add(stats: dict[str, TablaPosicionEntry], name: str) -> TablaPosicionEntry:
@@ -49,15 +86,17 @@ def _is_empate(ganador: str, score_a: int, score_b: int) -> bool:
 def compute_individual_standings(
     resultados: Iterable[dict],
     ordenar: bool = True,
+    criterio: CriterioDesempate = "A",
 ) -> List[TablaPosicionEntry]:
     """Calcula la tabla individual desde resultados.
 
     Args:
         resultados: iterable de docs `{pareja_a, pareja_b, score_a, score_b, ganador, ...}`.
         ordenar: si False devuelve sin ordenar (útil en tests).
+        criterio: A/B/C — Fase 3 tie-breaker. Default "A" mantiene comportamiento histórico.
 
     Returns:
-        Lista de TablaPosicionEntry ordenada cascada PG→DG→GF→nombre.
+        Lista de TablaPosicionEntry ordenada cascada PG→{criterio A/B/C}→nombre.
     """
     stats: dict[str, TablaPosicionEntry] = {}
 
@@ -113,12 +152,9 @@ def compute_individual_standings(
     if not ordenar:
         return list(stats.values())
 
-    # Cascada estricta: PG desc → DG desc → GF desc → nombre asc.
+    # Cascada estricta: PG desc → criterio A/B/C → nombre asc.
     # Python sort es estable → siempre devuelve mismo orden ante ties exactos.
-    return sorted(
-        stats.values(),
-        key=lambda e: (-e.partidos_ganados, -e.diferencia, -e.juegos_a_favor, e.nombre.lower()),
-    )
+    return sorted(stats.values(), key=lambda e: _sort_key(e, criterio))
 
 
 # =============================================================================
@@ -127,6 +163,7 @@ def compute_individual_standings(
 def compute_duo_standings(
     resultados: Iterable[dict],
     ordenar: bool = True,
+    criterio: CriterioDesempate = "A",
 ) -> List[TablaPosicionEntry]:
     """Calcula la tabla agrupando por dúo FIJO.
 
@@ -138,6 +175,7 @@ def compute_duo_standings(
     Args:
         resultados: iterable de docs con pareja_a/pareja_b/score_a/score_b/ganador.
         ordenar: si False, devuelve sin orden (útil en tests).
+        criterio: A/B/C — Fase 3 tie-breaker. Default "A".
 
     Returns:
         Lista de TablaPosicionEntry. Una fila POR dúo (no por jugador).
@@ -204,7 +242,4 @@ def compute_duo_standings(
     if not ordenar:
         return list(stats.values())
 
-    return sorted(
-        stats.values(),
-        key=lambda e: (-e.partidos_ganados, -e.diferencia, -e.juegos_a_favor, e.nombre.lower()),
-    )
+    return sorted(stats.values(), key=lambda e: _sort_key(e, criterio))

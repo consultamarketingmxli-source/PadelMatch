@@ -202,6 +202,20 @@ export default function TablaEnVivo() {
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={styles.title}>Clasificación</Text>
           <Text style={styles.subtle} numberOfLines={1}>{reta.nombre}</Text>
+          {/* Fase 3 — chip de criterio de desempate (educa al usuario sobre cómo se rompen los empates). */}
+          {reta.criterio_desempate ? (
+            <View style={styles.criterioChip} testID="criterio-chip">
+              <Text style={styles.criterioChipText}>
+                Desempate {reta.criterio_desempate}
+                {" · "}
+                {reta.criterio_desempate === "A"
+                  ? "Puntos netos individuales"
+                  : reta.criterio_desempate === "B"
+                    ? "Puntos netos por pareja"
+                    : "Rendimiento técnico (GF/GC)"}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <WsBadge status={wsStatus} />
       </View>
@@ -467,4 +481,20 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   deniedCtaText: { color: colors.text.inverse, fontWeight: "800", fontSize: 14 },
+  // Fase 3 — chip de criterio de desempate sobre la tabla.
+  criterioChip: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    backgroundColor: colors.brand.primaryMuted,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+  },
+  criterioChipText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    color: colors.brand.primary,
+  },
 });
