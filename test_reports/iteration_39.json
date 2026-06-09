@@ -1,0 +1,39 @@
+{
+  "summary": "Iter39 — Fase 5 (Mercado Pago Anti-Oversell + Waitlist UX) backend validation. All 4 pytest cases PASS against the public Kubernetes ingress (admin@padelappretas.com / admin123). Coverage: (1) POST /api/public/retas/{rid}/checkout-mercadopago on a reta filled to max_jugadores (4/4 Aprobados) → 409 with detail containing 'lista de espera' / 'llen' (verified message: 'Reta llena. Únete a la lista de espera.'). (2) POST /api/public/retas/{rid}/cupon/canjear on a FULL reta (after pre-validation passes) → 409 with the user-facing 'Lo sentimos, el cupón es válido pero la reta ya no cuenta con cupos disponibles…' message; the cupón is NOT consumed (rollback verified by code path: liberar_lugar before returning). (3) joinWaitlist (POST /api/public/retas/{rid}/waitlist) AFTER the 409 → 200 with posicion_fila >= 1, reta_id and telefono echoed correctly. (4) Race condition: filled reta to max-1, created 5 distinct cupons, fired 5 concurrent canjear via asyncio.gather + httpx.AsyncClient → EXACTLY 1 success + 4 × 409 (atomic reservar_lugar_atomico in core/concurrency.py works as designed). Setup notes: a fake access_token_pasarela was seeded on the admin doc so checkout-mp reaches the crear_inscripcion_pendiente branch (where 409 is raised) instead of short-circuiting on the MP-not-connected guard. Atomic counter inscritos_lock was bumped in lockstep with seeded Aprobados so reservar_lugar_atomico sees the true occupancy. No real MP payment flow was exercised (per request).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_anti_oversell_waitlist.py",
+    "/app/test_reports/pytest/iter39_anti_oversell.xml"
+  ],
+  "action_items": [
+    "No backend action items — Fase 5 anti-oversell acceptance criteria met (409 on full reta for both MP-checkout and cupón-canjear, waitlist joinable after 409, race condition atomic). Main agent can proceed: the frontend WaitlistFullModal trigger logic (detect 409 with 'llen' or 'lista de espera' in detail) is fully supported by the backend messaging."
+  ],
+  "critical_code_review_comments": [
+    "routers/mercadopago.checkout_mercadopago: the MP-not-connected guard (_admin_with_mp_for_reta → 400) runs BEFORE the anti-oversell 409. If an organizer's MP token is removed mid-flight on a full reta, players will get a confusing 400 ('organizador no vinculó MP') instead of 409. Consider checking reta capacity FIRST so the waitlist UX still works even when MP is misconfigured.",
+    "routers/cupones.canjear_cupon: order is correct (reservar_lugar_atomico BEFORE find_one_and_update on cupon), which means a race that loses the cupo never burns the cupon — verified by reading the rollback path. Good.",
+    "core/concurrency.reservar_lugar_atomico: relies on inscritos_lock being initialized via _ensure_counters. That helper only initializes if the field is missing, never re-syncs if the counter drifts from reality (e.g., manual DB ops). Consider a /api/admin/retas/{id}/recompute-lock endpoint or a startup reconciler.",
+    "core/helpers.crear_inscripcion_pendiente line 168: 'Reta llena. Únete a la lista de espera.' — message is consistent and matches the frontend Fase 5 detector. crear_inscripcion_pareja_pendiente line 222 also uses 'Reta llena…' which is good for the duo flow.",
+    "routers/mercadopago.checkout_mercadopago: a fake/expired access_token still passes the _admin_with_mp_for_reta guard (only checks existence, not validity). This is fine for the 409 path but means a stale token leads to 502 on success path. Document for ops."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter39_anti_oversell_waitlist.py (new — 4 pytest cases covering Fase 5 anti-oversell + race + waitlist)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4)",
+    "frontend": "not tested (per request)"
+  },
+  "seed_data_creation": "Tests create their own TEST_-prefixed retas, seed Aprobado inscriptions directly in MongoDB (via MONGO_URL), bump inscritos_lock, and set a fake access_token_pasarela on the admin. Teardown deletes the reta (cascade), inscripciones, lista_espera entries, generated cupons, and unsets the fake MP token. No residual data expected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter39_anti_oversell_waitlist.py as the Fase 5 regression suite. Key facts for future iterations: (a) Reta.num_rondas is Literal[5, 6, 7] — use 5 in test payloads. (b) The MP checkout flow checks costo_inscripcion >= 10 BEFORE the 409 path, so test retas must use costo >= 100. (c) reservar_lugar_atomico needs inscritos_lock initialized; when seeding Aprobados directly in DB, also $set inscritos_lock = N or the next checkout will succeed past the full count. (d) The 409 detail message is 'Reta llena. Únete a la lista de espera.' for individuales and 'Reta llena. Únanse a la lista de espera.' for parejas — frontend should match on case-insensitive 'llen' substring (not exact string). (e) The cupón-canjear 409 detail starts with 'Lo sentimos, el cupón es válido pero la reta ya no cuenta con cupos disponibles. Únete a la lista de espera.' — also contains 'lista de espera' so the same detector works. (f) joinWaitlist is idempotent on (reta_id, telefono) — calling it twice returns the existing entry, not a 409.",
+  "rca_of_issue": "N/A — no defects found; Fase 5 anti-oversell + atomic concurrency implementation passes all acceptance criteria."
+}

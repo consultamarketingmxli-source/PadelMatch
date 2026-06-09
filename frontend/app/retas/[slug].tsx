@@ -46,6 +46,7 @@ import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
 import { LifeBuoySupport } from "@/src/components/LifeBuoySupport";
 import { RsvpCard, type RsvpResult } from "@/src/components/retas/RsvpCard";
 import { CheckoutCard, type RegMode, type CuponState } from "@/src/components/retas/CheckoutCard";
+import { WaitlistFullModal } from "@/src/components/retas/WaitlistFullModal";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
@@ -78,6 +79,12 @@ export default function RetaDetailScreen() {
   // ===== RSVP (retas gratis) =====
   const [rsvpResult, setRsvpResult] = useState<RsvpResult>(null);
   const [rsvpAction, setRsvpAction] = useState<"aceptar" | "rechazar" | null>(null);
+
+  // ===== Fase 5 (Sección 2) — Anti-Oversell Waitlist Modal =====
+  const [waitlistPrompt, setWaitlistPrompt] = useState<{
+    open: boolean;
+    joining?: boolean;
+  }>({ open: false });
 
   const load = useCallback(async () => {
     if (!slug) return;
@@ -287,7 +294,15 @@ export default function RetaDetailScreen() {
         await load();
       } catch (e: any) {
         const msg = e.message ?? "No se pudo canjear";
-        Alert.alert("No se pudo canjear", msg);
+        // Fase 5 (Sección 2) — Anti-Oversell también aplica al canje de cupón
+        // (un cupón 100% sigue reservando un cupo real).
+        const isFull =
+          msg.startsWith("409:") || /Reta llena/i.test(msg) || /cupos/i.test(msg);
+        if (isFull) {
+          setWaitlistPrompt({ open: true });
+        } else {
+          Alert.alert("No se pudo canjear", msg);
+        }
         if (/redimid|llen|cupos|otro club|exclusiv/i.test(msg)) {
           setCuponState({ ok: false, razon: msg });
         }
@@ -381,9 +396,51 @@ export default function RetaDetailScreen() {
       setParejaTelefono("");
       await load();
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo procesar");
+      // Fase 5 (Sección 2) — Anti-Oversell.
+      // Si el backend devolvió 409 (cupos llenos durante el checkout),
+      // ofrecemos sumarse a lista de espera con 1 clic, en vez de un Alert genérico.
+      const msg = String(e?.message ?? "");
+      const isFull =
+        msg.startsWith("409:") ||
+        /llen[ao]/i.test(msg) ||
+        /lista de espera/i.test(msg);
+      if (isFull) {
+        setWaitlistPrompt({ open: true });
+      } else {
+        Alert.alert("Error", e.message ?? "No se pudo procesar");
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ===== Fase 5 (Sección 2) — Confirmar unión a waitlist desde modal =====
+  const handleJoinWaitlistFromModal = async () => {
+    if (!reta) return;
+    if (!nombre.trim() || !telefono.trim()) {
+      Alert.alert(
+        "Datos incompletos",
+        "Necesitamos tu nombre y teléfono para sumarte a la lista de espera.",
+      );
+      setWaitlistPrompt({ open: false });
+      return;
+    }
+    setWaitlistPrompt((s) => ({ ...s, joining: true }));
+    try {
+      const wl = await api.joinWaitlist(reta.id, {
+        reta_id: reta.id,
+        nombre: nombre.trim(),
+        telefono: telefono.trim(),
+      });
+      setWaitlistPrompt({ open: false });
+      Alert.alert(
+        "¡Listo, eres #" + wl.posicion_fila + " en la fila!",
+        "Te avisaremos por WhatsApp en cuanto se libere un cupo.",
+      );
+      await load();
+    } catch (e: any) {
+      setWaitlistPrompt({ open: false });
+      Alert.alert("No se pudo unir", e?.message ?? "Intenta de nuevo en unos segundos.");
     }
   };
 
@@ -596,6 +653,16 @@ export default function RetaDetailScreen() {
       </KeyboardAvoidingView>
       {/* FAB de soporte (Fase B) — flotante sobre toda la vista */}
       <LifeBuoySupport slug={String(slug)} retaNombre={reta.nombre} />
+
+      {/* Fase 5 (Sección 2) — Anti-Oversell Waitlist Modal */}
+      <WaitlistFullModal
+        visible={waitlistPrompt.open}
+        retaNombre={reta?.nombre}
+        loading={!!waitlistPrompt.joining}
+        esDuo={regMode === "duo"}
+        onConfirm={handleJoinWaitlistFromModal}
+        onClose={() => setWaitlistPrompt({ open: false })}
+      />
     </SafeAreaView>
   );
 }
