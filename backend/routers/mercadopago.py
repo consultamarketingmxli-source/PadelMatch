@@ -34,6 +34,7 @@ from core.helpers import (
     crear_inscripcion_free_agent_pendiente,
     crear_inscripcion_pareja_pendiente,
     crear_inscripcion_pendiente,
+    expirar_pendientes_vencidas,
     promover_lista_espera,
 )
 from core.concurrency import liberar_lugar
@@ -210,6 +211,24 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
     assert_reta_no_cerrada(reta, accion="pagar inscripción a")
     if float(reta.get("costo_inscripcion", 0)) < 10:
         raise HTTPException(400, "El costo de inscripción debe ser de al menos $10 MXN.")
+
+    # ===== Fase 5 (Sección 2) — Anti-Oversell early peek =====
+    # Liberamos pendientes vencidas y comparamos contra max_jugadores ANTES de
+    # exigir MP-vinculado. Así, si la reta está visiblemente llena el cliente
+    # recibe 409 (→ Waitlist modal) en lugar de un 400 confuso cuando además
+    # el organizador no tiene MP conectado.
+    await expirar_pendientes_vencidas(reta_id)
+    lock_actual = int(reta.get("inscritos_lock") or 0)
+    cupos_solicitados = (
+        2 if (reta.get("modalidad_registro", "individual") != "individual"
+              and body.pareja_nombre and body.pareja_telefono)
+        else 1
+    )
+    if lock_actual + cupos_solicitados > int(reta.get("max_jugadores", 0)):
+        raise HTTPException(
+            409,
+            "Reta llena. Únete a la lista de espera.",
+        )
 
     admin = await _admin_with_mp_for_reta(reta)
     access_token = admin["access_token_pasarela"]

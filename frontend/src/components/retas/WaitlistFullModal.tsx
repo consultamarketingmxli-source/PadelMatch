@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 420,
-    backgroundColor: colors.surface.card,
+    backgroundColor: colors.bg.card,
     borderRadius: radii.lg,
     padding: spacing.lg,
     alignItems: "center",
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: colors.surface.subtle,
+    backgroundColor: colors.bg.elevated,
     borderRadius: radii.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 10,
