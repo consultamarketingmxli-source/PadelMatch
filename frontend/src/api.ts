@@ -258,6 +258,18 @@ export type MpStatus = {
   connected_at?: string | null;
   apply_fee: boolean;
   fee_percent: number;
+  // ===== Marketplace OAuth multi-cuenta =====
+  connection_mode?: "oauth" | "manual" | null;
+  encrypted_at_rest?: boolean;
+  encryption_available?: boolean;
+  expires_at?: string | null;
+  has_refresh_token?: boolean;
+};
+
+export type MpOAuthStart = {
+  authorize_url: string;
+  state: string;
+  redirect_uri: string;
 };
 
 export type MpCheckoutResponse = {
@@ -882,6 +894,11 @@ export const api = {
       body: { apply_fee },
       auth: true,
     }),
+  /** Fase Marketplace: inicia el flujo OAuth y devuelve la URL para abrir en el navegador. */
+  mpOAuthStart: (redirect_uri?: string) => {
+    const qs = redirect_uri ? `?redirect_uri=${encodeURIComponent(redirect_uri)}` : "";
+    return request<MpOAuthStart>(`/admin/mercadopago/oauth/start${qs}`, { auth: true });
+  },
   checkoutMercadoPago: (
     retaId: string,
     body: {

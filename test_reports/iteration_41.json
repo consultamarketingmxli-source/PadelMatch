@@ -1,0 +1,51 @@
+{
+  "summary": "Iter41 — Mercado Pago Marketplace OAuth Multi-Account expansion: 13/13 NEW tests PASS. Coverage: (1) OAuth start endpoint returns 200 with authorize_url containing client_id=7849343570174391, response_type=code, platform_id=mp, state (3-part nonce.email_b64.hmac, sig=32 hex chars) and canonical redirect_uri ending in /api/admin/mercadopago/oauth/callback; auth required (401 without token). (2) OAuth callback 302-redirects to /admin/mercadopago with mp_oauth=error for: ?error=access_denied (reason=User+denied), tampered state (reason=state_invalid via HMAC compare_digest), and missing code (reason=missing_code). (3) core/crypto unit tests: encrypt_token wraps with 'enc::' prefix, decrypt roundtrips exactly, encrypt(encrypt(x)) == encrypt(x) (idempotent), plaintext passes through decrypt unchanged (retro-compat), passthrough when MP_TOKEN_ENCRYPTION_KEY absent, empty/None returns input. (4) POST /admin/mercadopago/connect with the existing sandbox APP_USR token persists access_token_pasarela starting with 'enc::' in MongoDB (verified by direct pymongo read), sets mp_connection_mode='manual', clears mp_refresh_token & mp_expires_at; status returns encrypted_at_rest=true. (5) Status endpoint exposes all new fields: connection_mode, encrypted_at_rest, encryption_available=true, expires_at=None, has_refresh_token=false, fee_percent=0.0 (MARKETPLACE_FEE_PERCENT=0 in .env). (6) Webhook multi-org resolver: in-process ASGITransport test with monkeypatched mercadopago_service.obtener_pago returning metadata.admin_email pointing to a SEPARATE TEST_alt_admin doc — webhook returns 200 ok=true, code tolerates multi-org and called obtener_pago at least once (re-route path exercised via decrypt_token of alt admin's encrypted token). MP_CLIENT_ID confirmed = 7849343570174391, redirect_uri = https://padel-tournament-hub-9.preview.emergentagent.com/api/admin/mercadopago/oauth/callback. NO bugs found in the new code — Fernet helper, OAuth state HMAC, and metadata routing all behave per spec. Pre-existing test_mercadopago_marketplace.py has 9 stale failures NOT caused by this expansion (webhook MP_WEBHOOK_SECRET now enforced → old tests need x-signature header; PhoneStr validator now rejects '+521TEST_*' literal — see action items).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/webhooks/mercadopago", "issue": "Old iter5_mp suite expects 200 but now correctly returns 401 (MP_WEBHOOK_SECRET configured). Old tests are stale — not a code bug. New iter41 webhook test bypasses by monkeypatching MP_WEBHOOK_SECRET='' for in-process ASGI run."},
+      {"endpoint": "POST /api/public/retas/{id}/checkout-mercadopago + /checkout-stripe", "issue": "Stale iter5_mp tests send telefono='+521TEST_NX1' which is rejected (422) by tightened PhoneStr validator (requires +52 + 10 digits). Not caused by Marketplace OAuth changes — pre-existing test drift."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter41_mp_marketplace_oauth.py",
+    "/app/test_reports/pytest/iter41_marketplace_oauth.xml",
+    "/app/test_reports/pytest/iter41_regression_mp.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Refresh /app/backend/tests/test_mercadopago_marketplace.py — its 9 stale failures are unrelated to this iteration (MP_WEBHOOK_SECRET enforcement + tighter PhoneStr). Suggested fixes: (a) compute x-signature header in webhook tests, (b) replace '+521TEST_*' phones with '+5215512345001'-style digits-only.",
+    "NICE-TO-HAVE: Add a /api/admin/mercadopago/oauth/refresh endpoint that calls mp_oauth.refresh_access_token(refresh_token) and re-encrypts the rotated refresh_token. Currently the helper exists but no router wires it — admins whose 6-month OAuth token nears expiry would need manual reconnect.",
+    "NICE-TO-HAVE: Persist `payer_email` and `metadata.admin_email` in mp_transactions explicitly so reporting can attribute revenue per admin without re-querying MP.",
+    "DOC: Document in README that MP_TOKEN_ENCRYPTION_KEY rotation requires re-encrypting every admins.access_token_pasarela (and mp_refresh_token) — currently decrypt_token returns None silently if Fernet InvalidToken (just logs error). Consider an admin maintenance endpoint to migrate."
+  ],
+  "critical_code_review_comments": [
+    "routers/mercadopago._sign_oauth_state / _verify_oauth_state: HMAC-SHA256 with hmac.compare_digest is correct. Padding-safe base64 decode of email handles the rstrip('=') trick well. Good.",
+    "routers/mercadopago.mp_oauth_callback: ordering of checks is correct (error first → missing code/state → state HMAC → exchange). RedirectResponse(302) consistently used. ✅",
+    "mp_oauth_service.build_authorize_url: uses httpx.QueryParams for url-encoding individual values — works but is verbose. Could be simplified with urllib.parse.urlencode(params). Not a bug, just style.",
+    "mp_oauth_service.exchange_code_for_tokens: distinguishes 400/401 (ValueError → user-actionable) from 5xx (RuntimeError → infra). The router catches ValueError → reason=exchange_rejected and bare Exception → reason=exchange_failed. ✅",
+    "core/crypto._get_fernet: lazy singleton with _initialized guard is good for unit-testability (tests reset both flags). The 'enc::' prefix sentinel is a clean migration strategy; existing plaintext tokens transparently coexist.",
+    "core/crypto.decrypt_token: returns None on InvalidToken — callers in routers/mercadopago.py correctly check 'if not access_token' and raise 503. ✅",
+    "routers/mercadopago.webhook_mercadopago multi-org branch (lines 762-778): re-fetches payment with alternative admin's token only if admin_email_meta differs AND alt_token decrypts AND differs from current. Defensive: silently keeps original payment on alt fetch failure. ✅",
+    "routers/mercadopago.mp_disconnect $unset includes mp_connection_mode/mp_refresh_token/mp_expires_at — symmetric with connect/oauth_callback. ✅",
+    "routers/mercadopago.MpStatus.fee_percent uses mp_oauth.marketplace_fee_percent() helper which reads MARKETPLACE_FEE_PERCENT then falls back to legacy MP_PLATFORM_FEE_PERCENT. Backwards compatible — good.",
+    "Potential minor issue: in checkout_mercadopago after decrypt_token() fails the code raises 503 'Token MP corrupto/no descifrable. Reconecta MP.' — but the cupos reservation lock has NOT been taken yet, so no rollback needed. ✅"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter41_mp_marketplace_oauth.py (new — 13 pytest cases: 2 OAuth start + 3 OAuth callback + 5 crypto unit + 1 connect-encrypts + 1 status fields + 1 webhook multi-org via in-process ASGITransport with monkeypatched obtener_pago)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 new tests). Pre-existing test_mercadopago_marketplace.py: 11/20 pass — 9 failures unrelated to this iteration (MP_WEBHOOK_SECRET enforcement + PhoneStr validator drift).",
+    "frontend": "not tested (per request — backend only)"
+  },
+  "seed_data_creation": "Test inserts ONE temporary admin doc with email TEST_alt_admin_<uuid>@example.com for the webhook multi-org test (cleaned up in finally block). The default admin@padelappretas.com is re-connected with the existing sandbox MP token at module teardown to leave a clean known state for next agents. No retas/inscripciones/mp_transactions created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter41_mp_marketplace_oauth.py as the Marketplace OAuth regression suite. Key facts: (a) state format is '<nonce>.<email_b64>.<hmac32hex>' — DO NOT change format without updating tests. (b) crypto singleton must be reset between tests that monkeypatch the env: `crypto._fernet_singleton=None; crypto._initialized=False`. (c) Webhook signature is ENFORCED when MP_WEBHOOK_SECRET is set — in-process tests must monkeypatch.setenv('MP_WEBHOOK_SECRET','') before calling. (d) anyio.run(coro) is the cleanest way to drive ASGITransport from a sync pytest function without pytest-asyncio. (e) MARKETPLACE_FEE_PERCENT=0 in .env → fee_percent=0.0 — if main agent ever bumps env (e.g. 10), the status test will need update. (f) The MP test seller token APP_USR-1598112764080275-... is the same one used since iter5; do not rotate without updating /app/memory/test_credentials.md. (g) The OAuth exchange code path was NOT tested e2e (we have no real MP `code`) but exchange_code_for_tokens raises ValueError on 400/401 from MP — covered indirectly by 'reason=exchange_rejected' redirect contract in the callback.",
+  "rca_of_issue": "No bugs found in the new Marketplace OAuth code. All 13 new acceptance tests pass on first run. The 9 failures observed in /app/backend/tests/test_mercadopago_marketplace.py are PRE-EXISTING drift, not caused by this iteration: (1) webhook tests no longer pass because MP_WEBHOOK_SECRET was added to .env in a previous iteration and the router now correctly enforces HMAC validation (401 returned); (2) checkout/stripe tests send '+521TEST_NX1' which a tightened PhoneStr validator now rejects with 422. Both are valid backend behaviors — the stale tests need to be refreshed (see action items)."
+}

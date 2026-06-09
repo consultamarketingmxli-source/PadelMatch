@@ -18,15 +18,18 @@ Reglas de negocio:
 """
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 import mercadopago_service as mps
+import mp_oauth_service as mp_oauth
 from auth import get_current_admin
 from core.circuit import with_timeout_and_retry
+from core.crypto import decrypt_token, encrypt_token
 from core.db import db, ADMIN_EMAIL_DEFAULT
 from core.email_service import email_service
 from core.helpers import (
@@ -44,6 +47,52 @@ logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["mercadopago"])
 
 
+# =====================================================================
+# OAuth state helpers (CSRF + admin_email signing)
+# =====================================================================
+def _sign_oauth_state(admin_email: str) -> str:
+    """Devuelve `<nonce>.<admin_email_b64>.<hmac>` para usarlo como `state` OAuth."""
+    import base64
+    import hashlib
+    import hmac as _hmac
+    import secrets as _secrets
+
+    secret = (os.getenv("MP_OAUTH_STATE_SECRET") or os.getenv("SECRET_KEY") or "").encode("utf-8")
+    if not secret:
+        raise HTTPException(503, "MP_OAUTH_STATE_SECRET no configurado en backend.")
+    nonce = _secrets.token_urlsafe(12)
+    email_b64 = base64.urlsafe_b64encode(admin_email.encode("utf-8")).decode("utf-8").rstrip("=")
+    base = f"{nonce}.{email_b64}"
+    sig = _hmac.new(secret, base.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return f"{base}.{sig}"
+
+
+def _verify_oauth_state(state: str) -> str:
+    """Valida el state firmado y devuelve el `admin_email` que lo originó."""
+    import base64
+    import hashlib
+    import hmac as _hmac
+
+    parts = (state or "").split(".")
+    if len(parts) != 3:
+        raise HTTPException(400, "state OAuth inválido.")
+    nonce, email_b64, sig = parts
+    secret = (os.getenv("MP_OAUTH_STATE_SECRET") or os.getenv("SECRET_KEY") or "").encode("utf-8")
+    if not secret:
+        raise HTTPException(503, "MP_OAUTH_STATE_SECRET no configurado en backend.")
+    base = f"{nonce}.{email_b64}"
+    expected = _hmac.new(secret, base.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    if not _hmac.compare_digest(expected, sig):
+        raise HTTPException(400, "Firma de state OAuth no coincide (CSRF / tampering).")
+    try:
+        # padding-safe decode
+        padded = email_b64 + "=" * (-len(email_b64) % 4)
+        return base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+    except Exception:
+        raise HTTPException(400, "state OAuth inválido (email decode).")
+
+
+
 # ===================== Schemas =====================
 class MpConnectRequest(BaseModel):
     access_token: str = Field(min_length=10, max_length=400)
@@ -58,6 +107,23 @@ class MpStatus(BaseModel):
     connected_at: Optional[str] = None
     apply_fee: bool = False
     fee_percent: float = 0.0
+    # ===== Marketplace OAuth multi-cuenta (Sección 2 - expansión) =====
+    # Modo de vinculación: 'oauth' si vino del flujo OAuth, 'manual' si pegado.
+    connection_mode: Optional[str] = None
+    # Indica si el access_token persistido está cifrado at-rest en MongoDB.
+    encrypted_at_rest: bool = False
+    # Indica si la key Fernet está configurada en el backend (independiente de si hay token).
+    encryption_available: bool = False
+    # Si el OAuth se hizo y devolvió expires_in, ISO timestamp absoluto del expiry.
+    expires_at: Optional[str] = None
+    # True si tenemos refresh_token guardado (token renovable sin re-OAuth).
+    has_refresh_token: bool = False
+
+
+class MpOAuthStartResponse(BaseModel):
+    authorize_url: str
+    state: str
+    redirect_uri: str
 
 
 class MpSettingsUpdate(BaseModel):
@@ -112,7 +178,10 @@ async def _admin_with_mp_for_reta(reta: dict) -> dict:
 # ===================== Endpoints admin =====================
 @router.post("/admin/mercadopago/connect", response_model=MpStatus)
 async def mp_connect(body: MpConnectRequest, current=Depends(get_current_admin)):
-    """Vincula la cuenta MP del organizador validando su Access Token."""
+    """Vincula la cuenta MP del organizador validando su Access Token (modo MANUAL).
+
+    Para el flujo OAuth, usar `GET /admin/mercadopago/oauth/start`.
+    """
     try:
         info = await mps.validar_access_token(body.access_token)
     except ValueError as e:
@@ -123,13 +192,18 @@ async def mp_connect(body: MpConnectRequest, current=Depends(get_current_admin))
 
     email = current.get("sub") or current.get("email")
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Encriptamos el token at-rest si MP_TOKEN_ENCRYPTION_KEY está configurada.
+    encrypted_access = encrypt_token(body.access_token.strip())
     update = {
-        "access_token_pasarela": body.access_token.strip(),
+        "access_token_pasarela": encrypted_access,
         "mp_user_id": str(info.get("id")),
         "mp_nickname": info.get("nickname"),
         "mp_email": info.get("email"),
         "mp_site_id": info.get("site_id"),
         "mp_connected_at": now_iso,
+        "mp_connection_mode": "manual",
+        "mp_refresh_token": None,  # manual paste no provee refresh
+        "mp_expires_at": None,
     }
     # apply_fee se setea por defecto False solo en el connect inicial
     existing = await db.admins.find_one({"email": email}, {"mp_apply_fee": 1})
@@ -137,17 +211,7 @@ async def mp_connect(body: MpConnectRequest, current=Depends(get_current_admin))
         update["mp_apply_fee"] = False
 
     await db.admins.update_one({"email": email}, {"$set": update})
-
-    return MpStatus(
-        connected=True,
-        mp_user_id=update["mp_user_id"],
-        nickname=update["mp_nickname"],
-        email=update["mp_email"],
-        site_id=update["mp_site_id"],
-        connected_at=now_iso,
-        apply_fee=update.get("mp_apply_fee", False),
-        fee_percent=mps.PLATFORM_FEE_PERCENT,
-    )
+    return await mp_status(current)
 
 
 @router.post("/admin/mercadopago/disconnect")
@@ -163,6 +227,9 @@ async def mp_disconnect(current=Depends(get_current_admin)):
             "mp_email": "",
             "mp_site_id": "",
             "mp_connected_at": "",
+            "mp_connection_mode": "",
+            "mp_refresh_token": "",
+            "mp_expires_at": "",
         }},
     )
     return {"ok": True}
@@ -172,7 +239,10 @@ async def mp_disconnect(current=Depends(get_current_admin)):
 async def mp_status(current=Depends(get_current_admin)):
     email = current.get("sub") or current.get("email")
     admin = await db.admins.find_one({"email": email}, {"_id": 0}) or {}
-    connected = bool(admin.get("access_token_pasarela"))
+    token_stored = admin.get("access_token_pasarela") or ""
+    connected = bool(token_stored)
+    encrypted = isinstance(token_stored, str) and token_stored.startswith("enc::")
+    encryption_available = bool((os.getenv("MP_TOKEN_ENCRYPTION_KEY") or "").strip())
     return MpStatus(
         connected=connected,
         mp_user_id=admin.get("mp_user_id"),
@@ -181,7 +251,12 @@ async def mp_status(current=Depends(get_current_admin)):
         site_id=admin.get("mp_site_id"),
         connected_at=admin.get("mp_connected_at"),
         apply_fee=bool(admin.get("mp_apply_fee", False)),
-        fee_percent=mps.PLATFORM_FEE_PERCENT,
+        fee_percent=mp_oauth.marketplace_fee_percent(),
+        connection_mode=admin.get("mp_connection_mode") or ("manual" if connected else None),
+        encrypted_at_rest=encrypted,
+        encryption_available=encryption_available,
+        expires_at=admin.get("mp_expires_at"),
+        has_refresh_token=bool(admin.get("mp_refresh_token")),
     )
 
 
@@ -193,6 +268,124 @@ async def mp_update_settings(body: MpSettingsUpdate, current=Depends(get_current
         {"$set": {"mp_apply_fee": bool(body.apply_fee)}},
     )
     return await mp_status(current)  # reuse
+
+
+# ===================== OAuth Marketplace endpoints =====================
+@router.get("/admin/mercadopago/oauth/start", response_model=MpOAuthStartResponse)
+async def mp_oauth_start(current=Depends(get_current_admin), redirect_uri: Optional[str] = None):
+    """Devuelve la URL `authorize_url` para iniciar el flujo OAuth.
+
+    El cliente (admin app) la abre en WebBrowser / window.open. Luego MP redirige
+    a nuestro `/admin/mercadopago/oauth/callback?code=...&state=...`.
+
+    Args:
+        redirect_uri (query opcional): la app puede pedir un redirect distinto al
+            default (útil para preview vs prod). Si se omite se usa APP_PUBLIC_URL.
+    """
+    email = current.get("sub") or current.get("email")
+    if not email:
+        raise HTTPException(400, "No se pudo identificar al admin solicitante.")
+    redir = (redirect_uri or mp_oauth.default_redirect_uri() or "").strip()
+    if not redir:
+        raise HTTPException(503, "APP_PUBLIC_URL no configurado; no se puede armar redirect_uri.")
+    state = _sign_oauth_state(email)
+    try:
+        url = mp_oauth.build_authorize_url(state=state, redirect_uri=redir)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    return MpOAuthStartResponse(authorize_url=url, state=state, redirect_uri=redir)
+
+
+@router.get("/admin/mercadopago/oauth/callback")
+async def mp_oauth_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+):
+    """Callback público (sin auth) al que MP redirige tras autorizar.
+
+    Validamos `state` con HMAC; canjeamos `code` por tokens; guardamos cifrado;
+    redirigimos al frontend con `?mp_oauth=ok` o `?mp_oauth=error&reason=...`.
+    """
+    public_base = (os.getenv("APP_PUBLIC_URL") or "").rstrip("/")
+    frontend_url = f"{public_base}/admin/mercadopago" if public_base else "/admin/mercadopago"
+
+    if error:
+        msg = (error_description or error)[:160]
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason={msg}",
+            status_code=302,
+        )
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason=missing_code",
+            status_code=302,
+        )
+
+    try:
+        admin_email = _verify_oauth_state(state)
+    except HTTPException:
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason=state_invalid",
+            status_code=302,
+        )
+
+    redir = mp_oauth.default_redirect_uri()
+    if not redir:
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason=app_public_url_missing",
+            status_code=302,
+        )
+
+    try:
+        tokens = await mp_oauth.exchange_code_for_tokens(code=code, redirect_uri=redir)
+    except ValueError as e:
+        logger.warning("MP OAuth exchange rejected: %s", e)
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason=exchange_rejected",
+            status_code=302,
+        )
+    except Exception:
+        logger.exception("MP OAuth exchange failed")
+        return RedirectResponse(
+            url=f"{frontend_url}?mp_oauth=error&reason=exchange_failed",
+            status_code=302,
+        )
+
+    # Persistimos con encriptación at-rest.
+    now = datetime.now(timezone.utc)
+    expires_in = int(tokens.get("expires_in") or 0)
+    expires_at_iso = (
+        (now + timedelta(seconds=expires_in)).isoformat()
+        if expires_in > 0
+        else None
+    )
+    # Validamos el token recién recibido para traer nickname/email/site_id.
+    try:
+        info = await mps.validar_access_token(tokens["access_token"])
+    except Exception:
+        info = {}
+
+    update = {
+        "access_token_pasarela": encrypt_token(tokens["access_token"]),
+        "mp_refresh_token": encrypt_token(tokens.get("refresh_token") or ""),
+        "mp_user_id": str(tokens.get("user_id") or info.get("id") or ""),
+        "mp_nickname": info.get("nickname"),
+        "mp_email": info.get("email"),
+        "mp_site_id": info.get("site_id"),
+        "mp_connected_at": now.isoformat(),
+        "mp_expires_at": expires_at_iso,
+        "mp_connection_mode": "oauth",
+    }
+    existing = await db.admins.find_one({"email": admin_email}, {"mp_apply_fee": 1})
+    if not existing or "mp_apply_fee" not in existing:
+        update["mp_apply_fee"] = False
+
+    await db.admins.update_one({"email": admin_email}, {"$set": update}, upsert=False)
+    logger.info("MP OAuth completed for admin=%s user_id=%s", admin_email, update["mp_user_id"])
+    return RedirectResponse(url=f"{frontend_url}?mp_oauth=ok", status_code=302)
 
 
 # ===================== Checkout público =====================
@@ -231,8 +424,12 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
         )
 
     admin = await _admin_with_mp_for_reta(reta)
-    access_token = admin["access_token_pasarela"]
+    # Decrypt token at-rest. Si está en claro (manual legacy) pasa tal cual.
+    access_token = decrypt_token(admin["access_token_pasarela"]) or ""
+    if not access_token:
+        raise HTTPException(503, "Token MP corrupto/no descifrable. Reconecta MP.")
     apply_fee = bool(admin.get("mp_apply_fee", False))
+    admin_email_for_meta = admin.get("email") or ADMIN_EMAIL_DEFAULT
 
     # ===== Detección de modalidad (Fase 2 — soporte parejas) =====
     es_parejas = reta.get("modalidad_registro", "individual") != "individual"
@@ -297,6 +494,14 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
                 external_reference=insc.id,
                 payer_email=body.payer_email,
                 apply_fee=apply_fee,
+                # ===== Marketplace multi-organizer routing (webhook) =====
+                metadata={
+                    "admin_email": admin_email_for_meta,
+                    "reta_id": reta_id,
+                    "inscripcion_id": insc.id,
+                    "mp_user_id": admin.get("mp_user_id") or "",
+                    "platform": "padelappretas",
+                },
             ),
             label=f"mp:create_pref:{reta['id']}",
             timeout_s=8.0,
@@ -522,12 +727,23 @@ async def webhook_mercadopago(request: Request):
         "creado_en": datetime.now(timezone.utc).isoformat(),
     })
 
-    # Necesitamos el access_token del organizador. Lo obtenemos del admin único.
+    # Necesitamos el access_token del organizador. Multi-marketplace expansion:
+    # 1) Si el payment trae `metadata.admin_email`, lo usamos (multi-org).
+    # 2) Fallback al admin único legacy (ADMIN_EMAIL_DEFAULT).
+    # Como aún no conocemos el payment hasta consultarlo, intentamos por defecto y
+    # luego re-resolvemos por metadata cuando obtengamos el payment.
     admin = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT}, {"_id": 0})
+    if not admin or not admin.get("access_token_pasarela"):
+        # Sin admin default — intentamos con CUALQUIER admin que tenga MP conectado,
+        # solo para poder consultar el payment y leer metadata.admin_email.
+        admin = await db.admins.find_one(
+            {"access_token_pasarela": {"$exists": True, "$ne": ""}},
+            {"_id": 0},
+        )
     if not admin or not admin.get("access_token_pasarela"):
         logger.warning("Webhook MP recibido pero no hay organizador conectado.")
         return {"ok": True, "ignored": True}
-    access_token = admin["access_token_pasarela"]
+    access_token = decrypt_token(admin["access_token_pasarela"]) or ""
 
     # 1) Payment notifications
     if event_type == "payment":
@@ -543,11 +759,28 @@ async def webhook_mercadopago(request: Request):
         except Exception as e:
             logger.exception("MP payment fetch failed: %s", e)
             return {"ok": True, "error": str(e)}
+        # Multi-organizer re-routing: si el payment trae metadata.admin_email
+        # y NO coincide con el admin que usamos, recargamos con ese token.
+        meta = (payment.get("metadata") or {}) if isinstance(payment, dict) else {}
+        admin_email_meta = (meta.get("admin_email") or "").strip()
+        if admin_email_meta and admin_email_meta != admin.get("email"):
+            alt = await db.admins.find_one(
+                {"email": admin_email_meta},
+                {"_id": 0},
+            )
+            if alt and alt.get("access_token_pasarela"):
+                alt_token = decrypt_token(alt["access_token_pasarela"]) or ""
+                if alt_token and alt_token != access_token:
+                    try:
+                        payment = await mps.obtener_pago(alt_token, str(payment_id))
+                    except Exception:
+                        # mantenemos el payment original si re-fetch falla
+                        pass
         ext_ref = payment.get("external_reference")
         status = payment.get("status")
         if ext_ref and status:
             result = await _aplicar_resultado_pago(ext_ref, str(payment_id), status)
-            return {"ok": True, "event": "payment", **result}
+            return {"ok": True, "event": "payment", "admin": admin_email_meta or admin.get("email"), **result}
         return {"ok": True, "ignored": True}
 
     # 2) merchant_order: contiene lista de pagos. Tomamos el último aprobado.

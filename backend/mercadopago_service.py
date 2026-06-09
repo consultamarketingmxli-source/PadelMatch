@@ -62,9 +62,17 @@ async def crear_preferencia(
     external_reference: str,
     payer_email: Optional[str] = None,
     apply_fee: bool = False,
+    metadata: Optional[dict] = None,
 ) -> dict:
     """Crea una preferencia Checkout Pro usando el access_token del organizador.
     Devuelve el dict de respuesta de MP (incluye id, init_point, sandbox_init_point).
+
+    Marketplace multi-organizer:
+        • `metadata` se adjunta tal cual a la preference. MP la propaga al
+          objeto `payment` y al `merchant_order` → el webhook puede leer
+          `payment.metadata.admin_email` para identificar al organizador.
+        • `marketplace_fee` es ABSOLUTO en MXN (no porcentaje). Se calcula
+          aquí usando MARKETPLACE_FEE_PERCENT (env, default 0).
     """
     sdk = _sdk(access_token)
     pref: dict = {
@@ -86,8 +94,18 @@ async def crear_preferencia(
     }
     if payer_email:
         pref["payer"] = {"email": payer_email}
-    if apply_fee:
-        pref["marketplace_fee"] = round(float(costo_mxn) * PLATFORM_FEE_PERCENT / 100.0, 2)
+    # ===== Metadata multi-organizer (Marketplace expansion) =====
+    if metadata and isinstance(metadata, dict):
+        # MP exige strings/numbers en metadata; serializamos por las dudas.
+        clean = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in metadata.items() if v is not None}
+        if clean:
+            pref["metadata"] = clean
+    # ===== Marketplace fee configurable vía env =====
+    # Lee del helper canónico para que un cambio de env propague sin redeploy.
+    from mp_oauth_service import marketplace_fee_percent
+    fee_pct = marketplace_fee_percent()
+    if apply_fee and fee_pct > 0:
+        pref["marketplace_fee"] = round(float(costo_mxn) * fee_pct / 100.0, 2)
 
     res = sdk.preference().create(pref)
     status = res.get("status")

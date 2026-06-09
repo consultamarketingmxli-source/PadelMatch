@@ -21,7 +21,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Wallet,
   Unplug,
+  Lock,
 } from "lucide-react-native";
 
 import { api, MpStatus } from "@/src/api";
@@ -40,11 +41,14 @@ const MP_DEVELOPERS_URL = "https://www.mercadopago.com.mx/developers/panel/app";
 
 export default function MercadoPagoScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mp_oauth?: string; reason?: string }>();
   const [status, setStatus] = useState<MpStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [token, setToken] = useState("");
   const [savingFee, setSavingFee] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +64,56 @@ export default function MercadoPagoScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Manejo del retorno del flujo OAuth — el backend redirige con ?mp_oauth=ok|error.
+  useEffect(() => {
+    const flag = params?.mp_oauth;
+    if (!flag) return;
+    if (flag === "ok") {
+      Alert.alert(
+        "¡Cuenta conectada!",
+        "Tu cuenta de Mercado Pago se vinculó correctamente vía OAuth. Los pagos llegarán directamente a tu cuenta.",
+      );
+    } else if (flag === "error") {
+      const reason = params?.reason ?? "desconocido";
+      Alert.alert(
+        "No se pudo conectar",
+        `Mercado Pago rechazó la vinculación (${reason}). Intenta de nuevo o usa el modo avanzado (pegar Access Token).`,
+      );
+    }
+    // Limpia los query params del URL para que el alert no se dispare otra vez al refrescar.
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        window.history.replaceState({}, "", "/admin/mercadopago");
+      } catch {
+        /* noop */
+      }
+    }
+    // Re-cargamos status por si el callback acabó de guardar el token.
+    void load();
+  }, [params?.mp_oauth, params?.reason, load]);
+
+  const handleConnectOAuth = async () => {
+    setOauthBusy(true);
+    try {
+      const res = await api.mpOAuthStart();
+      // En web abrimos en la misma pestaña para preservar el contexto de sesión.
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = res.authorize_url;
+        return;
+      }
+      // En nativo abrimos el navegador externo del sistema operativo.
+      await Linking.openURL(res.authorize_url);
+    } catch (e: any) {
+      Alert.alert(
+        "OAuth no disponible",
+        e?.message ??
+          "No se pudo iniciar el flujo OAuth. Revisa que MP_CLIENT_ID/MP_CLIENT_SECRET estén configurados en el backend.",
+      );
+    } finally {
+      setOauthBusy(false);
+    }
+  };
 
   const handleConnect = async () => {
     const t = token.trim();
@@ -213,54 +267,99 @@ export default function MercadoPagoScreen() {
           {!status.connected ? (
             <View style={styles.card}>
               <Text style={styles.section}>Vincular cuenta</Text>
+
+              {/* ===== OAuth (recomendado) — Marketplace expansion ===== */}
               <Text style={styles.help}>
-                Pega tu Access Token de Mercado Pago. Lo encuentras en:
+                Conexión recomendada en un solo paso: te lleva al login oficial de
+                Mercado Pago, autorizas a PadelAppRetas, y volvemos aquí con la
+                cuenta conectada. Todos los pagos llegan directo a tu cuenta MP.
               </Text>
               <TouchableOpacity
-                onPress={() => void Linking.openURL(MP_DEVELOPERS_URL)}
-                style={styles.linkBtn}
+                onPress={handleConnectOAuth}
+                disabled={oauthBusy}
+                style={[styles.primaryBtn, oauthBusy && { opacity: 0.7 }]}
+                testID="mp-oauth-btn"
+                activeOpacity={0.85}
               >
-                <ExternalLink size={14} color={colors.brand.primary} />
-                <Text style={styles.linkText}>
-                  mercadopago.com.mx/developers/panel/app
-                </Text>
-              </TouchableOpacity>
-              <Text style={styles.steps}>
-                1. Crea (o abre) tu aplicación de Checkout Pro.{"\n"}
-                2. Ve a {"\u201C"}Credenciales de prueba{"\u201D"} o {"\u201C"}Productivas{"\u201D"}.{"\n"}
-                3. Copia el <Text style={{ fontWeight: "700" }}>Access Token</Text> (empieza con
-                APP_USR- o TEST-).{"\n"}
-                4. Pégalo abajo y presiona Vincular.
-              </Text>
-              <TextInput
-                value={token}
-                onChangeText={setToken}
-                placeholder="APP_USR-xxxxxxxx-xxxxxx-xxxxxxxxxxxxxxxx-xxxxxxxxx"
-                placeholderTextColor={colors.text.tertiary}
-                style={styles.input}
-                autoCapitalize="none"
-                autoCorrect={false}
-                multiline
-                testID="mp-token-input"
-              />
-              <TouchableOpacity
-                onPress={handleConnect}
-                disabled={busy || !token.trim()}
-                style={[
-                  styles.primaryBtn,
-                  (busy || !token.trim()) && { opacity: 0.6 },
-                ]}
-                testID="mp-connect-btn"
-              >
-                {busy ? (
+                {oauthBusy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
                     <Wallet size={16} color="#fff" />
-                    <Text style={styles.primaryText}>Vincular Mercado Pago</Text>
+                    <Text style={styles.primaryText}>Conectar con Mercado Pago</Text>
                   </>
                 )}
               </TouchableOpacity>
+              <View style={styles.secureRow}>
+                <Lock size={11} color={colors.text.muted} />
+                <Text style={styles.secureText}>
+                  {status?.encryption_available
+                    ? "Conexión OAuth · token cifrado at-rest (Fernet)."
+                    : "Conexión OAuth · encriptación at-rest no configurada (modo dev)."}
+                </Text>
+              </View>
+
+              {/* Toggle "Avanzado" para el modo manual (token paste) */}
+              <TouchableOpacity
+                onPress={() => setShowAdvanced((v) => !v)}
+                style={styles.advancedToggle}
+                activeOpacity={0.7}
+                testID="mp-advanced-toggle"
+              >
+                <Text style={styles.advancedToggleText}>
+                  {showAdvanced ? "Ocultar opción avanzada ▲" : "¿Tienes ya un Access Token? Modo avanzado ▼"}
+                </Text>
+              </TouchableOpacity>
+
+              {showAdvanced ? (
+                <View style={styles.advancedPanel}>
+                  <Text style={styles.help}>
+                    Pega tu Access Token de Mercado Pago. Lo encuentras en:
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => void Linking.openURL(MP_DEVELOPERS_URL)}
+                    style={styles.linkBtn}
+                  >
+                    <ExternalLink size={14} color={colors.brand.primary} />
+                    <Text style={styles.linkText}>
+                      mercadopago.com.mx/developers/panel/app
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.steps}>
+                    1. Crea (o abre) tu aplicación de Checkout Pro.{"\n"}
+                    2. Ve a {"\u201C"}Credenciales de prueba{"\u201D"} o {"\u201C"}Productivas{"\u201D"}.{"\n"}
+                    3. Copia el <Text style={{ fontWeight: "700" }}>Access Token</Text> (empieza con
+                    APP_USR- o TEST-).{"\n"}
+                    4. Pégalo abajo y presiona Vincular.
+                  </Text>
+                  <TextInput
+                    value={token}
+                    onChangeText={setToken}
+                    placeholder="APP_USR-xxxxxxxx-xxxxxx-xxxxxxxxxxxxxxxx-xxxxxxxxx"
+                    placeholderTextColor={colors.text.tertiary}
+                    style={styles.input}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    testID="mp-token-input"
+                  />
+                  <TouchableOpacity
+                    onPress={handleConnect}
+                    disabled={busy || !token.trim()}
+                    style={[
+                      styles.secondaryBtn,
+                      (busy || !token.trim()) && { opacity: 0.6 },
+                    ]}
+                    testID="mp-connect-btn"
+                  >
+                    {busy ? (
+                      <ActivityIndicator color={colors.brand.primary} />
+                    ) : (
+                      <Text style={styles.secondaryText}>Vincular con Access Token</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -449,4 +548,37 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   dangerText: { color: colors.status.red, fontWeight: "700", fontSize: 13 },
+  // ===== OAuth marketplace UX =====
+  secureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    marginTop: 6,
+  },
+  secureText: { fontSize: 11, color: colors.text.muted },
+  advancedToggle: {
+    marginTop: spacing.md,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  advancedToggleText: { color: colors.text.secondary, fontSize: 12, fontWeight: "600" },
+  advancedPanel: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.subtle,
+  },
+  secondaryBtn: {
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: colors.brand.primary,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.sm,
+  },
+  secondaryText: { color: colors.brand.primary, fontWeight: "800", fontSize: 13 },
 });
