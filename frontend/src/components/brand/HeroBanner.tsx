@@ -17,7 +17,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Line } from "react-native-svg";
 import {
   brandAssets,
   colors,
@@ -55,7 +54,7 @@ export function HeroBanner({
       style={[styles.wrapper, shadows.hero as object, { height }, style]}
     >
       <ImageBackground
-        source={{ uri: brandAssets.courtHero }}
+        source={require("@/assets/brand/court-hero.jpg")}
         style={StyleSheet.absoluteFill as ViewStyle}
         imageStyle={styles.image}
         resizeMode="cover"
@@ -63,9 +62,9 @@ export function HeroBanner({
         {/* Overlay Sapphire → Azure premium (de oscuro abajo a claro arriba) */}
         <LinearGradient
           colors={[
-            "rgba(30,58,138,0.55)",   // sapphire top
-            "rgba(30,58,138,0.65)",   // sapphire mid
-            "rgba(15,23,42,0.80)",    // ink deep bottom
+            "rgba(30,58,138,0.62)",   // sapphire top
+            "rgba(30,58,138,0.72)",   // sapphire mid
+            "rgba(15,23,42,0.82)",    // ink deep bottom
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -79,26 +78,6 @@ export function HeroBanner({
           style={styles.topGlow}
           pointerEvents="none"
         />
-
-        {/* ===== Court texture overlay — líneas blancas como pista de pádel =====
-            Mockup-driven: dos líneas diagonales largas (X) + 1 horizontal + 1 vertical
-            simulando la cancha en perspectiva. Opacidad baja para no robar foco. */}
-        <Svg
-          style={StyleSheet.absoluteFill as ViewStyle}
-          viewBox="0 0 360 200"
-          preserveAspectRatio="none"
-          pointerEvents="none"
-        >
-          {/* Línea central vertical */}
-          <Line x1="180" y1="0" x2="180" y2="200" stroke="white" strokeWidth="1" strokeOpacity="0.12" />
-          {/* Horizontal media cancha */}
-          <Line x1="0" y1="115" x2="360" y2="115" stroke="white" strokeWidth="1" strokeOpacity="0.10" />
-          {/* Diagonales de perspectiva */}
-          <Line x1="-40" y1="200" x2="220" y2="-20" stroke="white" strokeWidth="1.4" strokeOpacity="0.18" />
-          <Line x1="400" y1="200" x2="140" y2="-20" stroke="white" strokeWidth="1.4" strokeOpacity="0.18" />
-          {/* Diagonal contrastante secundaria */}
-          <Line x1="-20" y1="60" x2="380" y2="240" stroke="white" strokeWidth="0.8" strokeOpacity="0.10" />
-        </Svg>
 
         <View style={styles.content}>
           <View style={styles.headerRow}>
