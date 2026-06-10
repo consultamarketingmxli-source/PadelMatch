@@ -6,7 +6,6 @@
  */
 import React from "react";
 import {
-  FlatList,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ShieldCheck, Repeat, User } from "lucide-react-native";
@@ -138,10 +138,11 @@ export default function HomeScreen() {
           }
         />
       ) : (
-        <FlatList
+        <FlashList
           testID="retas-list"
           data={retas}
           keyExtractor={(r) => r.id}
+          estimatedItemSize={140}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
