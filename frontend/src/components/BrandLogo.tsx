@@ -1,14 +1,18 @@
 /**
  * BrandLogo — Isotipo + wordmark de PadelAppRetas.
  *
- * Forma de la pelota: delega 100% en `PadelBallShape` (Single Source of Truth).
- * Lo único que varía entre variantes light / dark / mono es el COLOR del
- * cuerpo y/o las costuras.
+ * V4 (Junio 2026): Reemplazado SVG procedural por el ícono oficial de la marca
+ * (squircle azul marino con raqueta blanca). El asset bitmap garantiza pixel-perfect
+ * fidelity con el ícono de la App Store / Play Store.
+ *
+ * Variantes:
+ *   - light (default) → Ícono oficial sobre cualquier fondo. Squircle navy self-contained.
+ *   - dark            → Mismo ícono (ya tiene fondo navy, funciona en superficies oscuras).
+ *   - mono            → Silueta blanca de la raqueta (para CTAs con fondo color).
  */
 import React from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Image, ImageStyle, Platform, StyleSheet, Text, View } from "react-native";
 import { colors, fonts } from "@/src/theme";
-import { PadelBallShape } from "@/src/components/brand";
 
 type Variant = "light" | "dark" | "mono";
 
@@ -19,45 +23,40 @@ type LogoProps = {
   color?: string;
 };
 
+// Imagen oficial (squircle + raqueta, sin texto). Source: assets/brand/iconmark.png
+// Cargada estáticamente para que Metro la bundlee correctamente.
+const ICONMARK = require("@/assets/brand/iconmark.png");
+const ICONMARK_MONO = require("@/assets/images/icon-monochrome.png");
+
 export function BrandLogo({ size = 48, variant = "light", color }: LogoProps) {
   if (variant === "mono") {
+    // Silueta blanca → permite tint con `tintColor` para usar sobre cualquier color.
+    const tint = color ?? colors.text.inverse ?? "#FFFFFF";
     return (
-      <PadelBallShape
-        size={size}
-        color={color ?? colors.brand.primary}
-        seamColor="#FFFFFF"
+      <Image
+        source={ICONMARK_MONO}
+        style={[
+          styles.icon,
+          { width: size, height: size, tintColor: tint } as ImageStyle,
+        ]}
+        resizeMode="contain"
+        accessibilityLabel="PadelAppRetas logo"
       />
     );
   }
-  if (variant === "dark") {
-    // Sobre fondo oscuro: pelota clara con costuras cobalto sutil.
-    return (
-      <PadelBallShape
-        size={size}
-        color="#E0E7FF"
-        gradient
-        gradientTo="#FFFFFF"
-        seamColor={colors.brand.cobalt}
-        seamOpacity={0.85}
-        seamWidthRatio={0.033}
-      />
-    );
-  }
-  // Light (default): gradiente azul brand con highlight 3D y costuras blancas.
+  // light & dark → mismo asset (squircle self-contained).
   return (
-    <PadelBallShape
-      size={size}
-      color={colors.brand.gradientFrom}
-      gradientTo={colors.brand.gradientTo}
-      gradient
-      highlight
-      seamColor="#FFFFFF"
+    <Image
+      source={ICONMARK}
+      style={[styles.icon, { width: size, height: size }]}
+      resizeMode="contain"
+      accessibilityLabel="PadelAppRetas logo"
     />
   );
 }
 
 /* ────────────────────────────────────────────────────────────────
-   WORDMARK + LOCKUP (sin cambios funcionales).
+   WORDMARK + LOCKUP — Texto plano "PadelApp Retas".
    ──────────────────────────────────────────────────────────────── */
 
 type WordmarkProps = {
@@ -119,6 +118,9 @@ export function BrandLockup({ size = 32, variant = "light" }: LockupProps) {
 }
 
 const styles = StyleSheet.create({
+  icon: {
+    // Sin borde extra — el squircle ya viene incluido en el bitmap.
+  },
   lockupRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   wordmarkRow: { flexDirection: "row", alignItems: "baseline" },
   wordmarkLight: {
