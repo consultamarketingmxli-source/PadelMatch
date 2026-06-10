@@ -1,0 +1,61 @@
+{
+  "summary": "Pre-publication SMOKE TEST (iter43) — PadelAppRetas PASSED. Backend: 12/12 pytest cases green in /app/backend/tests/test_iter43_prod_smoke.py against the public preview URL. Frontend: 5/5 routes verified (/, /perfil, /mi-cuenta→/login redirect, /admin/login, /seleccion). Brand v3 confirmed: Plus Jakarta Sans 400/500/600/700/800 ALL loaded (document.fonts), court-iconic.jpg + court-iconic-256.png render in HeroBanner and login, Sapphire rgb(30,58,138) found in 9 nodes and Azure rgb(59,130,246) in 3 nodes. SENTRY_DSN present in /app/backend/.env (sentry.io, ingest) AND EXPO_PUBLIC_SENTRY_DSN present in /app/frontend/.env. Zero JS console errors on home. No ActivityIndicator visible in initial load (skeleton refactor working). Endpoints actually exposed by the backend differ slightly from the names listed in the review request (see backend_issues.minor) — they all work correctly, just under canonical paths. App is GO for App Store / Google Play submission.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/health", "issue": "No /api/health route mounted; the actual health endpoint is `GET /api/` returning {\"status\":\"ok\",\"app\":\"PadelappRetas OS API\"}. Test updated to call /api/. RECOMMEND: add a /api/health alias for monitoring/uptime checks."},
+      {"endpoint": "GET /api/admin/retas", "issue": "Route mounted at `GET /api/retas` (admin-auth required) — the /api/admin/retas path doesn't exist. Test uses the correct path."},
+      {"endpoint": "GET /api/admin/mercadopago/authorize-url", "issue": "Canonical path is `GET /api/admin/mercadopago/oauth/start` (returns authorize_url with client_id=7849343570174391). Test uses /oauth/start."},
+      {"endpoint": "GET /api/public/jugadores/stats?telefono=…", "issue": "Canonical path is `GET /api/public/players/{telefono}/stats` (path param, not query). Returns 200 with victorias_ko present. Test uses correct path."},
+      {"endpoint": "GET /api/public/retas/{id}/tabla-posiciones", "issue": "Canonical path is `GET /api/public/retas/{reta_id}/tabla`. With a fake ObjectId returns 200 (empty list) — no crash. Test uses correct path."},
+      {"endpoint": "GET /openapi.json", "issue": "OpenAPI generation throws 500 (PydanticUserError: TypeAdapter[Annotated[ForwardRef('CuponValidateRequest'), Query]] not fully defined). Not user-visible but breaks /docs and external tooling. Add `CuponValidateRequest.model_rebuild()` after forward-refs resolve."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/admin/login", "issue": "Red toast 'No tienes permisos de administrador' appears on FIRST visit when no admin token exists. Likely a useRequireAdmin redirect message leaking onto the public /admin/login page. Should be suppressed when not previously authenticated.", "testID": "n/a", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home", "issues": ["HeroBanner uses court-iconic.jpg, not court-hero.jpg as described in the request (cosmetic naming only — image renders correctly at 612x408)."]}
+    ],
+    "react_native_issues": [
+      {"component": "@sentry/react-native", "issue": "Version 8.13.0 installed but Expo SDK expects ~7.2.0 (logged by Expo CLI on every bundle). Not crashing yet but increases risk of native build issues. Reference: /app/frontend/package.json. RECOMMEND: pin to ~7.2.0 OR upgrade Expo SDK to a version supporting 8.x before publishing."},
+      {"component": "props.pointerEvents", "issue": "Deprecation warning 'props.pointerEvents is deprecated. Use style.pointerEvents' logged repeatedly in Metro + browser console. Migrate to style.pointerEvents on any component using the prop directly."},
+      {"component": "useNativeDriver", "issue": "Console warning on web preview: 'useNativeDriver is not supported because the native animated module is missing'. EXPECTED on web (RCTAnimation only exists on native). Not a bug — informational."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_prod_smoke.py",
+    "/app/test_reports/pytest/iter43_smoke.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Add a GET /api/health alias returning {status:'ok'} for uptime monitoring (App Store / Google Play store-listing health probes).",
+    "FIX BEFORE PUBLISH (LOW): Suppress the 'No tienes permisos de administrador' toast on /admin/login when no session exists yet — only show after a real failed admin gate redirect.",
+    "FIX: OpenAPI generation 500 — call `CuponValidateRequest.model_rebuild()` (or use TypeAdapter properly) so /openapi.json works again. Currently /docs is broken.",
+    "RECOMMENDED BEFORE PUBLISH: Resolve @sentry/react-native version mismatch (installed 8.13.0 vs Expo-expected ~7.2.0). Either pin to ~7.2.0 OR confirm 8.x is compatible with current Expo SDK in a native build before App Store submission.",
+    "OPTIONAL CLEANUP: Migrate `props.pointerEvents` → `style.pointerEvents` to silence deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py mounts api = APIRouter(prefix='/api') and routers correctly — public/admin/retas/players_auth/mercadopago all wired. Good.",
+    "routers/public.py: GET /public/players/{telefono}/stats validated; returns PlayerStats including victorias_ko. ✅",
+    "routers/mercadopago.py oauth_start endpoint returns 200 with authorize_url containing client_id=7849343570174391 and HMAC-signed state — matches iter41 contract. ✅",
+    "routers/player_auth.py: OtpRequest requires both telefono AND nombre. Rate-limited 5/min. OTP persisted in db.player_otps even when Twilio fails. ✅",
+    "Sentry DSN in backend/.env points to o4511542297624576.ingest.us.sentry.io — valid sentry.io DSN, SENTRY_ENVIRONMENT=production, SENTRY_RELEASE=padelappretas@1.0.0. ✅",
+    "Frontend EXPO_PUBLIC_SENTRY_DSN matches backend DSN — both events flow to the same Sentry project (good for cross-stack correlation). ✅",
+    "Plus Jakarta Sans 5 weights loaded via expo-font; Inter weights are 'unloaded' but tree-shaken away — not a bug. ✅",
+    "OpenAPI 500 (PydanticUserError on CuponValidateRequest) — does NOT affect API consumers but breaks /docs and any client codegen. Should be fixed soon."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter43_prod_smoke.py (new — 12 pytest cases covering the 9 review-request items)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 smoke tests). All 9 review-request features verified working under the actual canonical paths.",
+    "frontend": "100% (5/5 routes load, fonts loaded, palette present, court images render, no console errors, no ActivityIndicator visible on initial load — skeleton refactor functioning)."
+  },
+  "seed_data_creation": "None. Tests are read-only except for ONE OTP record in db.player_otps for +5215512345678 (auto-expires in 5 min) and a lazy upsert of the player in usuarios collection (idempotent). No retas/inscripciones/mp_transactions created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter43 smoke suite at /app/backend/tests/test_iter43_prod_smoke.py is the canonical pre-publication regression. Run with `pytest backend/tests/test_iter43_prod_smoke.py -v`. Key path corrections vs older docs: (a) health = `GET /api/` (not /api/health); (b) admin retas = `GET /api/retas` (not /api/admin/retas); (c) MP authorize = `GET /api/admin/mercadopago/oauth/start` (not /authorize-url); (d) player stats = `GET /api/public/players/{telefono}/stats` (path, not query); (e) tabla pos = `GET /api/public/retas/{id}/tabla` (not /tabla-posiciones). Admin creds admin@padelappretas.com / admin123 confirmed working. OTP request body MUST include `nombre` AND `telefono`. /api/openapi.json is currently 500 — schema generation bug, do not rely on it for discovery.",
+  "rca_of_issue": "No production-blocking issue found. Five 'failures' in the first pytest run were due to the review-request path names not matching the actual router decorators (canonical paths differ — see backend_issues.minor). After correcting the test to use the actual paths, all 12 cases pass. The only real bug surfaced is /openapi.json crashing with PydanticUserError on CuponValidateRequest — non-blocking for end users but blocks /docs and codegen. Sentry version mismatch (@sentry/react-native 8.13.0 vs expected ~7.2.0) is a YELLOW flag for native builds and should be reconciled before App Store submission, though web preview is unaffected."
+}
