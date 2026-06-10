@@ -43,9 +43,9 @@ import { acceptLegal } from "@/src/utils/legalConsent";
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
 
-// Fotografía cancha azul (vision_expert_agent — vibrant blue turf + grip + balls + net).
-const COURT_IMG =
-  "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=1200&w=800";
+// Fotografía cancha limpia (alto-ángulo, blue turf + líneas blancas).
+// Asset oficial del usuario — local, sin dependencia de CDN externo.
+const COURT_IMG = require("@/assets/brand/court-clean.jpg");
 
 export default function PlayerLogin() {
   const router = useRouter();
@@ -190,7 +190,7 @@ export default function PlayerLogin() {
           {/* FOTO INMERSIVA — cancha azul (pie del scroll) */}
           <View style={[styles.courtImageWrap, { pointerEvents: "none" }]}>
             <Image
-              source={{ uri: COURT_IMG }}
+              source={COURT_IMG}
               style={styles.courtImage}
               resizeMode="cover"
             />
