@@ -54,7 +54,7 @@ export function HeroBanner({
       style={[styles.wrapper, shadows.hero as object, { height }, style]}
     >
       <ImageBackground
-        source={require("@/assets/brand/court-hero.jpg")}
+        source={require("@/assets/brand/court-iconic.jpg")}
         style={StyleSheet.absoluteFill as ViewStyle}
         imageStyle={styles.image}
         resizeMode="cover"

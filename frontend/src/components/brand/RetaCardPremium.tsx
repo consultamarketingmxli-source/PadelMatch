@@ -89,7 +89,11 @@ export function RetaCardPremium({ reta, onPress, testID }: Props) {
               style={styles.logo}
             />
           ) : (
-            <PadelPalaShape size={36} color={colors.brand.sapphire} />
+            <Image
+              source={require("@/assets/brand/court-iconic-256.png")}
+              style={styles.logoCourt}
+              resizeMode="contain"
+            />
           )}
         </View>
         <View style={{ flex: 1 }}>
@@ -193,6 +197,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   logo: { width: 56, height: 56 },
+  logoCourt: { width: 56, height: 56, borderRadius: 12 },
   title: {
     ...typography.h3,
     fontSize: 17,

@@ -42,11 +42,10 @@ import { LegalConsent } from "@/src/components/LegalConsent";
 import { acceptLegal } from "@/src/utils/legalConsent";
 
 /**
- * Foto cancha azul (Director de Arte v3 — Blue Club Pro):
- * Pista de pádel con césped sintético azul vibrante. Composición sport-premium.
+ * Foto cancha — v4: imagen iconográfica de cancha azul (vista cenital, completa).
+ * Cargada desde assets locales para que se muestre IGUAL en web y nativo.
  */
-const COURT_IMAGE_URI =
-  "https://images.pexels.com/photos/31012869/pexels-photo-31012869.jpeg?auto=compress&cs=tinysrgb&w=1600&fit=crop";
+const COURT_IMAGE = require("@/assets/brand/court-iconic.jpg");
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -145,11 +144,11 @@ export default function AdminLogin() {
           <View style={[styles.bottomBlock, { pointerEvents: "box-none" }]}>
             {/* Foto base */}
             <Image
-              source={{ uri: COURT_IMAGE_URI }}
+              source={COURT_IMAGE}
               style={styles.heroPhoto}
-              resizeMode="cover"
+              resizeMode="contain"
               accessibilityIgnoresInvertColors
-              accessibilityLabel="Cancha de pádel"
+              accessibilityLabel="Cancha de pádel iconográfica"
             />
             {/* Gradient mask: top → slate-50 que se desvanece a transparente */}
             <LinearGradient
@@ -228,11 +227,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 
-  // ===== BLOQUE INFERIOR 50% (foto) =====
+  // ===== BLOQUE INFERIOR (foto cancha iconográfica completa) =====
   bottomBlock: {
-    height: 380,
+    height: 320,
     position: "relative",
     overflow: "hidden",
+    backgroundColor: "#F8FAFC",
   },
   heroPhoto: {
     ...StyleSheet.absoluteFillObject,
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 160, // 42% del bloque — fusión limpia con el formulario
+    height: 80, // mucho más sutil — solo fusión con el form, NO cubre la imagen
   },
   footerStrip: {
     position: "absolute",
