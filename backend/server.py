@@ -8,8 +8,59 @@ import asyncio
 import logging
 import os
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
+from sentry_sdk.integrations.pymongo import PyMongoIntegration
+
 from fastapi import APIRouter, FastAPI
 from starlette.middleware.cors import CORSMiddleware
+
+
+# ===================== Sentry init (antes de FastAPI) =====================
+def _sentry_before_send(event, hint):
+    """Strip PII de eventos antes de enviar a Sentry."""
+    try:
+        # Borra cookies y headers sensibles
+        req = event.get("request") or {}
+        for k in ("Authorization", "Cookie", "authorization", "cookie"):
+            (req.get("headers") or {}).pop(k, None)
+        # Si hay data JSON con telefono/email, lo hashea
+        data = (req.get("data") or {}) if isinstance(req.get("data"), dict) else {}
+        for k in ("telefono", "email", "password", "access_token", "refresh_token"):
+            if k in data:
+                data[k] = "<redacted>"
+    except Exception:
+        pass
+    return event
+
+
+_SENTRY_DSN = (os.getenv("SENTRY_DSN") or "").strip()
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        release=os.getenv("SENTRY_RELEASE", "padelappretas@1.0.0"),
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            StarletteIntegration(transaction_style="endpoint"),
+            AsyncioIntegration(),
+            PyMongoIntegration(),
+        ],
+        traces_sample_rate=0.10,        # 10% transacciones para APM
+        profiles_sample_rate=0.05,      # 5% profiling
+        send_default_pii=False,          # NUNCA enviar PII
+        attach_stacktrace=True,
+        before_send=_sentry_before_send,
+        ignore_errors=[
+            "KeyboardInterrupt",
+            "SystemExit",
+        ],
+    )
+    logging.getLogger("padelappretas-os").info(
+        "[sentry] inicializado · env=%s", os.getenv("SENTRY_ENVIRONMENT", "production"),
+    )
 
 from auth import hash_password
 from core.db import close as close_db

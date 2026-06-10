@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { LogBox } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useSegments } from "expo-router";
+import * as Sentry from "@sentry/react-native";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
@@ -13,6 +14,36 @@ import { onAuthExpired } from "@/src/api";
 import { registerGuardToast } from "@/src/hooks/useRequireAdmin";
 import { clearLastRole } from "@/src/utils/roleSelection";
 import { AppErrorBoundary } from "@/src/components/AppErrorBoundary";
+
+// ===================== Sentry init (Front-end Crash Reporting) =====================
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || "";
+if (SENTRY_DSN && !__DEV__) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: "production",
+    release: "padelappretas@1.0.0",
+    tracesSampleRate: 0.10,
+    enableAutoSessionTracking: true,
+    sendDefaultPii: false,
+    // Redact PII en breadcrumbs y eventos antes de mandar
+    beforeSend(event) {
+      try {
+        const req = event.request as any;
+        if (req?.data && typeof req.data === "object") {
+          for (const k of ["telefono", "phone", "email", "password", "access_token", "refresh_token"]) {
+            if (k in req.data) req.data[k] = "<redacted>";
+          }
+        }
+      } catch {}
+      return event;
+    },
+    ignoreErrors: [
+      // Expo Router / RN internal warnings
+      "Non-serializable values were found in the navigation state",
+      "Network request failed", // typical offline cases — manejados en UI
+    ],
+  });
+}
 
 // Silenciar warnings ruidosos provenientes de dependencias (no-blockers).
 // Estos warnings vienen de:
