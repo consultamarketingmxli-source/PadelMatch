@@ -32,7 +32,6 @@ Reglas de negocio:
     4. Al cancelar una inscripción canjeada con cupón, el cupón se reactiva
        automáticamente para que el jugador pueda reusarlo.
 """
-from __future__ import annotations
 
 import logging
 import random

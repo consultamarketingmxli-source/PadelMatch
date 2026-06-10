@@ -537,3 +537,23 @@ class CuponCheckoutResponse(BaseModel):
     cupon_codigo: str
     cupon_id: str
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
+
+
+
+# ============================================================================
+# model_rebuild() — Fix Pydantic v2 ForwardRef issue with FastAPI OpenAPI schema.
+#
+# Algunos routers usan `from __future__ import annotations`, lo que convierte
+# todos los type hints en strings (ForwardRefs). FastAPI/Pydantic v2 falla al
+# generar el OpenAPI schema porque ve el modelo como `ForwardRef('XxxRequest')`
+# en lugar del modelo concreto. La fix oficial es llamar `.model_rebuild()`
+# sobre los modelos usados como request body en routers afectados.
+#
+# Síntoma: GET /openapi.json devuelve 500 con PydanticUserError.
+# ============================================================================
+CuponValidateRequest.model_rebuild()
+CuponValidateResponse.model_rebuild()
+CuponCheckoutRequest.model_rebuild()
+CuponCheckoutResponse.model_rebuild()
+CuponCreate.model_rebuild()
+Cupon.model_rebuild()
