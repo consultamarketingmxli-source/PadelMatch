@@ -133,13 +133,15 @@ async def player_stats(telefono: str):
     ).limit(1000)
     total = 0
     ganados = 0
+    victorias_ko = 0  # Fase 4 — KO wins counter.
     async for r in cursor:
         total += 1
         en_a = nombre in r["pareja_a"]
-        if en_a and r["ganador"] == "A":
+        gano = (en_a and r.get("ganador") == "A") or ((not en_a) and r.get("ganador") == "B")
+        if gano:
             ganados += 1
-        elif (not en_a) and r["ganador"] == "B":
-            ganados += 1
+            if bool(r.get("terminado_por_ko")):
+                victorias_ko += 1
     efectividad = (ganados / total * 100) if total else 0.0
     return PlayerStats(
         jugador_id=user["id"],
@@ -147,4 +149,5 @@ async def player_stats(telefono: str):
         partidos_jugados=total,
         partidos_ganados=ganados,
         efectividad=round(efectividad, 1),
+        victorias_ko=victorias_ko,
     )

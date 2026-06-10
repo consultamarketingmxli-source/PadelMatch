@@ -135,6 +135,8 @@ export type PlayerStats = {
   partidos_jugados: number;
   partidos_ganados: number;
   efectividad: number;
+  /** Fase 4 — Victorias por KO (3-0 / cap/2+1 con rival a 0). */
+  victorias_ko?: number;
 };
 
 export type PartidoRol = {

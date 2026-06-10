@@ -628,11 +628,15 @@ async def my_stats(current=Depends(get_current_player)):
     ).limit(1000)
     total = 0
     ganados = 0
+    victorias_ko = 0  # Fase 4 — KO wins counter.
     async for r in cursor:
         total += 1
         en_a = nombre in r["pareja_a"]
-        if (en_a and r["ganador"] == "A") or ((not en_a) and r["ganador"] == "B"):
+        gano = (en_a and r.get("ganador") == "A") or ((not en_a) and r.get("ganador") == "B")
+        if gano:
             ganados += 1
+            if bool(r.get("terminado_por_ko")):
+                victorias_ko += 1
     efectividad = (ganados / total * 100) if total else 0.0
     return PlayerStats(
         jugador_id=jugador_id,
@@ -640,6 +644,7 @@ async def my_stats(current=Depends(get_current_player)):
         partidos_jugados=total,
         partidos_ganados=ganados,
         efectividad=round(efectividad, 1),
+        victorias_ko=victorias_ko,
     )
 
 

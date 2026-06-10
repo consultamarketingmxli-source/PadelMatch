@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="5" time="2.581" timestamp="2026-06-09T17:35:45.444757+00:00" hostname="agent-env-6fcfc196-e04f-4efe-af9a-ddc6fdde71ea"><testcase classname="backend.tests.test_iter42_victorias_ko_stats" name="test_player_X_victorias_ko_count" time="1.176"><failure message="AssertionError: Nombre incorrecto: {'jugador_id': '', 'nombre': '', 'partidos_jugados': 0, 'partidos_ganados': 0, 'efectividad': 0.0, 'victorias_ko': 0}&#10;assert '' == 'TEST_X_2aa0f5'&#10;  &#10;  - TEST_X_2aa0f5">backend/tests/test_iter42_victorias_ko_stats.py:172: in test_player_X_victorias_ko_count
+    assert stats["nombre"] == nombre_x, f"Nombre incorrecto: {stats}"
+E   AssertionError: Nombre incorrecto: {'jugador_id': '', 'nombre': '', 'partidos_jugados': 0, 'partidos_ganados': 0, 'efectividad': 0.0, 'victorias_ko': 0}
+E   assert '' == 'TEST_X_2aa0f5'
+E     
+E     - TEST_X_2aa0f5</failure></testcase><testcase classname="backend.tests.test_iter42_victorias_ko_stats" name="test_player_no_ko_matches" time="0.542"><failure message="assert 0 == 3">backend/tests/test_iter42_victorias_ko_stats.py:211: in test_player_no_ko_matches
+    assert stats["partidos_jugados"] == 3
+E   assert 0 == 3</failure></testcase><testcase classname="backend.tests.test_iter42_victorias_ko_stats" name="test_player_on_losing_side_of_ko" time="0.402"><failure message="assert 0 == 1">backend/tests/test_iter42_victorias_ko_stats.py:242: in test_player_on_losing_side_of_ko
+    assert stats["partidos_jugados"] == 1
+E   assert 0 == 1</failure></testcase><testcase classname="backend.tests.test_iter42_victorias_ko_stats" name="test_player_no_results_backward_compat" time="0.351" /><testcase classname="backend.tests.test_iter42_victorias_ko_stats" name="test_phone_not_registered_returns_zero_stats" time="0.054" /></testsuite></testsuites>

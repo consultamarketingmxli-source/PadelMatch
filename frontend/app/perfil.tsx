@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Trophy, Target, Activity } from "lucide-react-native";
+import { ArrowLeft, Trophy, Target, Activity, Zap } from "lucide-react-native";
 
 import { api, PlayerStats } from "@/src/api";
 import { Input } from "@/src/components/Input";
@@ -100,6 +100,15 @@ export default function ProfileScreen() {
                 value={`${stats.efectividad}%`}
                 accent
               />
+              {/* Fase 4 — Victorias por KO. Solo se muestra si hay >=1 KO. */}
+              {typeof stats.victorias_ko === "number" && stats.victorias_ko > 0 ? (
+                <StatCard
+                  icon={<Zap size={20} color={colors.brand.primary} />}
+                  label="Victorias por KO (3-0)"
+                  value={stats.victorias_ko}
+                  accent
+                />
+              ) : null}
             </View>
           ) : null}
         </ScrollView>

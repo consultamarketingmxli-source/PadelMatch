@@ -26,6 +26,10 @@ class PlayerStats(BaseModel):
     partidos_jugados: int = 0
     partidos_ganados: int = 0
     efectividad: float = 0.0  # 0..100
+    # Fase 4 — Cuenta cuántas victorias del jugador fueron por KO (3-0 o equiv.).
+    # Solo incrementa cuando `terminado_por_ko=true` Y el jugador estuvo en la
+    # pareja ganadora. Aditivo y retro-compat (default 0).
+    victorias_ko: int = 0
 
 
 # ============= Retas =============
