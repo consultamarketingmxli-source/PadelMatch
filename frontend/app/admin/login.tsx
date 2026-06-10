@@ -146,9 +146,9 @@ export default function AdminLogin() {
             <Image
               source={COURT_IMAGE}
               style={styles.heroPhoto}
-              resizeMode="contain"
+              resizeMode="cover"
               accessibilityIgnoresInvertColors
-              accessibilityLabel="Cancha de pádel iconográfica"
+              accessibilityLabel="Cancha de pádel con pelotas y pala"
             />
             {/* Gradient mask: top → slate-50 que se desvanece a transparente */}
             <LinearGradient
