@@ -1219,6 +1219,19 @@ export const api = {
       configured: boolean;
       items: { nombre: string; telefono: string; status: string; needs_sandbox_join?: boolean }[];
     }>(`/retas/${retaId}/notify/recordatorio-general`, { method: "POST", auth: true }),
+  /** Fase 6 — Manda recordatorio urgente "1h antes" manualmente (también lo hace el cron). */
+  notifyRecordatorio1h: (retaId: string) =>
+    request<{
+      sent: number; mocked: number; failed: number; total_targets: number;
+      configured: boolean; manual_trigger: boolean;
+      items: { nombre: string; telefono: string; status: string; needs_sandbox_join?: boolean }[];
+    }>(`/retas/${retaId}/notify/recordatorio-1h`, { method: "POST", auth: true }),
+  /** Fase 6 — Desactiva o reactiva el envío automático T-1h del cronjob. */
+  setRecordatorio1hDisabled: (retaId: string, disabled: boolean) =>
+    request<{ ok: boolean; alerta_1h_desactivada: boolean }>(
+      `/retas/${retaId}/notify/recordatorio-1h/disable?disabled=${disabled}`,
+      { method: "PATCH", auth: true },
+    ),
   /** Manda aviso "te toca AHORA" a los jugadores de una ronda concreta. */
   notifyProximoPartido: (retaId: string, ronda: number, cancha?: number) => {
     const qs = `ronda=${ronda}${cancha != null ? `&cancha=${cancha}` : ""}`;

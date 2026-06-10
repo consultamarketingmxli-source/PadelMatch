@@ -133,6 +133,23 @@ def construir_mensaje_recordatorio(
     return msg
 
 
+def construir_mensaje_recordatorio_1h(
+    nombre: str, reta_nombre: str, club: str, hora_str: str, observaciones: str = "",
+) -> str:
+    """Fase 6 — Recordatorio T-1h (más urgente que el de 2h).
+
+    Diseñado para WhatsApp con tono directo (action-oriented) e instrucciones
+    logísticas: hora exacta, club, llegar 10 min antes.
+    """
+    msg = (
+        f"⏰ {nombre}, ¡falta 1 hora! 🎾 Tu reta '{reta_nombre}' en {club} arranca a las "
+        f"{hora_str}. Llega 10 min antes para hidratarte, calentar y revisar la cancha asignada."
+    )
+    if observaciones:
+        msg += f"\n\nNota del organizador: {observaciones}"
+    return msg
+
+
 def construir_mensaje_waitlist_promovido(nombre: str, reta_nombre: str, link_pago: str) -> str:
     return (
         f"¡{nombre}, tienes lugar! 🟢 Se liberó un cupo en '{reta_nombre}'. "

@@ -19,6 +19,7 @@ from core.concurrency import (
 from models import Inscripcion, Usuario
 from notifications import (
     construir_mensaje_recordatorio,
+    construir_mensaje_recordatorio_1h,
     construir_mensaje_waitlist_promovido,
     send_whatsapp,
 )
@@ -411,15 +412,26 @@ async def expirar_bloqueos_pass(force_reta_id: Optional[str] = None) -> dict:
 
 # ============== Cronjobs ==============
 async def cronjob_recordatorios():
-    """Cada 15 min: busca retas que arranquen en ~2h y manda WhatsApp."""
+    """Cronjob de recordatorios WhatsApp para retas próximas.
+
+    Dos ventanas independientes:
+      • T-2h → `alertas_enviadas`     (recordatorio general "arranca pronto")
+      • T-1h → `alerta_1h_enviada`    (Fase 6 — recordatorio urgente con hora exacta)
+
+    Cada cupo se marca con su propio flag boolean en la reta. Idempotente:
+    una reta sólo recibe cada alerta UNA vez aunque el cron corra muchas veces
+    dentro de la ventana.
+    """
     while True:
         try:
             ahora = datetime.now(timezone.utc)
-            ventana_ini = (ahora + timedelta(hours=2, minutes=-7)).isoformat()
-            ventana_fin = (ahora + timedelta(hours=2, minutes=8)).isoformat()
+
+            # ====== Ventana T-2h ======
+            v2_ini = (ahora + timedelta(hours=2, minutes=-7)).isoformat()
+            v2_fin = (ahora + timedelta(hours=2, minutes=8)).isoformat()
             cursor = db.retas.find({
                 "alertas_enviadas": False,
-                "fecha_evento": {"$gte": ventana_ini, "$lte": ventana_fin},
+                "fecha_evento": {"$gte": v2_ini, "$lte": v2_fin},
             }).limit(200)
             async for r in cursor:
                 inscripciones = db.inscripciones.find({
@@ -434,9 +446,55 @@ async def cronjob_recordatorios():
                 await db.retas.update_one(
                     {"id": r["id"]}, {"$set": {"alertas_enviadas": True}},
                 )
+
+            # ====== Ventana T-1h (Fase 6) ======
+            v1_ini = (ahora + timedelta(hours=1, minutes=-7)).isoformat()
+            v1_fin = (ahora + timedelta(hours=1, minutes=8)).isoformat()
+            cursor1 = db.retas.find({
+                # Trato `alerta_1h_enviada` como falsy si no existe (retas legacy).
+                "$or": [
+                    {"alerta_1h_enviada": {"$exists": False}},
+                    {"alerta_1h_enviada": False},
+                ],
+                "fecha_evento": {"$gte": v1_ini, "$lte": v1_fin},
+            }).limit(200)
+            async for r in cursor1:
+                # Permite que el organizador desactive el aviso T-1h por reta.
+                if r.get("alerta_1h_desactivada"):
+                    await db.retas.update_one(
+                        {"id": r["id"]}, {"$set": {"alerta_1h_enviada": True}},
+                    )
+                    continue
+                # Formatea solo la hora local de la reta para el mensaje.
+                hora_str = r["fecha_evento"]
+                try:
+                    hora_str = datetime.fromisoformat(
+                        r["fecha_evento"].replace("Z", "+00:00")
+                    ).strftime("%H:%M")
+                except Exception:
+                    pass
+                inscripciones = db.inscripciones.find({
+                    "reta_id": r["id"], "estatus_pago": "Aprobado",
+                }).limit(500)
+                enviados = 0
+                async for ins in inscripciones:
+                    msg = construir_mensaje_recordatorio_1h(
+                        ins["nombre"], r["nombre"], r["club"], hora_str,
+                        r.get("observaciones_publicas", ""),
+                    )
+                    res = await send_whatsapp(ins["telefono"], msg)
+                    if isinstance(res, dict) and res.get("ok"):
+                        enviados += 1
+                logger.info(
+                    "[cron T-1h] reta=%s · enviados=%d", r["id"], enviados,
+                )
+                await db.retas.update_one(
+                    {"id": r["id"]},
+                    {"$set": {"alerta_1h_enviada": True, "alerta_1h_enviada_at": ahora.isoformat()}},
+                )
         except Exception as e:
             logger.exception("Error en cronjob recordatorios: %s", e)
-        await asyncio.sleep(60 * 15)
+        await asyncio.sleep(60 * 5)  # Fase 6: bajamos a 5 min para hit más fino en T-1h.
 
 
 async def cronjob_expirar_bloqueos():

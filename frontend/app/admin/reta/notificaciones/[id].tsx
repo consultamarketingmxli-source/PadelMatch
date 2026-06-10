@@ -222,6 +222,46 @@ export default function AdminNotificaciones() {
           />
         </View>
 
+        {/* === Fase 6 — Recordatorio T-1h urgente === */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Hourglass size={16} color={colors.brand.primary} />
+            <Text style={styles.cardTitle}>Recordatorio 1h antes (urgente)</Text>
+          </View>
+          <Text style={styles.cardHint}>
+            Aviso T-1h más directo con la hora exacta y la instrucción de
+            llegar 10 min antes. Se envía automáticamente por el cron cuando
+            la reta entra en la ventana T-1h. Aquí puedes forzar el envío
+            ahora o desactivar el envío automático para esta reta.
+          </Text>
+          <Button
+            title="Enviar T-1h ahora"
+            onPress={() => void runBroadcast(
+              "Recordatorio T-1h",
+              () => api.notifyRecordatorio1h(retaId),
+              "¿Forzar el envío del WhatsApp T-1h ahora? Marcará la reta como ya notificada para evitar duplicados.",
+            )}
+            variant="primary"
+            icon={<Send size={14} color={"#fff"} />}
+            loading={busy}
+            testID="notify-recordatorio-1h-btn"
+          />
+          <View style={{ height: 8 }} />
+          <Button
+            title="Desactivar T-1h automático"
+            onPress={async () => {
+              try {
+                await api.setRecordatorio1hDisabled(retaId, true);
+                Alert.alert("Listo", "El recordatorio T-1h automático fue desactivado para esta reta.");
+              } catch (e: any) {
+                Alert.alert("Error", e?.message ?? "No se pudo desactivar.");
+              }
+            }}
+            variant="ghost"
+            testID="notify-recordatorio-1h-disable-btn"
+          />
+        </View>
+
         {/* === 2. Aviso por ronda === */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>

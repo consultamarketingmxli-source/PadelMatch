@@ -26,6 +26,7 @@ from core.db import db
 from logica_torneo import generar_rol_multi_cancha, generar_rol_multi_cancha_parejas
 from notifications import (
     construir_mensaje_recordatorio,
+    construir_mensaje_recordatorio_1h,
     construir_mensaje_waitlist_promovido,
     is_twilio_configured,
     send_whatsapp,
@@ -149,6 +150,100 @@ async def notify_recordatorio_general(reta_id: str, current=Depends(get_current_
         "configured": is_twilio_configured(),
         "items": items,
     }
+
+
+# ===================== Fase 6 — Recordatorio T-1h =====================
+@router.post("/{reta_id}/notify/recordatorio-1h")
+async def notify_recordatorio_1h(reta_id: str, current=Depends(get_current_admin)):
+    """Envía manualmente el WhatsApp T-1h (recordatorio urgente).
+
+    El cronjob `cronjob_recordatorios` lo hace automáticamente cuando la reta
+    está en la ventana T-1h. Este endpoint permite al organizador forzar el
+    envío ahora (por ejemplo, si la reta arranca en menos de 1h y el cron aún
+    no corrió, o si quiere re-enviar manualmente).
+
+    Marca la reta como `alerta_1h_enviada=true` para evitar que el cron mande
+    duplicados después.
+    """
+    reta = await _get_reta_or_404(reta_id)
+    inscs = await _approved_inscriptions(reta_id)
+    if not inscs:
+        return {
+            "sent": 0, "mocked": 0, "failed": 0, "total_targets": 0,
+            "configured": is_twilio_configured(),
+            "items": [],
+        }
+
+    fecha = reta.get("fecha_evento")
+    try:
+        from datetime import datetime as _dt
+        if isinstance(fecha, str):
+            fecha_dt = _dt.fromisoformat(fecha.replace("Z", "+00:00"))
+        else:
+            fecha_dt = fecha
+        hora_str = fecha_dt.strftime("%H:%M") if fecha_dt else "—"
+    except Exception:
+        hora_str = "—"
+
+    sent = mocked = failed = 0
+    items: list[dict[str, Any]] = []
+    for ins in inscs:
+        body = construir_mensaje_recordatorio_1h(
+            ins["nombre"], reta["nombre"], reta.get("club", ""), hora_str,
+            reta.get("observaciones_publicas", ""),
+        )
+        res = await send_whatsapp(ins.get("telefono", ""), body)
+        st = res.get("status", "error")
+        if st == "sent":
+            sent += 1
+        elif st == "mocked":
+            mocked += 1
+        else:
+            failed += 1
+        items.append({
+            "inscripcion_id": ins["id"],
+            "nombre": ins["nombre"],
+            "telefono": ins.get("telefono", ""),
+            "status": st,
+            "twilio_code": res.get("twilio_code"),
+            "needs_sandbox_join": res.get("needs_sandbox_join", False),
+        })
+
+    # Marca para evitar duplicados del cronjob automático.
+    from datetime import datetime as _dt2, timezone as _tz
+    await db.retas.update_one(
+        {"id": reta_id},
+        {"$set": {
+            "alerta_1h_enviada": True,
+            "alerta_1h_enviada_at": _dt2.now(_tz.utc).isoformat(),
+            "alerta_1h_enviada_manual": True,
+        }},
+    )
+    return {
+        "sent": sent, "mocked": mocked, "failed": failed,
+        "total_targets": len(inscs),
+        "configured": is_twilio_configured(),
+        "manual_trigger": True,
+        "items": items,
+    }
+
+
+# ===================== Fase 6 — Toggle desactivar T-1h =====================
+@router.patch("/{reta_id}/notify/recordatorio-1h/disable")
+async def disable_recordatorio_1h(
+    reta_id: str,
+    disabled: bool = Query(True, description="True: desactiva; False: reactiva."),
+    current=Depends(get_current_admin),
+):
+    """Permite al organizador desactivar (o reactivar) el recordatorio
+    automático T-1h para una reta específica. No afecta T-2h.
+    """
+    await _get_reta_or_404(reta_id)
+    await db.retas.update_one(
+        {"id": reta_id},
+        {"$set": {"alerta_1h_desactivada": bool(disabled)}},
+    )
+    return {"ok": True, "alerta_1h_desactivada": bool(disabled)}
 
 
 @router.post("/{reta_id}/notify/proximo-partido")
