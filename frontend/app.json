@@ -51,7 +51,8 @@
           "backgroundColor": "#F8FAFC"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
