@@ -34,14 +34,16 @@ OTP_TTL_SECONDS = 5 * 60
 OTP_LENGTH = 6
 
 
+from core.validators import NombreStr, PhoneStr  # noqa: F401 — usados via Annotated abajo
+
 # ============== Schemas ==============
 class OtpRequest(BaseModel):
-    nombre: str = Field(min_length=2, max_length=80)
-    telefono: str = Field(min_length=6, max_length=20)
+    nombre: NombreStr
+    telefono: PhoneStr
 
 
 class OtpVerify(BaseModel):
-    telefono: str
+    telefono: PhoneStr
     codigo: str = Field(min_length=4, max_length=8)
 
 
