@@ -12,7 +12,6 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -40,6 +39,7 @@ import {
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
@@ -168,10 +168,8 @@ export default function MiCuenta() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.brand.primary} />
-        </View>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <SmartLoader loading={loading} skeleton={<Skeleton.Profile />} />
       </SafeAreaView>
     );
   }

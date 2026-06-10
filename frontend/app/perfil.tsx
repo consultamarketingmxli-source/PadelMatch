@@ -1,7 +1,6 @@
 /** Mi Perfil — stats del jugador por teléfono. */
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,6 +17,7 @@ import { api, PlayerStats } from "@/src/api";
 import { Input } from "@/src/components/Input";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { CTAButton } from "@/src/components/brand/CTAButton";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 export default function ProfileScreen() {
@@ -81,7 +81,12 @@ export default function ProfileScreen() {
           />
 
           {loading ? (
-            <ActivityIndicator color={colors.brand.primary} style={{ marginTop: spacing.lg }} />
+            <View style={{ marginTop: spacing.lg }}>
+              <SmartLoader
+                loading={loading}
+                skeleton={<Skeleton.StatsGrid count={4} />}
+              />
+            </View>
           ) : stats ? (
             <View style={styles.statsWrap}>
               <StatCard

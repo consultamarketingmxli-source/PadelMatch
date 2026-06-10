@@ -1,7 +1,6 @@
 /** Tabla de posiciones pública de una reta. */
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -14,6 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Crown, Trophy } from "lucide-react-native";
 
 import { api, TablaPosicionEntry } from "@/src/api";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 export default function TablaPosicionesScreen() {
@@ -54,7 +54,7 @@ export default function TablaPosicionesScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand.primary} /></View>
+        <SmartLoader loading={loading} skeleton={<Skeleton.Standings count={6} />} />
       ) : (
         <FlatList
           data={data}

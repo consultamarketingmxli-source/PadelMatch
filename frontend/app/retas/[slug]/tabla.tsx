@@ -44,6 +44,7 @@ import {
 
 import { Reta, TablaPosicionEntry, api } from "@/src/api";
 import { CourtLinesBackground } from "@/src/components/CourtLinesBackground";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { useRetaRealtime } from "@/src/hooks/useRetaRealtime";
 import { storage } from "@/src/utils/storage";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -161,8 +162,8 @@ export default function TablaEnVivo() {
   }
   if (!reta || auth.kind === "loading") {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}><ActivityIndicator color={colors.brand.primary} /></View>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <SmartLoader loading={true} skeleton={<Skeleton.Standings count={6} />} />
       </SafeAreaView>
     );
   }

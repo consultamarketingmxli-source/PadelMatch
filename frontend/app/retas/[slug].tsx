@@ -48,6 +48,7 @@ import { RsvpCard, type RsvpResult } from "@/src/components/retas/RsvpCard";
 import { CheckoutCard, type RegMode, type CuponState } from "@/src/components/retas/CheckoutCard";
 import { WaitlistFullModal } from "@/src/components/retas/WaitlistFullModal";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
 export default function RetaDetailScreen() {
@@ -446,10 +447,8 @@ export default function RetaDetailScreen() {
 
   if (loading || !reta) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.brand.primary} />
-        </View>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <SmartLoader loading={true} skeleton={<Skeleton.RetaDetail />} />
       </SafeAreaView>
     );
   }
