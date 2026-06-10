@@ -105,11 +105,15 @@ export default function PlayerLogin() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        {/* TOP BAR */}
+        {/* TOP BAR — Botón "atrás" sólo si hay historial (no es la pantalla raíz) */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="login-back">
-            <ArrowLeft size={18} color={colors.text.primary} />
-          </TouchableOpacity>
+          {router.canGoBack() ? (
+            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="login-back">
+              <ArrowLeft size={18} color={colors.text.primary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
           <BrandWordmark size="md" />
           <View style={{ width: 40 }} />
         </View>
