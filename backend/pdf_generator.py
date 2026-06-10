@@ -323,8 +323,11 @@ def _podium_row(top3: List[Dict], styles) -> Optional[Table]:
     return tbl
 
 
-def _classif_table(standings: List[Dict], styles) -> Table:
-    """Tabla completa de clasificación."""
+def _classif_table(standings: List[Dict], styles, show_ko: bool = False) -> Table:
+    """Tabla completa de clasificación.
+
+    Fase 7 — Si `show_ko=True`, agrega columna "KO" con `victorias_ko`.
+    """
     head_style = ParagraphStyle(
         "ClsHead",
         parent=styles["Normal"],
@@ -350,7 +353,7 @@ def _classif_table(standings: List[Dict], styles) -> Table:
         wordWrap="CJK",
     )
 
-    data = [[
+    header_row = [
         Paragraph("<b>#</b>", head_style),
         Paragraph("<b>JUGADOR</b>", head_style),
         Paragraph("<b>PJ</b>", head_style),
@@ -362,9 +365,12 @@ def _classif_table(standings: List[Dict], styles) -> Table:
         Paragraph("<b>DG</b>", head_style),
         Paragraph("<b>%</b>", head_style),
         Paragraph("<b>PTS</b>", head_style),
-    ]]
+    ]
+    if show_ko:
+        header_row.append(Paragraph("<b>KO</b>", head_style))
+    data = [header_row]
     for idx, p in enumerate(standings, start=1):
-        data.append([
+        row = [
             Paragraph(f"<b>{idx}</b>", cell_style),
             Paragraph(p.get("nombre", "—"), name_style),
             Paragraph(str(p.get("partidos_jugados", 0)), cell_style),
@@ -376,16 +382,20 @@ def _classif_table(standings: List[Dict], styles) -> Table:
             Paragraph(f"<b>{p.get('diferencia', 0):+d}</b>", cell_style),
             Paragraph(f"{p.get('efectividad', 0)}%", cell_style),
             Paragraph(f"<b>{p.get('puntos', 0)}</b>", cell_style),
-        ])
+        ]
+        if show_ko:
+            ko = int(p.get("victorias_ko", 0) or 0)
+            badge = f"<b>⚡{ko}</b>" if ko > 0 else "—"
+            row.append(Paragraph(badge, cell_style))
+        data.append(row)
 
-    tbl = Table(
-        data,
-        colWidths=[
-            10 * mm, 56 * mm, 12 * mm, 12 * mm, 12 * mm, 12 * mm,
-            14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm,
-        ],
-        repeatRows=1,
-    )
+    col_widths = [
+        10 * mm, 56 * mm, 12 * mm, 12 * mm, 12 * mm, 12 * mm,
+        14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm,
+    ]
+    if show_ko:
+        col_widths.append(14 * mm)
+    tbl = Table(data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), DARK_BG),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -453,8 +463,25 @@ def generar_pdf_clasificacion(
     story = []
     story.append(_build_header(reta, logo_bytes))
     story.append(Spacer(1, 4 * mm))
+
+    # Fase 7 — Subtítulo informa el criterio de desempate activo + KO/cap_total.
+    criterio = (reta.get("criterio_desempate") or "A")
+    criterio_label = {
+        "A": "Puntos netos individuales (DG → GF → Nombre)",
+        "B": "Puntos netos por pareja (DG → Nombre)",
+        "C": "Rendimiento técnico (Ratio GF/GC → DG → Nombre)",
+    }.get(criterio, "Puntos netos individuales")
+    fs = reta.get("formato_score") or {}
+    ko_on = bool(fs.get("ko_enabled"))
+    cap = fs.get("cap_total")
+    extra = []
+    if cap is not None:
+        extra.append(f"cap {cap}")
+    if ko_on and cap is not None:
+        extra.append(f"KO {int(cap)//2 + 1}-0")
+    extra_str = (" · " + " · ".join(extra)) if extra else ""
     story.append(Paragraph(
-        "<b>Clasificación Final</b> — orden por PG (desc) · DG (desc) · GF (desc).",
+        f"<b>Clasificación Final</b> — Criterio <b>{criterio}</b>: {criterio_label}.{extra_str}",
         sub_style,
     ))
     story.append(Spacer(1, 4 * mm))
@@ -466,7 +493,11 @@ def generar_pdf_clasificacion(
 
     story.append(Paragraph("Tabla completa", section_style))
     if standings:
-        story.append(_classif_table(standings, styles))
+        # Mostrar columna KO si algún jugador tiene victorias_ko > 0 o si la reta
+        # tenía ko_enabled (aunque nadie haya ganado por KO, así el organizador
+        # ve que la columna existe).
+        show_ko = ko_on or any((p.get("victorias_ko") or 0) > 0 for p in standings)
+        story.append(_classif_table(standings, styles, show_ko=show_ko))
     else:
         empty_style = ParagraphStyle(
             "Empty",
@@ -483,8 +514,10 @@ def generar_pdf_clasificacion(
         ))
 
     story.append(Spacer(1, 6 * mm))
+    crit_short = {"A": "DG → GF", "B": "DG", "C": "GF/GC"}.get(criterio, "DG → GF")
     story.append(Paragraph(
-        "Generado con PadelappRetas OS · Cascada: PG → DG → GF → Nombre.",
+        f"Generado con PadelappRetas OS · Cascada: PG → {crit_short} → Nombre"
+        + (" · ⚡ = victoria por KO." if any((p.get('victorias_ko') or 0) > 0 for p in standings) else ""),
         footer_style,
     ))
 

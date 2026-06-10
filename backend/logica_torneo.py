@@ -235,6 +235,50 @@ def generar_rol_filtrado_4_jugadores(
     return rol
 
 
+def generar_rol_con_descansos(
+    jugadores: List[str],
+    canchas: int,
+    num_rondas: int = 7,
+) -> List[Dict]:
+    """Fase 7 — Wrapper que permite N de jugadores NO múltiplo de 4.
+
+    Estrategia: rellenamos con slots "BYE #i" hasta llegar al siguiente
+    múltiplo de 4 (capacidad mínima soportada por el engine subyacente).
+    Los partidos donde aparece un BYE se marcan con `descanso=True` y
+    NO cuentan para stats (los nombres BYE_n no son usuarios reales).
+
+    Capacidad efectiva máxima: 32 (después de padding). Si N + padding > 32,
+    lanzamos error como antes.
+
+    Ejemplos:
+        N=5  → padding 3 → grupo de 8 con 3 BYE; cada ronda hay BYEs
+        N=9  → padding 3 → 1 cancha de 8 + 1 cancha de 4
+        N=13 → padding 3 → 2 canchas de 8
+    """
+    n = len(jugadores)
+    if n < 4:
+        raise ValueError(f"Mínimo 4 jugadores (recibidos {n}).")
+    needed = ((n + 3) // 4) * 4  # round up to next multiple of 4
+    if needed > 32:
+        raise ValueError(
+            f"Demasiados jugadores ({n}). Capacidad máxima: 32.",
+        )
+    padded = list(jugadores)
+    while len(padded) < needed:
+        padded.append(f"BYE {len(padded) - n + 1}")
+    rol = generar_rol_multi_cancha(padded, canchas, num_rondas)
+    # Anota descanso=true a cualquier partido con BYE en pareja_a/b. El frontend
+    # puede ocultarlos o mostrarlos como "Descanso" según prefiera el organizador.
+    for cancha_data in rol:
+        for ronda in cancha_data.get("rondas", []):
+            for partido in ronda.get("partidos", []):
+                pareja_a = partido.get("pareja_a") or []
+                pareja_b = partido.get("pareja_b") or []
+                if any(p.startswith("BYE") for p in pareja_a + pareja_b):
+                    partido["descanso"] = True
+    return rol
+
+
 def generar_rol_multi_cancha(
     jugadores: List[str],
     canchas: int,
