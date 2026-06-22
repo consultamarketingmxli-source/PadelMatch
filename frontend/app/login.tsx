@@ -143,6 +143,8 @@ export default function PlayerLogin() {
                   onChangeText={setTelefono}
                   placeholder="+5215512345678"
                   keyboardType="phone-pad"
+                  maxLength={20}
+                  testID="phone-input"
                 />
                 <Button
                   title="Enviarme código"

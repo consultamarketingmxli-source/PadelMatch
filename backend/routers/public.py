@@ -45,7 +45,11 @@ async def buscar(
     # Sanitización defensiva (también pasamos por aquí cuando viene de /radar).
     q_norm: Optional[str] = None
     if q is not None:
-        q_norm = q.strip().lower()
+        # Strip caracteres de control ASCII (incluyendo NUL byte 0x00) — Mongo regex
+        # los rechaza con OperationFailure. Mantenemos sólo printables + espacio.
+        # Esto previene también ataques de inyección de control chars.
+        clean = "".join(c for c in q if c == " " or ord(c) >= 0x20)
+        q_norm = clean.strip().lower()
         if not q_norm:
             q_norm = None  # texto vacío o solo espacios → ignorar
 

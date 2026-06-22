@@ -52,7 +52,14 @@
         }
       ],
       "expo-font",
-      "@sentry/react-native"
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "padelappretas",
+          "project": "padelappretas-mobile",
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
