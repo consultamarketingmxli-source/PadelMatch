@@ -40,7 +40,6 @@ import { playerTokenStore } from "@/src/utils/playerTokenStore";
 import { LegalConsent } from "@/src/components/LegalConsent";
 import { acceptLegal } from "@/src/utils/legalConsent";
 
-const PLAYER_TOKEN_KEY = "padelappretas.player.token";
 const PLAYER_INFO_KEY = "padelappretas.player.info";
 
 // Fotografía cancha limpia (alto-ángulo, blue turf + líneas blancas).
