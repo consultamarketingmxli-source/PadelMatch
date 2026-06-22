@@ -52,17 +52,26 @@ export default function CompartirReta() {
   const load = useCallback(async () => {
     try {
       const data = await api.getShareInfo(id as string);
-      setInfo(data);
+      if (aliveRef.current) setInfo(data);
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo cargar la info de compartir");
+      if (aliveRef.current)
+        Alert.alert("Error", e.message ?? "No se pudo cargar la info de compartir");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (aliveRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [id]);
 
+  // Anti memory-leak: ref alive
+  const aliveRef = React.useRef(true);
   useEffect(() => {
+    aliveRef.current = true;
     void load();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [load]);
 
   const onRefresh = () => {

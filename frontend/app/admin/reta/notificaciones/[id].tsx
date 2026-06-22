@@ -84,30 +84,39 @@ export default function AdminNotificaciones() {
     if (!retaId) return;
     try {
       const r = await api.getReta(retaId);
+      if (!aliveRef.current) return;
       setReta(r);
-      // Pre-fetch del estado Twilio para mostrar el banner de modo.
       try {
         const dr = await api.getDeployReadiness();
+        if (!aliveRef.current) return;
         const tw = dr.integrations.find((i) => i.env.startsWith("TWILIO_ACCOUNT_SID"));
         if (tw) setTwilioMode(tw.mode);
-        // Si es sandbox, pre-cargar el código join.
         if (tw?.mode === "test") {
           try {
             const si = await api.getTwilioSandboxInfo();
-            setSandboxInfo({ join_code: si.join_code, sandbox_number: si.sandbox_number });
+            if (aliveRef.current)
+              setSandboxInfo({ join_code: si.join_code, sandbox_number: si.sandbox_number });
           } catch { /* ignore */ }
         }
       } catch {
         // ignore — banner se ocultará silenciosamente
       }
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo cargar la reta");
+      if (aliveRef.current) Alert.alert("Error", e.message ?? "No se pudo cargar la reta");
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setLoading(false);
     }
   }, [retaId]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Anti memory-leak: ref alive
+  const aliveRef = React.useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    void load();
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [load]);
 
   // Rondas/canchas elegibles desde la config de la reta.
   const totalRondas = reta?.num_rondas ?? 7;

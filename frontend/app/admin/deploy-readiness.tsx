@@ -49,15 +49,24 @@ export default function AdminDeployReadiness() {
   const load = useCallback(async () => {
     try {
       const r = await api.getDeployReadiness();
-      setData(r);
+      if (aliveRef.current) setData(r);
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo cargar el estado de deployment");
+      if (aliveRef.current)
+        Alert.alert("Error", e.message ?? "No se pudo cargar el estado de deployment");
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  // Anti memory-leak: previene setState si el componente se desmontó.
+  const aliveRef = React.useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    void load();
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
