@@ -81,6 +81,7 @@ from routers.notify_admin import twilio_router as twilio_admin_router
 from routers.parejas_admin import router as parejas_admin_router
 from routers.payments_router import router as payments_router
 from routers.pdf_router import router as pdf_router
+from routers.print_router import router as print_router
 from routers.player_auth import router as player_auth_router
 from routers.public import router as public_router
 from routers.realtime_ws import router as realtime_ws_router
@@ -126,6 +127,7 @@ api.include_router(parejas_admin_router)
 api.include_router(resultados_router)
 api.include_router(realtime_ws_router)
 api.include_router(pdf_router)
+api.include_router(print_router)
 api.include_router(export_router)
 api.include_router(rsvp_public_router)
 api.include_router(rsvp_admin_router)

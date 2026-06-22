@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ titulo }} — {{ reta.nombre }}</title>
+  <style>
+    /* ====== US Letter / Carta — Page setup ====== */
+    @page {
+      size: Letter;
+      margin: 18mm 14mm 14mm 14mm;
+    }
+    /* Print rules — evitar cortes feos en blanco y negro/escala de grises */
+    @media print {
+      .round-block,
+      .standings-table,
+      thead {
+        page-break-inside: avoid;
+      }
+      tr {
+        page-break-inside: avoid;
+      }
+      thead {
+        display: table-header-group;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Helvetica', 'Arial', sans-serif;
+      font-size: 10pt;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ====== HEADER ====== */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 12pt;
+      margin-bottom: 14pt;
+      border-bottom: 1.5pt solid #1e3a8a;
+    }
+    .logo-box {
+      width: 95pt;
+      height: 95pt;
+      border: 1.5pt solid #94a3b8;
+      border-radius: 8pt;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #64748b;
+      line-height: 1.2;
+      letter-spacing: 0.3pt;
+      padding: 6pt;
+    }
+    .logo-box img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .title-center {
+      flex: 1;
+      text-align: center;
+      padding: 0 14pt;
+    }
+    .title-center h1 {
+      margin: 0;
+      font-size: 24pt;
+      font-weight: 900;
+      color: #1e3a8a;
+      letter-spacing: 0.5pt;
+      line-height: 1.05;
+    }
+    .title-center .subtitle {
+      margin-top: 6pt;
+      font-size: 12pt;
+      font-weight: 700;
+      color: #334155;
+      letter-spacing: 0.5pt;
+    }
+    .qr-wrap {
+      width: 95pt;
+      text-align: center;
+    }
+    .qr-wrap img {
+      width: 95pt;
+      height: 95pt;
+    }
+    .qr-wrap .qr-caption {
+      font-size: 6.5pt;
+      font-weight: 700;
+      color: #334155;
+      margin-top: 4pt;
+      letter-spacing: 0.2pt;
+      line-height: 1.2;
+    }
+
+    /* ====== TOURNAMENT METADATA ====== */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 4pt 18pt;
+      font-size: 10pt;
+      line-height: 1.6;
+      margin-bottom: 14pt;
+    }
+    .meta-grid .row { display: contents; }
+    .meta-grid .key {
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .meta-grid .value {
+      color: #1a1a1a;
+    }
+
+    /* ====== SECTION HEADINGS ====== */
+    .section-title {
+      text-align: center;
+      font-size: 11.5pt;
+      font-weight: 900;
+      color: #1a1a1a;
+      letter-spacing: 0.8pt;
+      margin: 14pt 0 8pt 0;
+    }
+
+    /* ====== STANDINGS TABLE ====== */
+    .standings-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16pt;
+      font-size: 9pt;
+    }
+    .standings-table thead th {
+      background: #1e3a8a;
+      color: #ffffff;
+      font-weight: 700;
+      padding: 5pt 4pt;
+      text-align: center;
+      letter-spacing: 0.3pt;
+      border: 0.5pt solid #1e3a8a;
+    }
+    .standings-table thead th:nth-child(2) { text-align: left; padding-left: 8pt; }
+    .standings-table tbody td {
+      padding: 4.5pt 4pt;
+      border: 0.5pt solid #cbd5e1;
+      text-align: center;
+    }
+    .standings-table tbody td:nth-child(1) { width: 22pt; font-weight: 700; }
+    .standings-table tbody td:nth-child(2) { text-align: left; padding-left: 8pt; }
+    .standings-table tbody tr:nth-child(even) td {
+      background: #e0e7ff;
+    }
+    .standings-table tbody tr:nth-child(odd) td {
+      background: #ffffff;
+    }
+
+    /* ====== ROUND BLOCKS ====== */
+    .round-block {
+      margin-bottom: 10pt;
+      border: 0.6pt solid #cbd5e1;
+      border-radius: 0;
+    }
+    .round-header {
+      background: #1e3a8a;
+      color: #ffffff;
+      text-align: center;
+      font-weight: 700;
+      font-size: 10pt;
+      padding: 5pt 6pt;
+      letter-spacing: 0.5pt;
+    }
+    .round-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+    }
+    .round-table thead th {
+      background: #ffffff;
+      color: #1a1a1a;
+      font-weight: 700;
+      padding: 4.5pt 6pt;
+      text-align: center;
+      border-bottom: 0.5pt solid #cbd5e1;
+      border-right: 0.5pt solid #cbd5e1;
+    }
+    .round-table thead th:last-child { border-right: none; }
+    .round-table tbody td {
+      padding: 5pt 6pt;
+      text-align: center;
+      border-right: 0.5pt solid #cbd5e1;
+      border-bottom: 0.5pt solid #e2e8f0;
+    }
+    .round-table tbody td:last-child { border-right: none; }
+    .round-table tbody td.pareja {
+      text-align: center;
+      font-size: 8.5pt;
+      line-height: 1.35;
+    }
+    .round-table tbody td.score {
+      font-weight: 700;
+      font-size: 10pt;
+      min-width: 60pt;
+      letter-spacing: 1pt;
+    }
+    .round-table tbody td.cancha {
+      width: 36pt;
+      font-weight: 700;
+    }
+    .descansan {
+      padding: 5pt 8pt;
+      background: #f8fafc;
+      border-top: 0.5pt solid #cbd5e1;
+      font-size: 8.5pt;
+      color: #1a1a1a;
+    }
+    .descansan b { font-weight: 700; }
+
+    /* ====== FOOTER ====== */
+    .footer {
+      position: fixed;
+      bottom: 6mm;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 8pt;
+      color: #475569;
+      letter-spacing: 0.3pt;
+      padding-top: 4pt;
+      border-top: 0.5pt solid #e2e8f0;
+      margin: 0 14mm;
+    }
+    .footer .brand {
+      font-weight: 700;
+      color: #1e3a8a;
+    }
+    .footer-icon {
+      display: inline-block;
+      width: 9pt;
+      height: 9pt;
+      vertical-align: middle;
+      margin-left: 4pt;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <div class="header">
+    <div class="logo-box">
+      {% if logo_data_uri %}
+        <img src="{{ logo_data_uri }}" alt="Logo del club" />
+      {% else %}
+        TU LOGOTIPO<br/>AQUÍ
+      {% endif %}
+    </div>
+
+    <div class="title-center">
+      <h1>ROL DE JUEGO OFICIAL</h1>
+      <div class="subtitle">{{ titulo }}</div>
+    </div>
+
+    <div class="qr-wrap">
+      <img src="{{ qr_data_uri }}" alt="QR resultados en vivo" />
+      <div class="qr-caption">ESCANÉAME PARA<br/>RESULTADOS EN VIVO</div>
+    </div>
+  </div>
+
+  <!-- ===== METADATA ===== -->
+  <div class="meta-grid">
+    <div class="row">
+      <span><b>ORGANIZADOR:</b> {{ organizador }}</span>
+      <span><b>PARTICIPANTES:</b> {{ num_participantes }}</span>
+    </div>
+    <div class="row">
+      <span><b>CLUB:</b> {{ reta.club }}</span>
+      <span><b>CANCHAS:</b> {{ canchas_lista }}</span>
+    </div>
+    <div class="row">
+      <span><b>EVENTO:</b> {{ reta.nombre }}</span>
+      <span><b>RONDAS:</b> {{ reta.num_rondas }}</span>
+    </div>
+    <div class="row">
+      <span><b>FECHA:</b> {{ fecha_fmt }}</span>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- ===== TABLA DE POSICIONES FINAL (solo en results) ===== -->
+  {% if mode == 'results' and standings %}
+    <div class="section-title">TABLA DE POSICIONES FINAL</div>
+    <table class="standings-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>JUGADOR</th>
+          <th>PJ</th>
+          <th>PG</th>
+          <th>PP</th>
+          <th>PF</th>
+          <th>PC</th>
+          <th>DIF</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in standings %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ s.nombre }}</td>
+            <td>{{ s.pj }}</td>
+            <td>{{ s.pg }}</td>
+            <td>{{ s.pp }}</td>
+            <td>{{ s.pf }}</td>
+            <td>{{ s.pc }}</td>
+            <td>{% if s.dif >= 0 %}+{% endif %}{{ s.dif }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <!-- ===== RESULTADOS POR RONDA ===== -->
+  <div class="section-title">RESULTADOS POR RONDA</div>
+
+  {% for r in rondas %}
+    <div class="round-block">
+      <div class="round-header">RONDA {{ r.numero }}{% if r.horario %}: {{ r.horario }}{% endif %}</div>
+      <table class="round-table">
+        <thead>
+          <tr>
+            <th style="width: 36pt;">Cancha</th>
+            <th>Pareja 1</th>
+            <th style="width: 90pt;">Score</th>
+            <th>Pareja 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in r.partidos %}
+            <tr>
+              <td class="cancha">{{ p.cancha }}</td>
+              <td class="pareja">{{ p.pareja1 | safe }}</td>
+              <td class="score">
+                {% if mode == 'results' and p.score %}
+                  {{ p.score }}
+                {% else %}
+                  ___ - ___
+                {% endif %}
+              </td>
+              <td class="pareja">{{ p.pareja2 | safe }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if r.descansan %}
+        <div class="descansan"><b>Descansan:</b> {{ r.descansan }}</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <!-- ===== FOOTER ===== -->
+  <div class="footer">
+    <span class="brand">PadelApp Retas</span> — Tu pasión, organizada profesionalmente
+    {% if footer_icon_data_uri %}
+      <img src="{{ footer_icon_data_uri }}" class="footer-icon" alt=""/>
+    {% endif %}
+  </div>
+
+</body>
+</html>
