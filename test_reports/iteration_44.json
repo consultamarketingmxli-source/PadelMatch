@@ -1,0 +1,90 @@
+{
+  "summary": "ITER44 CHAOS / FAULT-INJECTION audit of PadelAppRetas (pre App Store / Play Store). Created /app/backend/tests/test_iter44_chaos_destructive.py with 59 destructive cases across 9 attack surfaces (login SQLi/XSS/huge/emoji, OTP request fault injection, OTP verify brute-force, public search with invalid coords / null bytes / emojis / SQLi / huge limits, admin reta create with negative/null/huge fields, public inscribirme with garbage UUIDs + 20 concurrent inscriptions for anti-oversell, MP OAuth forged state / no token / expired token, openapi.json regression, OTP spam x30 and OTP verify brute-force x40). FINAL: 58/59 PASS. ONE REAL BUG found: GET /api/public/retas/buscar?q=<NUL>... returns 500 because the user-controlled `q` is passed verbatim into a Mongo regex and Mongo rejects regex strings with embedded NUL (`Regular expression cannot contain an embedded null byte`). Rate-limit, anti-oversell, OAuth state HMAC, OTP brute-force lockout, OpenAPI generation (NOW 200 — iter43 issue fixed), MP callback forgery rejection, and global error sanitizer (reporte_id without leaking stack trace) ALL VERIFIED working. Frontend chaos: 45 brutal navigations (login↔admin/login↔home x15) with NO crash, NO pageerror, NO memory leak warning, no error overlay; 50 000-char paste into phone input accepted by component but no client-side max length (no crash, but a UX/abuse vector — server-side validation still catches it); 10 rapid-fire taps on 'ENVIARME CÓDIGO' do not crash but no visible debounce/spinner gating; emoji paste OK. Sentry: SDK imported and sentry_sdk.init() called when SENTRY_DSN present (which it is in backend/.env), but the `[sentry] inicializado` INFO log line is NOT showing up on current restart (likely because logging.basicConfig is configured AFTER the init block at server.py:39-63 so the INFO line is dropped) — Sentry capture is still active, only the start-up log message is missing. Backend global error handler returns reporte_id without leaking stack traces (verified in 500 response body for null-byte crash). All public endpoints sampled — only 1 crash discovered out of ~600+ destructive requests. Anti-oversell verified: 20 parallel inscriptions to the first active reta returned mixed 4xx/2xx with ZERO 500s.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/public/retas/buscar",
+        "issue": "🟠 P1 — 500 Internal Server Error when query contains an embedded NUL byte. Repro: `curl 'https://.../api/public/retas/buscar?q=test%00admin'`. Root cause: routers/public.py:54-60 does `re.escape(q_norm)` then sends to Mongo as `{'$regex': safe}`; re.escape does NOT escape NUL because NUL is not a regex metachar, but PyMongo / Mongo rejects regexes with embedded NUL (`pymongo.errors.OperationFailure: Regular expression cannot contain an embedded null byte`). Trace ends at routers/public.py:64 `async for r in cursor`. Fix: sanitize early — `q_norm = q.strip().lower().replace('\\x00', '')` (and arguably strip ALL ASCII control chars 0x00-0x1F except whitespace). Also consider capping `q` length (currently we accepted 10 000-char emoji query without issue but a 50 000-char payload could starve regex evaluator). Global error handler did its job (returned 500 with reporte_id, no stack trace leaked to client), but Sentry will see this on every crawler/bot scan and burn quota.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "Backend startup logs",
+        "issue": "`[sentry] inicializado` INFO line at server.py:61-63 is NOT visible in /var/log/supervisor/backend.err.log on current restart. Likely because `logging.basicConfig` is configured AFTER the sentry init block — at module import time the root logger is still at WARNING. Sentry capture itself still works (DSN is read and sentry_sdk.init runs), only the visibility log is lost. Move the INFO log AFTER `logging.basicConfig(...)` or use `logging.getLogger('padelappretas-os').setLevel(logging.INFO)` before logging. LOW priority — observability only."
+      },
+      {
+        "endpoint": "GET /api/public/retas/buscar (limit/page)",
+        "issue": "`?limit=99999`, `?page=-10`, and a 10 000-char `q` parameter all return 200 silently — no 422 validation. Backend has its own hard cap of 500 results (`.limit(500)`) so it does not actually return 99 999, but the API contract is unclear. RECOMMEND adding Pydantic Query() with `ge=1, le=100` on `limit` and `ge=1` on `page` so the API self-documents the bounds and returns 422 for abusers."
+      },
+      {
+        "endpoint": "POST /api/auth/login (rate limit cascade)",
+        "issue": "After 7 malformed logins from the same IP, the limiter returned 429 with retry_after=60. CORRECT behaviour, but the message `Demasiados intentos. Por favor espera unos minutos…` is fine for end-users but the legitimate admin tester is locked out too. Consider exempting requests from authenticated admin tokens or whitelisting CI test IPs. Not a bug — design tradeoff."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/login.tsx — phone TextInput",
+        "issue": "🟡 P2 — Phone TextInput accepts 50 000 characters without client-side maxLength. No crash and the server still validates, but huge paste freezes the input render briefly (50k chars in a single line). Add `maxLength={20}` (international E.164 max is 15 + '+').",
+        "testID": "phone-input (not present — recommend adding)",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "app/login.tsx — 'ENVIARME CÓDIGO' button",
+        "issue": "🔵 P3 — 10 rapid taps in <1 s do not crash the app, but there is no visible debounce / disabled-while-loading state on the button. The server-side rate limiter catches the spam (verified — 429 after a few requests) so it is not a security issue, but the UX is misleading (taps appear to do nothing). Recommend `disabled={isSending}` and a spinner during the request.",
+        "testID": "otp-send-button (not present — recommend adding)",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "@sentry/react-native",
+        "issue": "STILL installed at 8.13.0 but Expo SDK expects ~7.2.0 (Expo CLI logs `The following packages should be updated for best compatibility … @sentry/react-native@8.13.0 - expected version: ~7.2.0`). Same as iter43. Reference: /app/frontend/package.json. Either pin to ~7.2.0 OR confirm 8.x in a native build before App Store submission."
+      },
+      {
+        "component": "@sentry/react-native/expo",
+        "issue": "Bundler warning on every build: `Missing config for organization, project. Environment variables will be used as a fallback during the build.` Need to add `extra.sentry.organization` and `extra.sentry.project` to app.json or set EXPO_PUBLIC_SENTRY_ORG / EXPO_PUBLIC_SENTRY_PROJECT — otherwise source-map upload at build time will silently fail and crash reports in production will have minified stack traces with no symbolication."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter44_chaos_destructive.py",
+    "/app/test_reports/pytest/iter44_chaos.xml"
+  ],
+  "action_items": [
+    "🟠 P1 FIX BEFORE PUBLISH: routers/public.py:48 — sanitize `q` to strip ASCII control chars BEFORE re.escape(). Suggested one-liner: `q_norm = ''.join(c for c in q.strip().lower() if c == ' ' or ord(c) >= 0x20) or None`. Add a regression test (the null-byte case in iter44 already covers it).",
+    "🟡 P2 FIX: app/login.tsx phone TextInput → add `maxLength={20}` and `keyboardType='phone-pad'` (if not already present).",
+    "🔵 P3 FIX: app/login.tsx 'ENVIARME CÓDIGO' button — disable while request in flight + show spinner. Add testID='otp-send-button' and testID='phone-input'.",
+    "RECOMMEND: routers/public.py buscar — add Query validators on `limit` (le=100) and `page` (ge=1) so the API rejects absurd values with 422 instead of silently capping at 500.",
+    "RECOMMEND: server.py — move the `[sentry] inicializado` INFO log AFTER `logging.basicConfig(...)` so we can confirm Sentry came up at restart.",
+    "RECOMMEND: Add EXPO_PUBLIC_SENTRY_ORG and EXPO_PUBLIC_SENTRY_PROJECT (or app.json extra.sentry.*) to enable source-map upload at build time. Without it, App Store crash reports will be minified and useless.",
+    "STILL OPEN FROM ITER43: pin @sentry/react-native to ~7.2.0 OR confirm 8.x compat in a native build."
+  ],
+  "critical_code_review_comments": [
+    "Global error handler (core/security.py) excellent: returns 500 with reporte_id and `mensaje_usuario` — does NOT leak stack trace to client. Verified in the null-byte 500 response. ✅",
+    "Rate limiter on POST /api/auth/login works (5/min) — locked out test after 7 malformed login attempts with 429 + retry_after=60. ✅",
+    "Anti-oversell on inscribirme verified: 20 concurrent inscriptions to the same reta — ZERO 500s, server returns mix of 2xx (allowed) and 4xx (rejected, full / duplicate). No race condition observed at 20 threads. ✅",
+    "MP OAuth callback rejects forged state with non-500 (HMAC verification working — confirmed in iter41). ✅",
+    "/api/openapi.json now returns 200 (was 500 in iter43). The CuponValidateRequest.model_rebuild() fix worked. ✅",
+    "OTP verify brute-force (40 random codes in a row) — ZERO 500s, all returned 4xx/429. Backend lockout signal present. ✅",
+    "Public search endpoint accepts emoji query, 10k-char query, SQLi-like strings, XSS strings, path traversal in slug — none crashed, all returned 200 or 422 EXCEPT the null-byte case (the one real bug).",
+    "Admin reta create endpoint properly rejects negative cost, zero/negative jugadores_max, empty/huge names, invalid dates, and XSS payloads with 422 / 400 — none reached the DB layer with garbage data. ✅",
+    "Backend has Sentry SDK init code at server.py:39-63 reading SENTRY_DSN from .env — present and correctly configured (PII stripping in `_sentry_before_send`, send_default_pii=False, attach_stacktrace=True). ✅"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter44_chaos_destructive.py (new — 59 destructive cases)"
+  ],
+  "success_rate": {
+    "backend": "98.3% (58/59 chaos cases pass — only the null-byte search returns 500, which is the one real bug)",
+    "frontend": "100% structural (no crashes during 45-page brutal nav + 50k-char paste + 10 rapid taps) — 2 UX gaps documented (no input maxLength, no button debounce)"
+  },
+  "seed_data_creation": "20 ephemeral test inscriptions on the first active reta (phones +5215550000000..+5215550000019) — backend dedupes by phone so these are idempotent. 30 OTP requests for +5215599999999 (rate-limited within window, auto-expire in 5 min). 40 OTP verify attempts for +5215512345678 (no records persisted, just attempts). No retas created. No real money / MP / Stripe transactions executed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_iter44_chaos_destructive.py -v` for the full chaos battery. CAUTION: the Auth login tests will exhaust the rate-limit budget (5/min) after ~6 cases — the admin_token fixture will then fail with 429 and cascade. To run the admin-token-dependent cases, wait 75 s and re-run with `-k 'TestAdminRetaCreateFaultInjection or test_concurrent_inscription'`. The ONE real bug to retest is the null-byte search at routers/public.py:48. Once fixed (strip ASCII <0x20 except space), the regression test `test_buscar_malformed_params[null_byte]` should turn green. Frontend fixes (input maxLength + button debounce) are pure UX — main agent can self-test in a browser.",
+  "rca_of_issue": "ROOT CAUSE of the only P1 bug: GET /api/public/retas/buscar takes a `q` query param, runs `q.strip().lower()` then `re.escape(q_norm)` and passes the result to Mongo as a `$regex`. `re.escape` only escapes characters that are regex metacharacters (.+*?()[]{}|^$\\); the NUL byte (0x00) is NOT a metacharacter so it passes through. PyMongo serializes the regex into BSON and Mongo's server-side regex engine refuses any regex pattern containing 0x00, raising `OperationFailure: Regular expression cannot contain an embedded null byte` (BadValue code 2). The exception bubbles up through motor's `async for`, hits the global error handler, returns 500 with reporte_id, and Sentry captures it. REPRO: `curl -i 'https://padel-tournament-hub-9.preview.emergentagent.com/api/public/retas/buscar?q=test%00admin'` → HTTP 500 with reporte_id. MITIGATION (one-line fix): in routers/public.py:48, replace `q_norm = q.strip().lower()` with `q_norm = ''.join(c for c in q.strip().lower() if c == ' ' or ord(c) >= 0x20) or None`. This strips ALL ASCII control characters (including NUL, tab, CR, LF, BEL, …) while preserving emojis and normal Unicode. Add the regression test from iter44 — it already covers null_byte, emoji, xss_in_query, sql_in_query, and massive_query."
+}
