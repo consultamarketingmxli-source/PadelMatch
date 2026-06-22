@@ -124,10 +124,15 @@ export default function AdminSecurityScreen() {
   );
 
   useEffect(() => {
+    // Cleanup flag — previene setState en componente desmontado
+    let alive = true;
     (async () => {
       await Promise.all([loadStats(), loadLogs(true)]);
-      setLoading(false);
+      if (alive) setLoading(false);
     })();
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

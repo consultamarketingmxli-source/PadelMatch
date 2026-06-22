@@ -131,9 +131,12 @@ export default function RetaForm() {
       setHoraStr("19:00");
       return;
     }
+    // Cleanup flag — previene setState en componente desmontado
+    let alive = true;
     (async () => {
       try {
         const r = await api.getRetaAdmin(id as string);
+        if (!alive) return;
         setRetaIdReal(r.id);
         setNombre(r.nombre);
         setClub(r.club);
@@ -157,22 +160,24 @@ export default function RetaForm() {
         setObs(r.observaciones_publicas);
         setLat(r.latitud != null ? String(r.latitud) : "");
         setLng(r.longitud != null ? String(r.longitud) : "");
-        // Modalidad de Registro (default individual si la reta es legacy)
         setModalidadRegistro(r.modalidad_registro ?? "individual");
         setPermitirIndividualEnParejas(!!r.permitir_individual_en_parejas);
         setTipoAcceso(r.tipo_acceso ?? "paga");
-        // Fase 1 (Sección 1) — Parametrización extendida
         setNumGanadoresPorCancha((r.num_ganadores_por_cancha ?? 1) as 1 | 2 | 3);
         setCriterioDesempate((r.criterio_desempate ?? "A") as "A" | "B" | "C");
         setJugadoresPorCancha(r.jugadores_por_cancha ?? 4);
         setKoEnabled(!!r.formato_score?.ko_enabled);
       } catch (e: any) {
+        if (!alive) return;
         Alert.alert("Error", e.message ?? "No se pudo cargar");
         router.back();
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
+    return () => {
+      alive = false;
+    };
   }, [id, isNew, router]);
 
   // Cuando cambia tipo (PUNTOS/TIEMPO), ajusta unidad coherente.
