@@ -24,7 +24,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "monochromeImage": "./assets/images/icon-monochrome.png",
-        "backgroundColor": "#0e2745"
+        "backgroundColor": "#101830"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.padelappretas.app",
