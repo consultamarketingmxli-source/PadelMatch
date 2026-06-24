@@ -175,6 +175,8 @@ export default function RetaForm() {
         setCriterioDesempate((r.criterio_desempate ?? "A") as "A" | "B" | "C");
         setJugadoresPorCancha(r.jugadores_por_cancha ?? 4);
         setKoEnabled(!!r.formato_score?.ko_enabled);
+        // Anti-Flake Filter (Sandbox Monetization) — leer flag persistido.
+        setAntiFlakeEnabled(!!(r as any).requiere_alta_asistencia);
       } catch (e: any) {
         if (!alive) return;
         Alert.alert("Error", e.message ?? "No se pudo cargar");
@@ -259,6 +261,9 @@ export default function RetaForm() {
       num_ganadores_por_cancha: numGanadoresPorCancha,
       criterio_desempate: criterioDesempate,
       jugadores_por_cancha: jugadoresPorCancha,
+      // ===== Anti-Flake Filter (PRO feature · Sandbox Monetization) =====
+      requiere_alta_asistencia: antiFlakeEnabled,
+      asistencia_minima_pct: 90,
     };
     try {
       if (isNew) {

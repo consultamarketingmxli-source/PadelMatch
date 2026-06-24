@@ -19,6 +19,7 @@ from core.concurrency import liberar_lugar
 from core.db import db
 from core.email_service import email_service
 from core.helpers import (
+    assert_player_passes_antiflake,
     assert_reta_no_cerrada,
     crear_inscripcion_free_agent_pendiente,
     crear_inscripcion_pareja_pendiente,
@@ -55,6 +56,10 @@ async def checkout_stripe(reta_id: str, body: StripeCheckoutCreate, request: Req
         raise HTTPException(404, "Reta no encontrada")
     # Fase C — bloqueo de rondas pasadas
     assert_reta_no_cerrada(reta, accion="pagar inscripción a")
+    # Anti-Flake (Pro) — gate por asistencia histórica del jugador principal.
+    await assert_player_passes_antiflake(reta, body.telefono, body.nombre)
+    if body.pareja_telefono:
+        await assert_player_passes_antiflake(reta, body.pareja_telefono, body.pareja_nombre)
     if reta.get("costo_inscripcion", 0) < 10:
         raise HTTPException(400, "El costo de inscripción debe ser de al menos $10 MXN.")
 

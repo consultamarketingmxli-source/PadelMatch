@@ -173,6 +173,14 @@ class RetaCreate(BaseModel):
     criterio_desempate: Literal["A", "B", "C"] = "A"
     # Jugadores por cancha (default 4 = pádel clásico, configurable 2..8).
     jugadores_por_cancha: int = Field(default=4, ge=2, le=8)
+    # ===== Anti-Flake Filter (PRO feature · Sandbox Monetization) =====
+    # Si el organizador es Pro y activa este toggle, sólo se permitirá
+    # inscribirse a jugadores con `≥asistencia_minima_pct%` de asistencia
+    # histórica (calculada server-side desde db.inscripciones+db.resultados).
+    # Política de retro-compat: por default OFF.
+    # Política para jugadores nuevos: < 3 retas pasadas → exento (rate=100%).
+    requiere_alta_asistencia: bool = False
+    asistencia_minima_pct: int = Field(default=90, ge=50, le=100)
 
     @model_validator(mode="after")
     def _coherencia_modalidad(self) -> "RetaCreate":
@@ -220,6 +228,9 @@ class Reta(BaseModel):
     num_ganadores_por_cancha: Literal[1, 2, 3] = 1
     criterio_desempate: Literal["A", "B", "C"] = "A"
     jugadores_por_cancha: int = 4
+    # ===== Anti-Flake Filter (PRO feature · Sandbox Monetization) =====
+    requiere_alta_asistencia: bool = False
+    asistencia_minima_pct: int = 90
     alertas_enviadas: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 

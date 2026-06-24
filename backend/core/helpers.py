@@ -75,6 +75,103 @@ def assert_reta_no_cerrada(reta: dict, accion: str = "modificar") -> None:
         )
 
 
+# ============================================================================
+# Anti-Flake Filter (PRO feature · Sandbox Monetization)
+# ============================================================================
+# Política de tasa de asistencia:
+#   1. Tomamos todas las inscripciones APROBADAS del jugador en retas PASADAS.
+#   2. Para cada reta pasada, marcamos "asistió" si existe AL MENOS UN
+#      resultado capturado donde aparezca su nombre en pareja_a o pareja_b.
+#   3. rate% = asistió / total_aprobadas_pasadas * 100.
+#   4. Si total_aprobadas_pasadas < `MIN_SAMPLE_FOR_ANTIFLAKE` → exento.
+#      (Jugadores nuevos no penalizados por falta de historial.)
+MIN_SAMPLE_FOR_ANTIFLAKE = 3
+
+
+async def player_attendance_rate(telefono: str) -> tuple[float, int]:
+    """Calcula la tasa de asistencia histórica de un jugador.
+
+    Args:
+        telefono: Teléfono normalizado del jugador.
+
+    Returns:
+        (rate_pct, sample_size) — rate como porcentaje [0..100],
+        sample_size = retas pasadas donde el jugador fue Aprobado.
+        Si sample_size < MIN_SAMPLE_FOR_ANTIFLAKE → retorna (100.0, sample_size).
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1) Inscripciones Aprobadas — recuperamos las reta_ids del jugador.
+    nombre_jugador: Optional[str] = None
+    reta_ids: list[str] = []
+    async for ins in db.inscripciones.find(
+        {"telefono": telefono, "estatus_pago": "Aprobado"},
+        {"_id": 0, "reta_id": 1, "nombre": 1},
+    ):
+        reta_ids.append(ins["reta_id"])
+        if not nombre_jugador and ins.get("nombre"):
+            nombre_jugador = ins["nombre"]
+
+    if not nombre_jugador or not reta_ids:
+        return (100.0, 0)
+
+    # 2) Filtramos las retas pasadas (fecha_evento < now).
+    retas_pasadas: list[str] = []
+    async for r in db.retas.find(
+        {"id": {"$in": reta_ids}, "fecha_evento": {"$lt": now_iso}},
+        {"_id": 0, "id": 1},
+    ):
+        retas_pasadas.append(r["id"])
+
+    sample = len(retas_pasadas)
+    if sample < MIN_SAMPLE_FOR_ANTIFLAKE:
+        return (100.0, sample)
+
+    # 3) Para cada reta pasada, ¿hay al menos un resultado del jugador?
+    import re as _re
+    nombre_re = _re.escape(nombre_jugador)
+    jugadas = 0
+    for rid in retas_pasadas:
+        existe = await db.resultados.find_one(
+            {
+                "reta_id": rid,
+                "$or": [
+                    {"pareja_a": {"$regex": nombre_re, "$options": "i"}},
+                    {"pareja_b": {"$regex": nombre_re, "$options": "i"}},
+                ],
+            },
+            {"_id": 0, "id": 1},
+        )
+        if existe:
+            jugadas += 1
+
+    rate = (jugadas / sample) * 100.0
+    return (round(rate, 1), sample)
+
+
+async def assert_player_passes_antiflake(
+    reta: dict, telefono: str, _nombre_visible: Optional[str] = None,
+) -> None:
+    """Levanta 403 si la reta tiene anti-flake activo y el jugador NO califica.
+
+    Aplicar al INICIO de cada endpoint público de checkout, antes de cualquier
+    reserva atómica de cupos. Para retas de parejas, llamar 2 veces (una por
+    cada teléfono).
+    """
+    if not reta.get("requiere_alta_asistencia", False):
+        return
+    threshold = int(reta.get("asistencia_minima_pct") or 90)
+    rate, sample = await player_attendance_rate(telefono)
+    if rate < threshold:
+        raise HTTPException(
+            403,
+            f"No puedes inscribirte: el organizador activó el filtro Anti-Flake "
+            f"(mínimo {threshold}% asistencia). Tu asistencia histórica es "
+            f"{rate}% en {sample} retas pasadas. Mejora tu asistencia para "
+            f"poder inscribirte a esta reta.",
+        )
+
+
 async def compute_public(r: dict) -> dict:
     """Adjunta inscritos_count, waitlist_count, capacidad_pct y semáforo a una reta.
 

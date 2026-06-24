@@ -130,6 +130,9 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         num_ganadores_por_cancha=body.num_ganadores_por_cancha,
         criterio_desempate=body.criterio_desempate,
         jugadores_por_cancha=body.jugadores_por_cancha,
+        # === Anti-Flake Filter (PRO feature) ===
+        requiere_alta_asistencia=body.requiere_alta_asistencia,
+        asistencia_minima_pct=body.asistencia_minima_pct,
     )
     doc = reta.model_dump()
     doc["creado_en"] = (
@@ -218,6 +221,9 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
         "num_ganadores_por_cancha": body.num_ganadores_por_cancha,
         "criterio_desempate": body.criterio_desempate,
         "jugadores_por_cancha": body.jugadores_por_cancha,
+        # === Anti-Flake Filter (PRO feature) ===
+        "requiere_alta_asistencia": body.requiere_alta_asistencia,
+        "asistencia_minima_pct": body.asistencia_minima_pct,
     }
     await db.retas.update_one({"id": reta_id}, {"$set": update})
     new = await db.retas.find_one({"id": reta_id}, {"_id": 0})

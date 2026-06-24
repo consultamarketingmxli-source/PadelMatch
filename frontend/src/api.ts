@@ -97,6 +97,9 @@ export type Reta = {
   num_ganadores_por_cancha?: NumGanadoresPorCancha;
   criterio_desempate?: CriterioDesempate;
   jugadores_por_cancha?: number;
+  /** Anti-Flake Filter (PRO feature · Sandbox Monetization). */
+  requiere_alta_asistencia?: boolean;
+  asistencia_minima_pct?: number;
   inscritos_count: number;
   waitlist_count: number;
   capacidad_pct: number;
