@@ -29,7 +29,9 @@ import {
   Clock,
   FileText,
   Hourglass,
+  LifeBuoy,
   LogOut,
+  Shield,
   ShieldOff,
   Trash2,
   Trophy,
@@ -41,6 +43,7 @@ import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
+import { LEGAL_URLS, openExternalLink } from "@/src/utils/legalLinks";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 const PLAYER_TOKEN_KEY = "padelappretas.player.token";
@@ -265,6 +268,39 @@ export default function MiCuenta() {
             <Text style={styles.linkTitle}>Centro de Privacidad y Seguridad</Text>
             <Text style={styles.linkHint}>
               Ver mis sesiones activas, actividad reciente y configuración.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
+
+        {/* === Soporte Técnico + Política de Privacidad (Landing Framer) === */}
+        <TouchableOpacity
+          onPress={() => openExternalLink(LEGAL_URLS.support)}
+          style={styles.linkCard}
+          testID="btn-soporte-tecnico"
+          accessibilityLabel="Soporte Técnico"
+        >
+          <LifeBuoy size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Soporte Técnico</Text>
+            <Text style={styles.linkHint}>
+              Contáctanos. Resolvemos dudas en menos de 24h.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => openExternalLink(LEGAL_URLS.privacy)}
+          style={styles.linkCard}
+          testID="btn-privacidad"
+          accessibilityLabel="Política de Privacidad y Términos"
+        >
+          <Shield size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Política de Privacidad y Términos</Text>
+            <Text style={styles.linkHint}>
+              Cómo protegemos tus datos personales.
             </Text>
           </View>
           <ChevronRight size={16} color={colors.text.tertiary} />

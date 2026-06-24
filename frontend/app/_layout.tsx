@@ -14,6 +14,7 @@ import { registerGuardToast } from "@/src/hooks/useRequireAdmin";
 import { clearLastRole } from "@/src/utils/roleSelection";
 import { AppErrorBoundary } from "@/src/components/AppErrorBoundary";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
+import { UserPlanProvider } from "@/src/stores/userPlanStore";
 
 // ===================== Sentry init (Front-end Crash Reporting) =====================
 const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || "";
@@ -170,20 +171,22 @@ export default function RootLayout() {
 
   return (
     <AppErrorBoundary>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: "#F8FAFC" },
-          animation: "slide_from_right",
-        }}
-      />
-      <Toast
-        visible={!!toast}
-        message={toast?.msg ?? ""}
-        tone={toast?.tone}
-        onHide={() => setToast(null)}
-      />
+      <UserPlanProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: "#F8FAFC" },
+            animation: "slide_from_right",
+          }}
+        />
+        <Toast
+          visible={!!toast}
+          message={toast?.msg ?? ""}
+          tone={toast?.tone}
+          onHide={() => setToast(null)}
+        />
+      </UserPlanProvider>
     </AppErrorBoundary>
   );
 }
