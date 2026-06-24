@@ -31,7 +31,7 @@ export default function PaywallScreen() {
     const res = await purchasePremium();
     setLoading(false);
     if (res.success) {
-      setResult("¡Bienvenido, Fundador! 🏆 Premium activado.");
+      setResult("¡Bienvenido, Miembro Premium! 🏆 Premium activado.");
       setTimeout(() => router.back(), 1500);
     } else {
       setResult(res.reason === "user_cancelled" ? "Compra cancelada" : `Error: ${res.reason}`);
@@ -56,7 +56,7 @@ export default function PaywallScreen() {
     },
     {
       icon: <Crown size={22} color={ELECTRIC} strokeWidth={2.5} />,
-      title: "Estatus de Fundador",
+      title: "Estatus Premium",
       desc: "Insignia exclusiva visible en tu perfil. Reconocimiento permanente en la comunidad.",
     },
   ];
@@ -74,7 +74,7 @@ export default function PaywallScreen() {
             <Crown size={48} color={ELECTRIC} strokeWidth={2.5} />
           </View>
         </View>
-        <Text style={styles.title}>Únete a los Fundadores</Text>
+        <Text style={styles.title}>Hazte Premium</Text>
         <Text style={styles.subtitle}>
           Una sola vez. Para siempre. Sin suscripciones.
         </Text>

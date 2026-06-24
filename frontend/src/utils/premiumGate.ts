@@ -28,11 +28,11 @@ export function gateAntiFlake(isPro: boolean, router: AnyRouter): boolean {
   if (isPro) return true;
   Alert.alert(
     "🛡️ Función Premium",
-    "El filtro Anti-Flake (+90% asistencia) es exclusivo para Miembros Fundadores. " +
+    "El filtro Anti-Flake (+90% asistencia) es exclusivo para Miembros Premium. " +
       "Desbloquea esta y otras funciones con un pago único de por vida.",
     [
       { text: "Ahora no", style: "cancel" },
-      { text: "Ver Plan Fundador", style: "default", onPress: () => openPaywall(router) },
+      { text: "Ver Plan Premium", style: "default", onPress: () => openPaywall(router) },
     ],
   );
   return false;
@@ -46,11 +46,11 @@ export function gateExport(isPro: boolean, router: AnyRouter): boolean {
   if (isPro) return true;
   Alert.alert(
     "📊 Exportación Premium",
-    "Exportar el desglose de pagos y la lista de asistencia requiere el Pase Fundador. " +
+    "Exportar el desglose de pagos y la lista de asistencia requiere el Pase Premium. " +
       "Un pago único · acceso de por vida · cero suscripciones.",
     [
       { text: "Ahora no", style: "cancel" },
-      { text: "Ver Plan Fundador", style: "default", onPress: () => openPaywall(router) },
+      { text: "Ver Plan Premium", style: "default", onPress: () => openPaywall(router) },
     ],
   );
   return false;

@@ -42,7 +42,7 @@ export function useSubscription(): SubscriptionState {
         await new Promise((r) => setTimeout(r, SIMULATED_NATIVE_DELAY_MS));
         await simulatePurchase();
         Alert.alert(
-          "🏆 ¡Bienvenido, Fundador!",
+          "🏆 ¡Bienvenido, Miembro Premium!",
           `Acceso Premium de por vida activado.${packageId ? `\n\nPackage: ${packageId}` : ""}\n\nSandbox · Sin cargo real.`,
           [{ text: "Continuar", style: "default" }],
           { cancelable: false },
@@ -52,7 +52,7 @@ export function useSubscription(): SubscriptionState {
       // Producción → delega a RevenueCat real
       const res = await purchasePremium();
       if (res.success) {
-        Alert.alert("🏆 ¡Bienvenido, Fundador!", "Acceso Premium de por vida activado.");
+        Alert.alert("🏆 ¡Bienvenido, Miembro Premium!", "Acceso Premium de por vida activado.");
       } else if (res.reason !== "user_cancelled") {
         Alert.alert("Error", `No se pudo completar la compra: ${res.reason ?? "desconocido"}`);
       }

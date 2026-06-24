@@ -718,7 +718,7 @@ export default function RetaForm() {
               <Text style={styles.toggleSub}>
                 Sólo permite inscribirse a jugadores con ≥90% de asistencia histórica.
                 Reduce las cancelaciones de último minuto y garantiza retas completas.
-                {isPro ? "" : " · Exclusivo para Miembros Fundadores."}
+                {isPro ? "" : " · Exclusivo para Miembros Premium."}
               </Text>
             </View>
           </TouchableOpacity>

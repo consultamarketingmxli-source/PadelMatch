@@ -2,7 +2,7 @@
  * PremiumPromoCard — Card promocional entre retas pasadas en /mi-cuenta.
  *
  * Cortocircuito: si isPro === true → retorna null (no renderiza nada).
- * Si Free → muestra promo CTA "Elimina anuncios para siempre · $349 MXN"
+ * Si Free → muestra promo CTA "Elimina anuncios para siempre con el Pase Premium"
  */
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -28,7 +28,7 @@ export function PremiumPromoCard() {
         <Ban size={20} color="#ffffff" strokeWidth={2.5} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.title}>Elimina los anuncios para siempre</Text>
+        <Text style={styles.title}>Elimina anuncios para siempre con el Pase Premium</Text>
         <Text style={styles.subtitle}>
           Pago único de $349 MXN · acceso de por vida
         </Text>

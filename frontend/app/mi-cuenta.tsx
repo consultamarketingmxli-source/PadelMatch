@@ -41,7 +41,7 @@ import {
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
-import { FounderProfileCard } from "@/src/components/FounderProfileCard";
+import { PremiumProfileCard } from "@/src/components/PremiumProfileCard";
 import { PremiumPromoCard } from "@/src/components/PremiumPromoCard";
 import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
@@ -212,8 +212,8 @@ export default function MiCuenta() {
           </View>
         </View>
 
-        {/* Tarjeta Fundador Pro — CTA Free / Badge Pro (Sandbox Monetization) */}
-        <FounderProfileCard />
+        {/* Tarjeta Premium — CTA Free / Badge Pro (Sandbox Monetization) */}
+        <PremiumProfileCard />
 
         {/* Stats hero — efectividad gigante */}
         <View style={styles.heroCard}>

@@ -17,7 +17,7 @@ import { api, PlayerStats } from "@/src/api";
 import { Input } from "@/src/components/Input";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { CTAButton } from "@/src/components/brand/CTAButton";
-import { FounderProfileCard } from "@/src/components/FounderProfileCard";
+import { PremiumProfileCard } from "@/src/components/PremiumProfileCard";
 import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 
@@ -63,8 +63,8 @@ export default function ProfileScreen() {
             style={{ marginBottom: spacing.lg }}
           />
 
-          {/* Tarjeta Fundador Pro — visible en Free y Pro (Sandbox Monetization) */}
-          <FounderProfileCard />
+          {/* Tarjeta Premium — visible en Free y Pro (Sandbox Monetization) */}
+          <PremiumProfileCard />
 
           <Input
             label="Tu teléfono"
