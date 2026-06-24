@@ -20,6 +20,7 @@ import { ShieldCheck, Repeat, User } from "lucide-react-native";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 import { RetaCardPremium } from "@/src/components/brand/RetaCardPremium";
+import { AdBanner } from "@/src/components/AdBanner";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { BrandHeader } from "@/src/components/BrandHeader";
 import { EmptyState } from "@/src/components/EmptyState";
@@ -187,6 +188,7 @@ export default function HomeScreen() {
               }
             />
           }
+          ListFooterComponent={<AdBanner />}
         />
       )}
 

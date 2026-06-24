@@ -59,6 +59,13 @@
           "project": "padelappretas-mobile",
           "url": "https://sentry.io/"
         }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-5641434677902126~1440922796",
+          "userTrackingPermission": "Permíteme mostrarte anuncios relevantes para apoyar PadelAppRetas."
+        }
       ]
     ],
     "experiments": {

@@ -88,7 +88,9 @@ export default function RetaForm() {
   const [horaStr, setHoraStr] = useState("");
 
   // Capacidad elástica
-  const [maxJugadores, setMaxJugadores] = useState<number>(8);
+  // Capacidad — default 6 (formato Mexicano con rotación · suplentes en banca).
+  // El usuario puede ajustar a cualquier valor del set curado: 4, 6, 8, 12...
+  const [maxJugadores, setMaxJugadores] = useState<number>(6);
   const [costo, setCosto] = useState("250");
   const [modo, setModo] = useState<Modo>("PUNTOS");
   const [rondas, setRondas] = useState<Rondas>(7);
@@ -121,7 +123,8 @@ export default function RetaForm() {
   // A = Puntos netos individual · B = Puntos netos por pareja · C = Ratio favor/contra
   const [criterioDesempate, setCriterioDesempate] = useState<"A" | "B" | "C">("A");
   // Jugadores por cancha (default 4 = pádel clásico)
-  const [jugadoresPorCancha, setJugadoresPorCancha] = useState<number>(4);
+  // Jugadores por cancha — default 6 (formato Mexicano: 4 en cancha + 2 suplentes en rotación).
+  const [jugadoresPorCancha, setJugadoresPorCancha] = useState<number>(6);
   // KO 3-0 (solo aplicable a formato PUNTOS con cap=5)
   const [koEnabled, setKoEnabled] = useState<boolean>(false);
 
@@ -466,9 +469,10 @@ export default function RetaForm() {
           <Text style={styles.sectionLabel}>CAPACIDAD DE JUGADORES</Text>
           <Text style={styles.hintText}>
             <Users size={11} color={colors.text.secondary} />
-            {"  "}En pádel clásico se juega en parejas (4, 8, 12…). La variante{" "}
+            {"  "}Por defecto{" "}
             <Text style={{ fontWeight: "700", color: colors.brand.azure }}>6 jugadores</Text>
-            {" "}admite rotación con 2 en banca por cancha (formato Mexicano).
+            {" "}(formato Mexicano · 4 en cancha + 2 suplentes en rotación dinámica).
+            También admite múltiplos de 4 (4, 8, 12…) para retas en parejas tradicionales.
           </Text>
           <View style={styles.chipsRow}>
             {CAPACIDADES.map((n) => {
