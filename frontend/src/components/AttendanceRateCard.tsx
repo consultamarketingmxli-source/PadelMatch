@@ -44,6 +44,8 @@ type Props = {
   threshold?: number;
   /** Sólo se renderiza si la reta tiene el filtro activo. */
   enabled: boolean;
+  /** Etiqueta opcional para distinguir cuando hay varias tarjetas (ej. "Tu compañero/a"). */
+  label?: string;
 };
 
 export const AttendanceRateCard: React.FC<Props> = ({
@@ -51,6 +53,7 @@ export const AttendanceRateCard: React.FC<Props> = ({
   telefono,
   threshold = 90,
   enabled,
+  label,
 }) => {
   const [data, setData] = useState<CheckResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,6 +91,10 @@ export const AttendanceRateCard: React.FC<Props> = ({
 
   if (!enabled) return null;
 
+  // Helper para anteponer la etiqueta cuando se renderizan varias tarjetas.
+  // Ej: label="Tu compañero/a" → "Tu compañero/a · Pasas el filtro · 100% asistencia"
+  const tagged = (s: string) => (label ? `${label} · ${s}` : s);
+
   // === Estado: idle (sin teléfono aún) ===
   const tel = (telefono || "").trim();
   if (tel.length < MIN_PHONE_LEN) {
@@ -97,10 +104,11 @@ export const AttendanceRateCard: React.FC<Props> = ({
           <ShieldAlert size={20} color={colors.brand.azure} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.title}>Filtro Anti-Flake activo</Text>
+          <Text style={s.title}>{tagged("Filtro Anti-Flake activo")}</Text>
           <Text style={s.subtitle}>
-            Esta reta requiere ≥{threshold}% de asistencia histórica. Te confirmamos
-            tu elegibilidad al ingresar tu teléfono.
+            {label
+              ? `Confirma la elegibilidad de tu compañero/a al ingresar su teléfono. Requisito: ≥${threshold}% asistencia.`
+              : `Esta reta requiere ≥${threshold}% de asistencia histórica. Te confirmamos tu elegibilidad al ingresar tu teléfono.`}
           </Text>
         </View>
       </View>
@@ -113,8 +121,8 @@ export const AttendanceRateCard: React.FC<Props> = ({
       <View style={[s.card, s.idleCard]}>
         <ActivityIndicator size="small" color={colors.brand.azure} />
         <View style={{ flex: 1, marginLeft: spacing.sm }}>
-          <Text style={s.title}>Verificando tu asistencia…</Text>
-          <Text style={s.subtitle}>Consultando tu historial reciente.</Text>
+          <Text style={s.title}>{tagged("Verificando asistencia…")}</Text>
+          <Text style={s.subtitle}>Consultando el historial reciente.</Text>
         </View>
       </View>
     );
@@ -128,7 +136,7 @@ export const AttendanceRateCard: React.FC<Props> = ({
           <AlertCircle size={20} color={colors.status.amberText} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[s.title, { color: colors.status.amberText }]}>{error || "Verificación no disponible"}</Text>
+          <Text style={[s.title, { color: colors.status.amberText }]}>{tagged(error || "Verificación no disponible")}</Text>
           <Text style={[s.subtitle, { color: colors.status.amberText }]}>Continúa tu inscripción normalmente.</Text>
         </View>
       </View>
@@ -143,10 +151,10 @@ export const AttendanceRateCard: React.FC<Props> = ({
           <Sparkles size={20} color={colors.status.amberText} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[s.title, { color: colors.status.amberText }]}>Bienvenido — exento</Text>
+          <Text style={[s.title, { color: colors.status.amberText }]}>{tagged("Bienvenido — exento")}</Text>
           <Text style={[s.subtitle, { color: colors.status.amberText }]}>
-            Aún no tienes suficiente historial ({data.sample_size}/{data.min_sample} retas).
-            Te damos el beneficio de la duda · podrás inscribirte.
+            {label ? "Aún" : "Aún no tienes"} suficiente historial ({data.sample_size}/{data.min_sample} retas).
+            {label ? " Tu compañero/a recibe el beneficio de la duda · podrá inscribirse." : " Te damos el beneficio de la duda · podrás inscribirte."}
           </Text>
         </View>
       </View>
@@ -162,11 +170,11 @@ export const AttendanceRateCard: React.FC<Props> = ({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[s.title, { color: colors.status.greenText }]}>
-            Pasas el filtro · {data.rate_pct}% asistencia
+            {tagged(`Pasa el filtro · ${data.rate_pct}% asistencia`)}
           </Text>
           <Text style={[s.subtitle, { color: colors.status.greenText }]}>
-            Mínimo requerido: {data.threshold}% · {data.sample_size} retas en tu
-            historial. ¡Eres jugador confiable!
+            Mínimo requerido: {data.threshold}% · {data.sample_size} retas en historial.
+            {label ? " Tu compañero/a es confiable." : " ¡Eres jugador confiable!"}
           </Text>
         </View>
       </View>
@@ -181,12 +189,14 @@ export const AttendanceRateCard: React.FC<Props> = ({
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[s.title, { color: colors.status.redText }]}>
-          No cumples el filtro · {data.rate_pct}%
+          {tagged(`No cumple el filtro · ${data.rate_pct}%`)}
         </Text>
         <Text style={[s.subtitle, { color: colors.status.redText }]}>
           El organizador exige mínimo {data.threshold}% de asistencia.
-          Tu historial: {data.sample_size} retas pasadas. No podrás
-          completar el checkout en esta reta.
+          {label ? " Tu compañero/a tiene " : " Tu historial: "}{data.sample_size} retas pasadas.
+          {label
+            ? " La pareja no podrá completar el checkout. Cambia de compañero/a."
+            : " No podrás completar el checkout en esta reta."}
         </Text>
       </View>
     </View>

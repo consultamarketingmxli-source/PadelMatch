@@ -613,7 +613,19 @@ export default function RetaDetailScreen() {
             telefono={telefono}
             threshold={(reta as any).asistencia_minima_pct ?? 90}
             enabled={!!(reta as any).requiere_alta_asistencia}
+            label="Tú"
           />
+
+          {/* Feedback visual P3 — mismo gate para el compañero/a en retas de parejas. */}
+          {esRetaParejas && regMode === "duo" ? (
+            <AttendanceRateCard
+              retaId={reta.id}
+              telefono={parejaTelefono}
+              threshold={(reta as any).asistencia_minima_pct ?? 90}
+              enabled={!!(reta as any).requiere_alta_asistencia}
+              label="Tu compañero/a"
+            />
+          ) : null}
 
           {/* Fase A — Tarjeta RSVP para retas gratuitas. */}
           {esGratisAmigos ? (
