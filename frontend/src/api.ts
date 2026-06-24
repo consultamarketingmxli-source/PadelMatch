@@ -650,6 +650,20 @@ export const api = {
       body,
     }),
 
+  // ===== Anti-Flake informativo (P2) =====
+  /** Devuelve el rate de asistencia histórico del jugador para esta reta.
+   *  Informativo · no bloquea ni reserva nada. */
+  asistenciaCheck: (retaId: string, telefono: string) =>
+    request<{
+      gate_on: boolean;
+      threshold: number;
+      rate_pct: number;
+      sample_size: number;
+      exento: boolean;
+      passes: boolean;
+      min_sample: number;
+    }>(`/public/retas/${retaId}/asistencia-check?telefono=${encodeURIComponent(telefono)}`),
+
   // ===== soporte (Fase B) =====
   alertarOrganizador: (
     slug: string,

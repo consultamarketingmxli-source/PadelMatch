@@ -40,6 +40,7 @@ import {
 } from "lucide-react-native";
 
 import { api, Reta } from "@/src/api";
+import { AttendanceRateCard } from "@/src/components/AttendanceRateCard";
 import { TrafficLight } from "@/src/components/TrafficLight";
 import { buildPagoReturnUrl } from "@/src/utils/deepLink";
 import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
@@ -605,6 +606,14 @@ export default function RetaDetailScreen() {
               <Text style={styles.verifyTxt}>Confirmando tu pago…</Text>
             </View>
           ) : null}
+
+          {/* Feedback visual P2 — sólo si la reta tiene Anti-Flake activado. */}
+          <AttendanceRateCard
+            retaId={reta.id}
+            telefono={telefono}
+            threshold={(reta as any).asistencia_minima_pct ?? 90}
+            enabled={!!(reta as any).requiere_alta_asistencia}
+          />
 
           {/* Fase A — Tarjeta RSVP para retas gratuitas. */}
           {esGratisAmigos ? (

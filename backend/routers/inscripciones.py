@@ -19,11 +19,13 @@ from core.concurrency import (
     siguiente_posicion_waitlist_atomica,
 )
 from core.helpers import (
+    MIN_SAMPLE_FOR_ANTIFLAKE,
     assert_player_passes_antiflake,
     assert_reta_no_cerrada,
     crear_inscripcion_free_agent_pendiente,
     crear_inscripcion_pareja_pendiente,
     crear_inscripcion_pendiente,
+    player_attendance_rate,
     promover_lista_espera,
 )
 from models import (
@@ -198,3 +200,49 @@ async def join_waitlist(reta_id: str, body: WaitlistCreate):
     doc["creado_en"] = doc["creado_en"].isoformat()
     await db.lista_espera.insert_one(doc)
     return entry
+
+
+# ============================================================================
+# Public — Asistencia Check (P2 · Visual feedback Anti-Flake)
+# ============================================================================
+@router.get("/public/retas/{reta_id}/asistencia-check")
+async def public_asistencia_check(reta_id: str, telefono: str):
+    """Devuelve si un jugador (por teléfono) pasaría el gate Anti-Flake.
+
+    Endpoint informativo · NO bloquea ni reserva nada. Sirve para que la
+    pantalla pública de inscripción muestre feedback visual antes de que
+    el jugador intente checkout.
+
+    Returns:
+        gate_on: bool — si la reta tiene el filtro activo.
+        threshold: int — porcentaje mínimo requerido (default 90).
+        rate_pct: float — tasa de asistencia histórica del jugador.
+        sample_size: int — número de retas pasadas Aprobadas.
+        exento: bool — si sample < MIN_SAMPLE_FOR_ANTIFLAKE.
+        passes: bool — si el jugador pasaría el gate.
+    """
+    # Saneamos teléfono mínimo para evitar lookup vacíos. No autenticamos
+    # porque es un check informativo (no expone datos sensibles).
+    tel = (telefono or "").strip()
+    if len(tel) < 8:
+        raise HTTPException(400, "Teléfono inválido")
+
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0, "requiere_alta_asistencia": 1, "asistencia_minima_pct": 1})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+
+    gate_on = bool(reta.get("requiere_alta_asistencia", False))
+    threshold = int(reta.get("asistencia_minima_pct") or 90)
+    rate_pct, sample_size = await player_attendance_rate(tel)
+    exento = sample_size < MIN_SAMPLE_FOR_ANTIFLAKE
+    passes = (not gate_on) or exento or rate_pct >= threshold
+    return {
+        "gate_on": gate_on,
+        "threshold": threshold,
+        "rate_pct": rate_pct,
+        "sample_size": sample_size,
+        "exento": exento,
+        "passes": passes,
+        "min_sample": MIN_SAMPLE_FOR_ANTIFLAKE,
+    }
+
