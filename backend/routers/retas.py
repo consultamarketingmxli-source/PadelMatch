@@ -407,12 +407,13 @@ def _sugerencia_capacidad(max_jug: int, inscritos: int) -> str | None:
     Sembrar conciencia al organizador antes de que reciba inscripciones impares
     o sobrecapacidad. Mensajes cortos, listos para mostrar en banner.
     """
-    if max_jug % 4 != 0:
+    # 6 es la única capacidad "no múltiplo de 4" soportada (rotación).
+    if max_jug != 6 and max_jug % 4 != 0:
         # No debería pasar (Pydantic ya lo bloquea), defensivo.
         sugerido = max(4, (max_jug // 4) * 4)
         return (
-            f"Tu capacidad {max_jug} no es múltiplo de 4. Te sugerimos {sugerido} "
-            "o habilitar lista de espera."
+            f"Tu capacidad {max_jug} no es múltiplo de 4 ni 6. Te sugerimos "
+            f"{sugerido} o habilitar lista de espera."
         )
     if inscritos >= max_jug:
         return (

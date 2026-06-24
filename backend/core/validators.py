@@ -71,11 +71,13 @@ def _validate_observaciones(raw: str) -> str:
 
 
 def _validate_jugadores_par4(n: int) -> int:
-    """Capacidad de reta de pádel: múltiplo de 4, entre 4 y 32.
+    """Capacidad de reta de pádel: tamaño curado entre 4 y 32.
 
-    El pádel se juega en parejas, por eso exigimos múltiplos de 4. El piso
-    de 4 permite la reta minimalista (1 cancha, 3 partidos americanos), y
-    el techo de 32 garantiza que el algoritmo de rol corra rápido.
+    El pádel se juega en parejas (múltiplos de 4) en la mayoría de los casos.
+    Se admite la excepción **6** (formato "Mexicano triple" / rotación con
+    banca) que un organizador Pro puede elegir para retas con 2 jugadores en
+    banca/rotación por cancha de 4. El techo de 32 garantiza que el algoritmo
+    de rol corra rápido.
     """
     if not isinstance(n, int) or isinstance(n, bool):
         raise ValueError("max_jugadores debe ser entero")
@@ -83,11 +85,14 @@ def _validate_jugadores_par4(n: int) -> int:
         raise ValueError(
             f"max_jugadores debe estar entre {JUGADORES_MIN} y {JUGADORES_MAX}."
         )
-    if n % 4 != 0:
-        sugerido = max(JUGADORES_MIN, (n // 4) * 4)
+    # Set curado: 6 es la única capacidad "no par-4" permitida (rotación).
+    permitidas = {4, 6, 8, 12, 16, 20, 24, 28, 32}
+    if n not in permitidas:
+        # Mensaje útil: sugerir el más cercano dentro del set.
+        sugerido = min(permitidas, key=lambda x: abs(x - n))
         raise ValueError(
-            f"El pádel se juega en parejas (múltiplos de 4). "
-            f"Te sugerimos cambiar a {sugerido} jugadores o habilitar lista de espera."
+            f"Capacidad {n} no soportada. Te sugerimos {sugerido} (múltiplo "
+            f"de 4 estándar o la variante 6 con rotación)."
         )
     return n
 

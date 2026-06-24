@@ -49,7 +49,11 @@ type Rondas = 5 | 6 | 7;
 type Unidad = FormatoScore["unidad"];
 
 // Múltiplos de 4 permitidos (4..32). Visible como chips.
-const CAPACIDADES = [4, 8, 12, 16, 20, 24, 28, 32];
+const CAPACIDADES = [4, 6, 8, 12, 16, 20, 24, 28, 32];
+
+/** Conjunto curado de capacidades válidas — mantén sincronizado con
+ *  backend/core/validators._validate_jugadores_par4 (set permitidas). */
+const CAPACIDADES_SET = new Set(CAPACIDADES);
 
 // Valores rápidos por unidad para el FormatoScore.
 const VALORES_POR_UNIDAD: Record<Unidad, number[]> = {
@@ -213,11 +217,14 @@ export default function RetaForm() {
       Alert.alert("Faltan datos", "Nombre, club, fecha y hora son obligatorios");
       return;
     }
-    if (maxJugadores % 4 !== 0) {
-      const sugerido = snapMultiplo4(maxJugadores);
+    if (!CAPACIDADES_SET.has(maxJugadores)) {
+      // Encontrar el más cercano dentro del set curado.
+      const sugerido = [...CAPACIDADES_SET].reduce((prev, curr) =>
+        Math.abs(curr - maxJugadores) < Math.abs(prev - maxJugadores) ? curr : prev,
+      );
       Alert.alert(
         "Capacidad inválida",
-        `El pádel se juega en parejas (múltiplos de 4). ¿Cambiamos a ${sugerido} jugadores?`,
+        `Las capacidades soportadas son: ${CAPACIDADES.join(", ")}. ¿Cambiamos a ${sugerido} jugadores?`,
         [
           { text: "Cancelar", style: "cancel" },
           { text: `Usar ${sugerido}`, onPress: () => setMaxJugadores(sugerido) },
@@ -459,7 +466,9 @@ export default function RetaForm() {
           <Text style={styles.sectionLabel}>CAPACIDAD DE JUGADORES</Text>
           <Text style={styles.hintText}>
             <Users size={11} color={colors.text.secondary} />
-            {"  "}El pádel se juega en parejas: usa múltiplos de 4 (4, 8, 12… hasta 32).
+            {"  "}En pádel clásico se juega en parejas (4, 8, 12…). La variante{" "}
+            <Text style={{ fontWeight: "700", color: colors.brand.azure }}>6 jugadores</Text>
+            {" "}admite rotación con 2 en banca por cancha (formato Mexicano).
           </Text>
           <View style={styles.chipsRow}>
             {CAPACIDADES.map((n) => {
@@ -467,7 +476,14 @@ export default function RetaForm() {
               return (
                 <TouchableOpacity
                   key={n}
-                  onPress={() => setMaxJugadores(n)}
+                  onPress={() => {
+                    setMaxJugadores(n);
+                    // UX nudge: si el organizador elige capacidad 6, asumimos
+                    // formato Mexicano (1 cancha · 6 jug. con 2 en banca).
+                    if (n === 6 && jugadoresPorCancha !== 6) {
+                      setJugadoresPorCancha(6);
+                    }
+                  }}
                   style={[styles.chip, active && styles.chipActive]}
                   activeOpacity={0.7}
                   testID={`form-cap-${n}`}
@@ -479,7 +495,7 @@ export default function RetaForm() {
           </View>
           <Text style={styles.estimText} testID="form-canchas-estim">
             Canchas estimadas: <Text style={{ fontWeight: "800", color: colors.text.primary }}>{canchasEstimadas}</Text>
-            {"  ·  "}Cada cancha = 8 jugadores · remanente de 4 = 1 cancha mini.
+            {"  ·  "}Cancha estándar = 8 jugadores · 6 jug. (rotación) = 1 cancha mini con banca.
           </Text>
 
           {/* MODALIDAD DE REGISTRO — Fase 1: soporte parejas */}
