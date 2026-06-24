@@ -40,6 +40,8 @@ import { FormatoScore, api } from "@/src/api";
 import { Button } from "@/src/components/Button";
 import { ClubAutocomplete } from "@/src/components/ClubAutocomplete";
 import { Input } from "@/src/components/Input";
+import { useSubscription } from "@/src/hooks/useSubscription";
+import { gateAntiFlake, gateExport } from "@/src/utils/premiumGate";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
 type Modo = "PUNTOS" | "TIEMPO";
@@ -67,6 +69,7 @@ export default function RetaForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const isNew = id === "new";
+  const { isPro } = useSubscription();
 
   const [loading, setLoading] = useState(!isNew);
   const [submitting, setSubmitting] = useState(false);
@@ -117,6 +120,11 @@ export default function RetaForm() {
   const [jugadoresPorCancha, setJugadoresPorCancha] = useState<number>(4);
   // KO 3-0 (solo aplicable a formato PUNTOS con cap=5)
   const [koEnabled, setKoEnabled] = useState<boolean>(false);
+
+  // Filtro Anti-Flake (+90% asistencia) — FEATURE PRO (Sandbox Monetization)
+  // Solo visualmente activable si el organizador es Pro. Local state (sin
+  // persistir aún en backend; sólo demostración del gating).
+  const [antiFlakeEnabled, setAntiFlakeEnabled] = useState<boolean>(false);
 
   const esParejas = modalidadRegistro !== "individual";
 
@@ -300,6 +308,8 @@ export default function RetaForm() {
       Alert.alert("Guarda primero", "Crea la reta antes de generar el PDF");
       return;
     }
+    // Premium gate: exportar Rol PDF es feature Pro (Sandbox Monetization)
+    if (!gateExport(isPro, router)) return;
     try {
       const url = await api.generatePdfUrl(retaIdReal, [], rondas);
       if (Platform.OS === "web") {
@@ -329,6 +339,8 @@ export default function RetaForm() {
       Alert.alert("Guarda primero", "Crea la reta antes de exportar");
       return;
     }
+    // Premium gate: exportar CSV/PDF es feature Pro (Sandbox Monetization)
+    if (!gateExport(isPro, router)) return;
     try {
       const url = await fetcher();
       if (Platform.OS === "web") {
@@ -660,6 +672,35 @@ export default function RetaForm() {
               </View>
             </TouchableOpacity>
           ) : null}
+
+          {/* Filtro Anti-Flake (+90% asistencia) — Pro feature (Sandbox Monetization) */}
+          <TouchableOpacity
+            testID="form-antiflake-toggle"
+            onPress={() => {
+              // Si NO es Pro → abre paywall, no toggle.
+              if (!antiFlakeEnabled) {
+                if (!gateAntiFlake(isPro, router)) return;
+              }
+              setAntiFlakeEnabled((v) => !v);
+            }}
+            activeOpacity={0.7}
+            style={[styles.toggleRow, antiFlakeEnabled && styles.toggleRowActive]}
+          >
+            <View style={[styles.toggleBox, antiFlakeEnabled && styles.toggleBoxActive]}>
+              {antiFlakeEnabled ? <Text style={styles.toggleCheck}>✓</Text> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>
+                Filtro Anti-Flake (+90% asistencia){"  "}
+                <Text style={{ color: colors.brand.azure, fontSize: 10 }}>PRO</Text>
+              </Text>
+              <Text style={styles.toggleSub}>
+                Sólo permite inscribirse a jugadores con ≥90% de asistencia histórica.
+                Reduce las cancelaciones de último minuto y garantiza retas completas.
+                {isPro ? "" : " · Exclusivo para Miembros Fundadores."}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
           {/* ====== Fase 1 (Sección 1) — Parametrización extendida ====== */}
           <Text style={styles.sectionLabel}>JUGADORES POR CANCHA</Text>

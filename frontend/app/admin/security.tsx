@@ -37,6 +37,8 @@ import {
 import { api } from "@/src/api";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { useSubscription } from "@/src/hooks/useSubscription";
+import { gateExport } from "@/src/utils/premiumGate";
 import { infoAlert } from "@/src/utils/confirmAlert";
 import { downloadAdminCsv } from "@/src/utils/downloadCsv";
 
@@ -77,6 +79,7 @@ function formatRelative(iso: string | null): string {
 
 export default function AdminSecurityScreen() {
   const router = useRouter();
+  const { isPro } = useSubscription();
   const [stats, setStats] = useState<Stats | null>(null);
   const [items, setItems] = useState<LogItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -160,6 +163,8 @@ export default function AdminSecurityScreen() {
 
   const onExportCsv = async () => {
     if (exporting) return;
+    // Premium gate: exportar audit log es feature Pro (Sandbox Monetization)
+    if (!gateExport(isPro, router)) return;
     setExporting(true);
     try {
       const path = api.adminSecurityLogsCsvPath({

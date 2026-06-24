@@ -41,6 +41,8 @@ import {
 import { PlayerInscripcion, PlayerStats, PlayerWaitlistItem, api } from "@/src/api";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
+import { FounderProfileCard } from "@/src/components/FounderProfileCard";
+import { PremiumPromoCard } from "@/src/components/PremiumPromoCard";
 import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { confirmAlert, infoAlert } from "@/src/utils/confirmAlert";
 import { LEGAL_URLS, openExternalLink } from "@/src/utils/legalLinks";
@@ -210,6 +212,9 @@ export default function MiCuenta() {
           </View>
         </View>
 
+        {/* Tarjeta Fundador Pro — CTA Free / Badge Pro (Sandbox Monetization) */}
+        <FounderProfileCard />
+
         {/* Stats hero — efectividad gigante */}
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>EFECTIVIDAD</Text>
@@ -254,6 +259,9 @@ export default function MiCuenta() {
         ) : (
           inscripciones.map((ins) => <InscRow key={ins.id} ins={ins} router={router} />)
         )}
+
+        {/* Promo Premium — sólo visible para usuarios Free (Sandbox Monetization) */}
+        <PremiumPromoCard />
 
         {/* === Privacidad y Seguridad (Apple App Store 5.1.1) === */}
         <Text style={styles.section}>Privacidad y seguridad</Text>
