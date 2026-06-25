@@ -43,8 +43,20 @@ def event_loop():
 
 
 def run(coro):
-    """Helper: ejecuta una coroutine y devuelve su resultado."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Helper: ejecuta una coroutine y devuelve su resultado.
+
+    Robust against Python 3.10+ deprecation: si no hay loop activo en el
+    thread, crea uno nuevo y lo usa. Esto permite que el test funcione sin
+    pytest-asyncio instalado.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 # ============================================================================

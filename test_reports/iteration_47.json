@@ -1,0 +1,65 @@
+{
+  "summary": "Iter47 (Deep Linking + Push Tokens) backend testing — 17/17 NEW iter47 tests PASS plus full smoke regression. Created /app/backend/tests/test_iter47_deeplink_push.py covering: (a) AASA + assetlinks.json structure/content-type via BACKEND DIRECT (localhost:8001) — all 4 PASS; (b) POST /api/register-push happy path for android/ios/web — all return 201 with status='pending_deploy' as designed while EMERGENT_PUSH_KEY=placeholder (upstream 401 handled gracefully, backend does NOT crash); (c) Pydantic 422 validation on user_id empty/missing, invalid platform, short device_token, missing device_token — all 5 parametrized cases PASS; (d) Idempotent upsert into db.push_registrations (2 calls same user_id → 1 doc) PASS; (e) Audit doc stores token_fingerprint (first 8 chars + '...') NOT the full token — PASS; (f) Smoke regression: GET /api/ 200, admin login 200 with JWT, GET /api/public/retas/buscar 200. INFRA_NOTE: .well-known/* paths via the public preview URL hit the Expo SPA (frontend on :3000) because the K8s ingress only forwards /api/* to backend — those 2 tests SKIP with a flag. Backend code is correct; production padelappretas.app DNS/ingress must route /.well-known/* to the backend container for Universal/App Links to validate on devices. Iter45 regression: 16/16 PASS. Iter46 regression: 12/17 PASS — 5 ERROR (event loop binding in motor client across per-test new loops) are a PRE-EXISTING infrastructure flake unrelated to iter47 changes; applied small `run()` helper hardening that recovered 2 of them.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/.well-known/apple-app-site-association AND /.well-known/assetlinks.json (public ingress)",
+        "issue": "Backend serves both correctly with 200 + Content-Type application/json on direct hit (localhost:8001), but the K8s preview ingress only forwards /api/* to the backend. Via the public preview URL these paths return the Expo SPA HTML. PRODUCTION padelappretas.app DNS/ingress MUST route /.well-known/* to the backend container, otherwise Apple's CDN fetch (for Universal Links) and Android's autoVerify (App Links) will fail. Also: AASA appIDs still contain placeholder TEAM_ID_TODO and assetlinks has SHA256_FINGERPRINT_TODO_REPLACE_AFTER_BUILD — must be replaced before App Store / Play Store submission."
+      },
+      {
+        "endpoint": "POST /api/register-push",
+        "issue": "Behavior CORRECT (returns 201 status='pending_deploy' when EMERGENT_PUSH_KEY=placeholder). Reminder: Once deployer injects real key, the same path will return status='registered' — frontend should accept both as success."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter47_deeplink_push.py",
+    "/app/test_reports/pytest/iter47_deeplink_push.xml",
+    "/app/test_reports/pytest/iter47_regression_iter45_46.xml"
+  ],
+  "detailed_results": {
+    "TestWellKnownBackendDirect (4/4)": "PASS — AASA 200/application-json with applinks.details[].appIDs and components[].'/'=='/retas/*'; assetlinks 200/application-json with relation=['delegate_permission/common.handle_all_urls'], namespace='android_app', package_name='com.padelappretas.app', sha256_cert_fingerprints non-empty list.",
+    "TestWellKnownPublicURL (0 PASS / 2 SKIP)": "INFRA_NOTE — public URL returns Expo SPA HTML (200 text/html) instead of JSON because ingress only routes /api/*. Backend code is correct; deployment ingress must be updated.",
+    "TestRegisterPush::test_register_push_android_pending_deploy": "PASS — 201 with {status:'pending_deploy', user_id} when upstream returns 401 (placeholder key). Backend NO crash, log warning emitted.",
+    "TestRegisterPush::test_register_push_ios": "PASS",
+    "TestRegisterPush::test_register_push_web": "PASS",
+    "TestRegisterPush::test_register_push_validation_422 (5 parametrized)": "ALL PASS — user_id empty, missing user_id, invalid platform 'linux', device_token <10 chars, missing device_token all return 422 with Pydantic error pointing at the right field.",
+    "TestRegisterPush::test_register_push_idempotent_upsert": "PASS — 2 calls same user_id with different tokens → exactly 1 doc in db.push_registrations.",
+    "TestRegisterPush::test_audit_stores_fingerprint_not_full_token": "PASS — doc.token_fingerprint == device_token[:8]+'...' and full token NOT present anywhere in doc.",
+    "TestRegressionSmoke (3/3)": "PASS — GET /api/ 200 + 'ok'; POST /api/auth/login admin 200 with access_token; GET /api/public/retas/buscar 200 list.",
+    "Iter45 regression (16/16)": "FULL PASS — TestJobsWorker, TestAdminEndpoints, test_promover_lista_espera_returns_none_when_empty, test_helpers_imports_clean, test_transactions_module_present, test_mercadopago_refundar_pago_present, etc.",
+    "Iter46 regression (12/17)": "PARTIAL — TestSafeTransactionFallback (2/2 PASS after run() helper fix), TestPublicBuscarSanitization (10/10 PASS). 5 ERROR in TestMPOverflowRefund + TestStripeOverflowRefund fixture setup: motor AsyncIOMotorClient bound to closed event loop (pre-existing flake unrelated to iter47; was flagged as 'future-proof' in iter46 report). NOT caused by iter47 changes — iter47 only adds push_router and wellknown router which don't touch core.db client lifecycle."
+  },
+  "action_items": [
+    "PRODUCTION ingress for padelappretas.app: configure DNS/reverse-proxy to route /.well-known/apple-app-site-association and /.well-known/assetlinks.json to backend container (currently only /api/* is routed). Without this, iOS Universal Links and Android App Links won't validate on real devices.",
+    "Replace placeholders in /app/backend/routers/wellknown.py before app store submission: IOS_TEAM_ID='TEAM_ID_TODO' → real Apple Developer Team ID; ANDROID_SHA256_FINGERPRINTS=[...'SHA256_FINGERPRINT_TODO_REPLACE_AFTER_BUILD'] → real keystore SHA-256 fingerprints from EAS/Play Console.",
+    "(Optional follow-up, pre-existing) Migrate iter46 tests off `asyncio.get_event_loop()` and the per-test `event_loop` fixture to either pytest-asyncio properly installed or per-fixture `asyncio.new_event_loop()` + `asyncio.set_event_loop()` to fix the 5 motor-client/event-loop-bind ERRORs. Not blocking iter47 — these errors do NOT touch the iter47 code paths."
+  ],
+  "critical_code_review_comments": [
+    "push_router.py and push_service.py are well structured: lazy httpx client singleton, idempotent upsert with token_fingerprint only (no PII risk), graceful 401→pending_deploy mapping, 5xx→502 to client, RequestError→502. No business logic concerns.",
+    "wellknown.py is correct (no /api prefix, application/json media_type, structure matches Apple/Google specs). Note hardcoded placeholders are intentional and clearly TODO-marked.",
+    "Server.py mounts wellknown_router on `app` (not on `api`) — correct. Push router mounted on `api` prefix — correct (POST /api/register-push).",
+    "Frontend files referenced in PRD (usePushRegistration.ts, WaitlistPushPrompt.tsx, deepLinkStore.ts) NOT validated end-to-end — requires native build per the agent-to-agent context note (web preview cannot simulate OS-level Universal Link intent handling).",
+    "Pre-existing iter46 flake: `run()` helper used `asyncio.get_event_loop()` which raises in Python 3.11+; partially patched (2 tests recovered). Full fix would require fixture lifecycle redesign — out of scope for iter47 testing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter47_deeplink_push.py (new — 19 tests)",
+    "/app/backend/tests/test_iter46_acid_refund_overflow.py (minor — hardened `run()` helper to recover from missing/closed event loop on Python 3.11+)"
+  ],
+  "success_rate": {
+    "backend": "iter47=17/17 PASS (100%) + 2 SKIP (infra); iter45=16/16 PASS; iter46=12/17 PASS (pre-existing event-loop flake, unrelated to iter47)",
+    "frontend": "N/A (backend only per review_request.testing_type)"
+  },
+  "seed_data_creation": "Test fixtures create disposable push_registrations docs with user_id prefix TEST_iter47_ and delete them in module teardown. No persistent seed data added.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter47 backend fully validated. Canonical regression command: `pytest backend/tests/test_iter47_deeplink_push.py backend/tests/test_iter45_waitlist_acid.py -v` (33 PASS, 2 SKIP). For iter46 add the fix already applied; remaining 5 ERROR are a motor/event-loop fixture issue NOT caused by iter47. Frontend deep-linking (Expo Router parsing of padelappretas:// + Universal Links) REQUIRES a native EAS build to validate — Expo Go web preview cannot simulate OS-level intent handling, so it's intentionally out of scope here.",
+  "rca_of_issue": "Two infra observations (not bugs in iter47 code): (1) Preview K8s ingress does not route /.well-known/* to backend — production ingress at padelappretas.app must route those paths to the backend container. (2) AASA + assetlinks contain TEAM_ID/SHA-256 placeholders that must be replaced before submitting to App Store/Play Store. Iter46 5-error pre-existing flake (motor client bound to closed loop) is documented but not a regression introduced by iter47."
+}

@@ -37,6 +37,7 @@ import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
+import { deepLinkStore } from "@/src/utils/deepLinkStore";
 import { LegalConsent } from "@/src/components/LegalConsent";
 import { acceptLegal } from "@/src/utils/legalConsent";
 
@@ -87,6 +88,19 @@ export default function PlayerLogin() {
         const roles = await api.playerMyRoles(r.access_token);
         const lastRole = await getLastRole();
         const next = decideNextRoute(roles, lastRole);
+        // ===== Pending Deep Link (Universal/App Link previo al login) =====
+        // Si el usuario llegó tocando un link de WhatsApp y aún no estaba
+        // autenticado, el _layout guardó la ruta destino. La consumimos AHORA
+        // (post-OTP) — toma prioridad sobre la ruta del rol.
+        try {
+          const pending = await deepLinkStore.consume();
+          if (pending) {
+            router.replace(pending as any);
+            return;
+          }
+        } catch {
+          /* swallow — caemos al flujo normal */
+        }
         router.replace(next as any);
       } catch {
         router.replace("/mi-cuenta" as any);

@@ -94,6 +94,8 @@ from routers.clubes import router as clubes_public_router
 from routers.soporte import router_admin as soporte_admin_router
 from routers.soporte import router_public as soporte_public_router
 from routers.legal_router import router as legal_router
+from routers.push_router import router as push_router
+from routers.wellknown import router as wellknown_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,8 +137,13 @@ api.include_router(clubes_public_router)
 api.include_router(soporte_public_router)
 api.include_router(soporte_admin_router)
 api.include_router(security_admin_router)
+api.include_router(push_router)
 # Módulo de cumplimiento legal — montado bajo /api/v1/...
 app.include_router(legal_router, prefix="/api")
+
+# Universal/App Links — `.well-known/*` se sirve SIN prefijo /api
+# (Apple y Google requieren la ruta literal en el dominio raíz).
+app.include_router(wellknown_router)
 
 
 @api.get("/")

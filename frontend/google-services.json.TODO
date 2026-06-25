@@ -1,0 +1,32 @@
+# google-services.json — TODO antes de generar build Android nativo
+
+Este archivo se requiere para que las **Push Notifications** funcionen en
+Android (FCM). En este momento opera como **placeholder**.
+
+## Pasos
+
+1. Abrir https://console.firebase.google.com
+2. Crear (o seleccionar) un proyecto Firebase para PadelAppRetas.
+3. Configuración del proyecto → Tus apps → Añadir app Android.
+4. **Nombre de paquete** (EXACTO): `com.padelappretas.app`
+   (debe coincidir con `android.package` en `app.json`).
+5. Saltar configuración SHA-1 (no obligatorio para push).
+6. Descargar `google-services.json`.
+7. **Reemplazar este archivo** (`/app/frontend/google-services.json.TODO`)
+   por el archivo real, renombrándolo a `google-services.json`.
+8. Hacer commit del archivo (NO va a Sentry, NO contiene secretos serios).
+9. Re-ejecutar `eas build --platform android --profile production`.
+
+## Estado actual del flujo de Push
+
+✅ Backend completo: `POST /api/register-push` operativo (modo `pending_deploy`
+   mientras `EMERGENT_PUSH_KEY=placeholder`).
+
+✅ Frontend completo: `usePushRegistration` solicita permisos, obtiene token
+   vía `getDevicePushTokenAsync()` y POSTea al backend automáticamente.
+
+✅ `app.json` ya referencia `./google-services.json` en `android.googleServicesFile`.
+
+⚠️  Hasta que reemplaces este archivo, en builds nativos Android el
+   `getDevicePushTokenAsync()` retornará vacío y el push NO llegará al
+   dispositivo, aunque el resto de la app sigue 100% funcional.

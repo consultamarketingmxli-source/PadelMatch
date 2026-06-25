@@ -785,6 +785,25 @@ export const api = {
       method: "POST",
       body,
     }),
+
+  // ===== Push notifications (Emergent-managed relay) =====
+  /**
+   * Registra el push_token del dispositivo en el backend para que la lista
+   * de espera pueda dispararle notifs de alta prioridad cuando se libere un
+   * cupo. Idempotente — re-registrar el mismo user_id es seguro.
+   *
+   * NOTA: `device_token` debe ser el NATIVO (FCM/APNs) obtenido vía
+   * `Notifications.getDevicePushTokenAsync()`. NUNCA el ExpoPushToken.
+   */
+  registerPush: (body: { user_id: string; platform: "android" | "ios" | "web"; device_token: string }) =>
+    request<{ status: string; user_id: string }>(`/register-push`, {
+      method: "POST",
+      body,
+    }),
+
+  // Helper genérico — usado puntualmente por hooks que no merecen método propio.
+  post: <T = unknown>(path: string, body: unknown) =>
+    request<T>(path, { method: "POST", body }),
   paymentWebhook: (inscripcionId: string, status: "approved" | "failed") =>
     request<{ ok: boolean; status: string }>(`/webhooks/payment`, {
       method: "POST",

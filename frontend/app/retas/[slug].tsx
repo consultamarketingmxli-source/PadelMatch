@@ -48,6 +48,9 @@ import { LifeBuoySupport } from "@/src/components/LifeBuoySupport";
 import { RsvpCard, type RsvpResult } from "@/src/components/retas/RsvpCard";
 import { CheckoutCard, type RegMode, type CuponState } from "@/src/components/retas/CheckoutCard";
 import { WaitlistFullModal } from "@/src/components/retas/WaitlistFullModal";
+import { WaitlistPushPrompt } from "@/src/components/WaitlistPushPrompt";
+import { usePushRegistration } from "@/src/hooks/usePushRegistration";
+import { getPlayerInfo } from "@/src/utils/playerInfo";
 import { HeroBanner } from "@/src/components/brand/HeroBanner";
 import { SmartLoader, Skeleton } from "@/src/components/loaders";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
@@ -87,6 +90,30 @@ export default function RetaDetailScreen() {
     open: boolean;
     joining?: boolean;
   }>({ open: false });
+
+  // ===== Push Permission Prompt (contextual, post-waitlist) =====
+  // Se dispara la PRIMERA vez que el usuario se une a una waitlist y aún
+  // no decidió sobre permisos de notificación. La UX se alinea con la
+  // Opción B confirmada por el usuario: mayor intent → mayor conversión.
+  const [pushPrompt, setPushPrompt] = useState<{
+    open: boolean;
+    user_id?: string | null;
+    retaName?: string;
+  }>({ open: false });
+  const { shouldPromptNow: shouldPromptPushNow } = usePushRegistration({ user_id: null });
+
+  const maybeShowPushPromptAfterWaitlist = useCallback(async (retaName: string) => {
+    try {
+      const ok = await shouldPromptPushNow();
+      if (!ok) return;
+      const info = await getPlayerInfo();
+      const uid = info?.jugador_id || null;
+      // Mostramos el prompt incluso si uid es null (el modal lo informará).
+      setPushPrompt({ open: true, user_id: uid, retaName });
+    } catch {
+      /* swallow — push es no-bloqueante */
+    }
+  }, [shouldPromptPushNow]);
 
   const load = useCallback(async () => {
     if (!slug) return;
@@ -339,6 +366,9 @@ export default function RetaDetailScreen() {
           "Listo",
           `Estás en la lista de espera en posición #${wl.posicion_fila}. Te notificaremos por WhatsApp en cuanto se libere un cupo.`,
         );
+        // UX contextual: tras unirse a la waitlist, ofrecemos activar push
+        // para alertas instantáneas (Opción B confirmada por el usuario).
+        void maybeShowPushPromptAfterWaitlist(reta.nombre);
       } else {
         const successUrl = buildPagoReturnUrl("exito", { provider: "mp", reta_slug: slug });
         const cancelUrl = buildPagoReturnUrl("fallo", { provider: "mp", reta_slug: slug });
@@ -439,6 +469,7 @@ export default function RetaDetailScreen() {
         "¡Listo, eres #" + wl.posicion_fila + " en la fila!",
         "Te avisaremos por WhatsApp en cuanto se libere un cupo.",
       );
+      void maybeShowPushPromptAfterWaitlist(reta.nombre);
       await load();
     } catch (e: any) {
       setWaitlistPrompt({ open: false });
@@ -682,6 +713,14 @@ export default function RetaDetailScreen() {
         esDuo={regMode === "duo"}
         onConfirm={handleJoinWaitlistFromModal}
         onClose={() => setWaitlistPrompt({ open: false })}
+      />
+
+      {/* Push contextual — aparece tras unirse a la waitlist (Opción B UX) */}
+      <WaitlistPushPrompt
+        visible={pushPrompt.open}
+        user_id={pushPrompt.user_id}
+        retaName={pushPrompt.retaName}
+        onClose={() => setPushPrompt({ open: false })}
       />
     </SafeAreaView>
   );

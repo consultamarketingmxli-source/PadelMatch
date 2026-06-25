@@ -1,9 +1,10 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef, useState } from "react";
-import { LogBox } from "react-native";
+import { LogBox, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useSegments } from "expo-router";
+import * as Linking from "expo-linking";
 import * as Sentry from "@sentry/react-native";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
@@ -15,6 +16,35 @@ import { clearLastRole } from "@/src/utils/roleSelection";
 import { AppErrorBoundary } from "@/src/components/AppErrorBoundary";
 import { playerTokenStore } from "@/src/utils/playerTokenStore";
 import { UserPlanProvider } from "@/src/stores/userPlanStore";
+import { deepLinkStore, parseDeepLink } from "@/src/utils/deepLinkStore";
+
+// ===================== Push Notifications · MODULE SCOPE =====================
+// IMPORTANTE: estos imports DEBEN estar guardados antes de tocarse en web
+// (expo-notifications crashea fuera de nativo). Por eso usamos require() lazy.
+//
+// El handler controla cómo se MUESTRA una notif cuando llega en foreground.
+// El channel "default" garantiza que Android tenga el canal listo ANTES de
+// que llegue cualquier push (si no, se descartan).
+if (Platform.OS !== "web") {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Notifications = require("expo-notifications");
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+  if (Platform.OS === "android") {
+    Notifications.setNotificationChannelAsync("default", {
+      name: "Default",
+      importance: Notifications.AndroidImportance.MAX,
+      sound: "default",
+      lightColor: "#2563EB",
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  }
+}
 
 // ===================== Sentry init (Front-end Crash Reporting) =====================
 const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || "";
@@ -166,6 +196,72 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [ready]);
+
+  // ===== Deep Linking + Push tap handling =====
+  // 1. Captura URL inicial (cold-start) — universal/app link o esquema.
+  // 2. Suscribe a URLs nuevas (background → foreground).
+  // 3. Suscribe a taps en notifs push (con `data.action_url` o `deeplink`).
+  // 4. Si el usuario aún no está autenticado, persiste la ruta y deja que
+  //    `/login` la consuma post-OTP.
+  useEffect(() => {
+    if (!ready) return;
+
+    const dispatchUrl = async (rawUrl: string | null | undefined) => {
+      if (!rawUrl) return;
+      const path = parseDeepLink(rawUrl);
+      if (!path) return;
+      const token = await playerTokenStore.get();
+      if (!token) {
+        await deepLinkStore.set(path);
+        const seg = (segmentsRef.current || []).join("/");
+        if (seg !== "login" && seg !== "admin/login") {
+          router.replace("/login" as any);
+        }
+        return;
+      }
+      try {
+        router.push(path as any);
+      } catch {
+        /* swallow */
+      }
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (url) void dispatchUrl(url);
+    });
+
+    const linkSub = Linking.addEventListener("url", (evt) => {
+      void dispatchUrl(evt.url);
+    });
+
+    let notifTapSub: { remove: () => void } | null = null;
+    if (Platform.OS !== "web") {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Notifications = require("expo-notifications");
+      notifTapSub = Notifications.addNotificationResponseReceivedListener(
+        (response: any) => {
+          const data = response?.notification?.request?.content?.data || {};
+          const url: string | undefined = data.action_url || data.deeplink;
+          if (url) void dispatchUrl(url);
+        },
+      );
+      Notifications.getLastNotificationResponseAsync().then((response: any) => {
+        if (!response) return;
+        const data = response?.notification?.request?.content?.data || {};
+        const url: string | undefined = data.action_url || data.deeplink;
+        if (url) void dispatchUrl(url);
+      });
+    }
+
+    return () => {
+      try {
+        linkSub.remove();
+      } catch {
+        /* swallow */
+      }
+      notifTapSub?.remove?.();
+    };
+  }, [ready, router]);
 
   if (!ready) return null;
 

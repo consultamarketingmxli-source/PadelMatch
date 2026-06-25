@@ -1,13 +1,19 @@
-"""Push service — Emergent-managed high-priority push notifications.
+"""Push service — Emergent-managed push notifications (SuprSend relay).
 
-NOTA CRÍTICA:
-  - El push real sólo se activa cuando el `EMERGENT_PUSH_KEY` es reemplazado
-    por su valor real en el deploy. Hasta entonces, queda como `placeholder` y
-    el servicio actúa en modo no-op (logs only).
-  - Expo Go NO soporta push nativas. Sólo funcionan tras build nativo
-    (Android APK / iOS IPA).
-  - El push token de cada jugador se guarda en `db.jugadores[].push_token` (ver
-    `core/db.py`); este servicio lo recupera por `jugador_id`.
+ARQUITECTURA (alineada con el playbook oficial):
+  - El TOKEN del dispositivo lo guarda Emergent vía `POST /register-push`.
+  - El BACKEND llama a `send_push(recipients=[user_id], data={...})` con el
+    `user_id` propio de PadelAppRetas. Emergent resuelve internamente a
+    APNs/FCM y entrega la notif.
+  - El upstream usa header `X-Push-Key: $EMERGENT_PUSH_KEY` (placeholder en
+    dev/preview; deployer lo reemplaza por la key real en producción).
+
+API pública:
+  • `send_high_priority_push(jugador_id, title, body, deeplink=...)` —
+    helper compatible con la firma usada por `core/helpers.py::promover_lista_espera`.
+  • `send_push(recipients, data, idempotency_key=...)` — primitivo bajo nivel.
+
+Resiliencia: cualquier fallo es no-op para el flow (log warning + return False).
 """
 from __future__ import annotations
 
@@ -15,9 +21,87 @@ import logging
 import os
 from typing import Optional
 
-from core.db import db
+import httpx
 
 logger = logging.getLogger("padelappretas.push")
+
+PUSH_BASE_URL = "https://integrations.emergentagent.com"
+PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
+
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Lazy-init httpx client compartido. Permite hot-reload sin leak."""
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            base_url=PUSH_BASE_URL,
+            headers={"X-Push-Key": PUSH_KEY},
+            timeout=10.0,
+        )
+    return _client
+
+
+async def send_push(
+    recipients: list[str],
+    data: dict,
+    idempotency_key: Optional[str] = None,
+) -> bool:
+    """Dispara una notif push a uno o más user_ids vía Emergent relay.
+
+    Args:
+        recipients: lista de user_ids (jugador_id en PadelAppRetas).
+                    Max 100 por llamada (Emergent limit).
+        data: dict con `title` (req), `message` (req), `subtext`, `image_url`,
+              `action_url` (recomendado para tap-to-navigate).
+        idempotency_key: opcional, recomendado para retries.
+
+    Returns:
+        True si Emergent aceptó · False en cualquier otra situación (no-op).
+        Jamás lanza excepción.
+    """
+    if not recipients:
+        return False
+    if len(recipients) > 100:
+        logger.warning("[push] >100 recipients en 1 send — corta antes de llamar.")
+        recipients = recipients[:100]
+    if "title" not in data or "message" not in data:
+        logger.warning("[push] send abortado: faltan title/message en data")
+        return False
+
+    payload: dict = {"recipients": recipients, "data": data}
+    if idempotency_key:
+        payload["$idempotency_key"] = idempotency_key
+
+    try:
+        resp = await _get_client().post("/api/v1/push/trigger", json=payload)
+    except httpx.RequestError as e:
+        logger.warning("[push] send relay error: %s", str(e)[:120])
+        return False
+
+    if resp.status_code == 401:
+        # Key placeholder pre-deploy → no-op silencioso (esperado en preview).
+        logger.info(
+            "[push] modo no-op (401 placeholder) · recipients=%d title='%s'",
+            len(recipients), data.get("title", "")[:40],
+        )
+        return False
+    if resp.status_code >= 500:
+        logger.warning("[push] upstream 5xx · status=%s", resp.status_code)
+        return False
+    if resp.status_code >= 400:
+        logger.warning(
+            "[push] upstream 4xx · status=%s body=%s",
+            resp.status_code, resp.text[:160],
+        )
+        return False
+
+    logger.info(
+        "[push] enviado · recipients=%d title='%s' idem=%s",
+        len(recipients), data.get("title", "")[:40], idempotency_key,
+    )
+    return True
 
 
 async def send_high_priority_push(
@@ -28,53 +112,16 @@ async def send_high_priority_push(
     deeplink: Optional[str] = None,
     idempotency_key: Optional[str] = None,
 ) -> bool:
-    """Envía push de alta prioridad al jugador.
+    """Helper compat con la firma usada por `core/helpers.py`.
 
-    Modo no-op cuando `EMERGENT_PUSH_KEY=placeholder`. En build de producción
-    el deploy inyecta el key real y este servicio dispara la API correspondiente.
-
-    Returns:
-        True si Emergent aceptó · False en cualquier otra situación.
+    Mapea `body` → `data.message` y `deeplink` → `data.action_url` (que el
+    handler del frontend lee para navegar).
     """
-    push_key = os.getenv("EMERGENT_PUSH_KEY")
-    if not push_key or push_key == "placeholder":
-        logger.info(
-            "[push] modo no-op (placeholder) · jugador=%s title='%s' deeplink=%s",
-            jugador_id, title, deeplink,
-        )
-        return False
-
-    # Recuperar push_token desde la colección de jugadores.
-    jug = await db.jugadores.find_one(
-        {"id": jugador_id}, {"_id": 0, "push_token": 1, "nombre": 1}
+    data: dict = {"title": title, "message": body}
+    if deeplink:
+        data["action_url"] = deeplink
+    return await send_push(
+        recipients=[jugador_id],
+        data=data,
+        idempotency_key=idempotency_key,
     )
-    push_token = (jug or {}).get("push_token")
-    if not push_token:
-        logger.warning("[push] jugador %s sin push_token registrado", jugador_id)
-        return False
-
-    # Llamada al endpoint Emergent push (placeholder · se completa en deploy).
-    # Cuando esté activo, este try lanza httpx.post() al endpoint correspondiente.
-    try:
-        import httpx
-        payload = {
-            "to": push_token,
-            "title": title,
-            "body": body,
-            "priority": "high",
-            "data": {"deeplink": deeplink, "idem": idempotency_key},
-        }
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.post(
-                "https://exp.host/--/api/v2/push/send",
-                headers={"Authorization": f"Bearer {push_key}"},
-                json=payload,
-            )
-            r.raise_for_status()
-        logger.info(
-            "[push] enviado · jugador=%s title='%s' idem=%s", jugador_id, title, idempotency_key,
-        )
-        return True
-    except Exception as e:  # pylint: disable=broad-except
-        logger.warning("[push] envío falló · jugador=%s err=%s", jugador_id, str(e)[:120])
-        return False
