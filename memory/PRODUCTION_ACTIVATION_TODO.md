@@ -127,3 +127,75 @@ una vez que el DNS esté configurado en https://resend.com/domains.
 | 3 | Push Emergent                  | Deploy (automático)           |   auto     |
 | 4 | MP Producción                  | Validación KYC MP             |        2h  |
 | 5 | Resend dominio propio          | Acceso al DNS del dominio     |        1h  |
+| 6 | Ingress `/.well-known/*` route | Config K8s producción         |       30m  |
+| 7 | iOS TEAM_ID + Android SHA256   | Cuenta Apple Dev + keystore   |        1h  |
+
+---
+
+## 🔗 6) Ingress Routing para Universal/App Links (CRÍTICO antes de stores)
+
+**Estado actual:** Los endpoints `/.well-known/apple-app-site-association` y
+`/.well-known/assetlinks.json` están **correctamente servidos por el backend
+FastAPI** (testeado con 200 OK + JSON válido en localhost:8001).
+
+⚠️  **Problema en producción:** El ingress K8s actual sólo enruta `/api/*` al
+backend. Cuando Apple/Google intenten verificar los archivos en
+`https://padelappretas.app/.well-known/*`, recibirán el HTML del frontend Expo
+en lugar del JSON del backend → **Universal Links / App Links se desactivan
+silenciosamente**.
+
+**Pasos para activar:**
+
+1. Editar el manifest del Ingress (o `nginx.conf` si es bare-metal):
+   ```yaml
+   - path: /.well-known/
+     pathType: Prefix
+     backend:
+       service:
+         name: backend
+         port:
+           number: 8001
+   ```
+2. Aplicar el cambio (`kubectl apply -f ingress.yaml`).
+3. Verificar tras deploy:
+   ```bash
+   curl -i https://padelappretas.app/.well-known/apple-app-site-association
+   # → 200 + Content-Type: application/json + {"applinks": ...}
+   curl -i https://padelappretas.app/.well-known/assetlinks.json
+   # → 200 + JSON con package_name=com.padelappretas.app
+   ```
+4. Apple cachea el AASA por 24h. Si necesitas forzar revalidación, usar
+   `https://app-site-association.cdn-apple.com/a/v1/padelappretas.app`.
+
+---
+
+## 🍎 7) iOS TEAM_ID + Android SHA-256 Fingerprints
+
+**Estado actual:** `/app/backend/routers/wellknown.py` tiene placeholders:
+- `IOS_TEAM_ID = "TEAM_ID_TODO"`
+- `ANDROID_SHA256_FINGERPRINTS = ["SHA256_FINGERPRINT_TODO_REPLACE_AFTER_BUILD"]`
+
+**Pasos:**
+
+### iOS TEAM_ID
+1. Inscribirse en https://developer.apple.com/programs (USD 99/año).
+2. Account → Membership → copiar `Team ID` (10 chars alfanuméricos).
+3. Editar `wellknown.py` línea 23: `IOS_TEAM_ID = "ABC123XYZ4"`.
+4. Re-deploy backend.
+
+### Android SHA-256 (uno por keystore)
+1. **Para builds locales / debug:**
+   ```bash
+   keytool -list -v -keystore ~/.android/debug.keystore \
+     -alias androiddebugkey -storepass android -keypass android \
+     | grep SHA256
+   ```
+2. **Para builds release (Play App Signing):**
+   - Play Console → tu app → Configuración → Integridad de la app → App signing.
+   - Copiar el `SHA-256 certificate fingerprint`.
+3. Agregar a `ANDROID_SHA256_FINGERPRINTS` (mantener AMBOS — debug + release
+   permite testear App Links en builds internos sin re-deploy).
+4. Re-deploy backend.
+
+**Validación:** El `Android App Links Assistant` en Android Studio
+(`Tools → App Links Assistant → Test App Links`) confirmará la verificación.
