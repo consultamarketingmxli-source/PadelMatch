@@ -23,6 +23,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import {
+  Bell,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -282,6 +283,22 @@ export default function MiCuenta() {
         </TouchableOpacity>
 
         {/* === Soporte Técnico + Política de Privacidad (Landing Framer) === */}
+        <TouchableOpacity
+          onPress={() => router.push("/configuracion/notificaciones" as any)}
+          style={styles.linkCard}
+          testID="btn-config-notificaciones"
+          accessibilityLabel="Configurar notificaciones"
+        >
+          <Bell size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Notificaciones</Text>
+            <Text style={styles.linkHint}>
+              Activa o desactiva las alertas instantáneas de cupos liberados.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => openExternalLink(LEGAL_URLS.support)}
           style={styles.linkCard}

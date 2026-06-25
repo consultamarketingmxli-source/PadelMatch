@@ -1,0 +1,57 @@
+{
+  "summary": "Iter48 (Push Notification Settings · opt-out/opt-in) backend testing — 18/18 NEW iter48 tests PASS plus full smoke regression. Created /app/backend/tests/test_iter48_push_settings.py covering: (a) GET /api/push-status across 4 states — never (no doc → state='never', enabled=False, platform=null), registered/pending_deploy (after register-push → enabled=True, platform reflected), disabled (after disable-push → state='disabled', enabled=False, platform preserved from prior register); (b) 422 validation — missing query param, empty user_id; (c) POST /api/disable-push happy path updates {notifications_enabled:false, disabled_at, updated_at}; (d) disable-push on never-registered user creates SHELL doc (notifications_enabled:false, status:'disabled', platform:null, created_at) — no crash, status endpoint reports 'disabled'; (e) 422 on empty/missing user_id; (f) Idempotency: 2 consecutive disable-push → 2x 200 same payload, 1 doc, still notifications_enabled=False; (g) End-to-end lifecycle: register → status registered/pending → disable → status disabled → re-register → status registered/pending + notifications_enabled=True + disabled_at $unset; (h) CRITICAL push_service.send_push() opt-out filter via httpx mock — verified via monkeypatched _get_client(): when payload mixes enabled+disabled user_ids, disabled IDs are STRIPPED from upstream `recipients`; when ALL recipients are disabled, send_push returns False AND zero upstream calls (await_count==0); when all are enabled, full list survives; (i) Regression smoke: GET /api/ 200, admin login 200 with access_token, GET /api/public/retas/buscar 200 list, GET /.well-known/apple-app-site-association 200 application/json with applinks. Iter45 regression: 16/16 PASS. Iter47 regression: 17 PASS + 2 SKIP (infra-flagged .well-known via public ingress, unchanged from iter47). Iter46 regression: 12/17 (same 5 pre-existing motor event-loop ERRORs flagged in iter47 report — NOT a regression introduced by iter48, which only adds GET /push-status, POST /disable-push, and the opt-out filter inside push_service.send_push()).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "(pre-existing, NOT caused by iter48) backend/tests/test_iter46_acid_refund_overflow.py — TestMPOverflowRefund + TestStripeOverflowRefund",
+        "issue": "5 ERROR at fixture setup: 'Event loop is closed' from motor.AsyncIOMotorClient when run alongside other test modules. Same flake reported in iter47. Iter48 does not touch core.db client lifecycle, so this is NOT a regression. Suggested follow-up (out of scope): migrate the per-test event_loop pattern to pytest-asyncio session-scoped loop or new_event_loop() inside fixture body."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter48_push_settings.py",
+    "/app/test_reports/pytest/iter48_push_settings.xml"
+  ],
+  "detailed_results": {
+    "TestPushStatusEndpoint (5/5)": "PASS — never_registered → state='never'/enabled=False/platform=null/updated_at=null; registered → state in {registered,pending_deploy}/enabled=True/platform='android'; missing query 422 with loc=['query','user_id']; empty string user_id 422; after disable → state='disabled'/enabled=False/platform preserved.",
+    "TestDisablePushEndpoint (5/5)": "PASS — after-register updates doc {notifications_enabled:False, disabled_at, updated_at}; never-registered creates SHELL doc {status:'disabled', platform:null, notifications_enabled:False, created_at}; empty user_id 422; missing user_id 422; idempotent 2x consecutive calls → identical body+1 doc+still disabled.",
+    "TestEndToEndOptInOut::test_full_lifecycle": "PASS — register(android,tA) → status registered/pending+enabled=True → disable → status disabled+enabled=False → register(android,tB) → status registered/pending+enabled=True; DB doc has disabled_at $unset after re-activation (confirms $unset clause in _audit).",
+    "TestSendPushFiltersOptOuts::test_filters_disabled_user_from_payload": "PASS · CRITICAL — Mocked httpx client receives payload.recipients=[uid_ok] ONLY; uid_off (notifications_enabled=False) stripped. Verified single upstream POST to /api/v1/push/trigger.",
+    "TestSendPushFiltersOptOuts::test_all_disabled_returns_false_and_no_upstream_call": "PASS · CRITICAL — When 2/2 recipients are opt-out, send_push returns False AND fake_client.post.await_count==0 (no provider call, no quota waste).",
+    "TestSendPushFiltersOptOuts::test_all_enabled_passes_full_list": "PASS — Sanity: 2/2 enabled → payload.recipients == full set, upstream called once.",
+    "TestRegressionSmoke (4/4)": "PASS — GET /api/ 200 ('ok'); POST /api/auth/login admin → 200 with access_token; GET /api/public/retas/buscar 200 list; GET /.well-known/apple-app-site-association (backend direct) 200 application/json with 'applinks'.",
+    "Iter45 regression (16/16)": "FULL PASS — TestJobsWorker, TestAdminEndpoints, promover_lista_espera_empty, helpers/transactions/mercadopago imports.",
+    "Iter47 regression (17 PASS + 2 SKIP)": "FULL PASS — well-known backend direct 4/4, register-push 3/3 (android/ios/web), 422 validation 5/5 parametrized, idempotent upsert, audit fingerprint not full token, smoke 3/3. Public-URL well-known still SKIP per pre-existing infra note (ingress only routes /api/*).",
+    "Iter46 regression (12/17 — pre-existing flake)": "TestSafeTransactionFallback 2/2 PASS, TestPublicBuscarSanitization 10/10 PASS. 5 ERROR in TestMPOverflowRefund + TestStripeOverflowRefund fixtures (motor client event loop closed) — DOCUMENTED PRE-EXISTING in iter47 report, NOT a regression introduced by iter48."
+  },
+  "action_items": [
+    "(No fixes needed for iter48) — All new endpoints behave as specified: GET /api/push-status (4 states), POST /api/disable-push (idempotent + shell-doc + 422 validation), push_service.send_push() opt-out filter (excludes notifications_enabled=False from upstream payload AND skips call entirely when all disabled).",
+    "(Optional, pre-existing carry-over from iter47) Fix motor fixture event-loop flake in test_iter46_acid_refund_overflow.py — replace `asyncio.get_event_loop()` pattern with session-scoped pytest-asyncio loop or new_event_loop()+set_event_loop() inside fixture body. Not blocking iter48."
+  ],
+  "critical_code_review_comments": [
+    "push_router.py is well-structured: GET /push-status correctly derives state from {notifications_enabled, status} with disabled taking priority over raw status; POST /disable-push uses $set on existing docs and inserts a SHELL doc when matched_count==0 — both branches correctly tested.",
+    "push_service.send_push() opt-out filter is implemented as a batch lookup with $in (one query, not N+1) and uses fail-open on exception (logged warning, send proceeds) — sensible for waitlist-criticality. Filter correctly returns False without calling provider when post-filter recipients is empty.",
+    "_audit() upserts $set notifications_enabled=True AND $unset disabled_at on every successful register — this implements the opt-in-implicit-on-re-register design exactly as spec'd in the review_request. Verified end-to-end.",
+    "Idempotency confirmed at both endpoint (2x disable-push) and DB layer (1 doc after multiple calls, updated_at refreshed each time).",
+    "Frontend files (/app/frontend/app/configuracion/notificaciones.tsx, usePushRegistration.ts, src/api.ts, mi-cuenta.tsx) NOT executed per review_request.testing_type='backend only' and the agent-to-agent note explicitly excluding Expo Switch UI from web-preview validation (requires native build)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter48_push_settings.py (new — 18 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "iter48=18/18 PASS (100%); iter45=16/16; iter47=17/17 + 2 SKIP (unchanged infra); iter46=12/17 (pre-existing flake, not iter48-regression)",
+    "frontend": "N/A (backend only per review_request)"
+  },
+  "seed_data_creation": "All test docs created under user_id prefix TEST_iter48_ and purged in module teardown via db.push_registrations.delete_many({user_id: {$regex: '^TEST_iter48_'}}). No persistent seed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter48 backend fully validated. Canonical regression command: `pytest backend/tests/test_iter48_push_settings.py backend/tests/test_iter47_deeplink_push.py backend/tests/test_iter45_waitlist_acid.py -v` (51 PASS, 2 SKIP). For the opt-out filter unit test pattern: see TestSendPushFiltersOptOuts — uses unittest.mock.patch.object(push_service, '_get_client', return_value=fake_client) with AsyncMock for fake_client.post. Reset push_service._client = None before each test to bypass the lazy singleton. Frontend Settings toggle UI (Switch in /configuracion/notificaciones.tsx) is intentionally not validated here — Switch behavior + permission re-prompt orchestration needs a native EAS build per agent-to-agent context note.",
+  "rca_of_issue": "No bugs found in iter48. Two pre-existing context notes carried over: (1) Iter46 motor event-loop fixture flake (5 ERRORs) was already documented in iter47 report — iter48 changes do not touch DB client lifecycle, so this is not a regression. (2) Public ingress does not route /.well-known/* (production padelappretas.app DNS must route those paths to backend) — same status as iter47, unchanged."
+}

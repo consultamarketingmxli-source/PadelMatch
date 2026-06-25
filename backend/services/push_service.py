@@ -57,6 +57,12 @@ async def send_push(
               `action_url` (recomendado para tap-to-navigate).
         idempotency_key: opcional, recomendado para retries.
 
+    Filtrado de opt-outs:
+        Antes de relayar, consultamos `db.push_registrations` para excluir a
+        usuarios que hicieron opt-out explícito desde Settings
+        (`notifications_enabled=false`). Esto evita gastar cuota del provider
+        en envíos garantizados a fallar y respeta la preferencia del usuario.
+
     Returns:
         True si Emergent aceptó · False en cualquier otra situación (no-op).
         Jamás lanza excepción.
@@ -69,6 +75,29 @@ async def send_push(
     if "title" not in data or "message" not in data:
         logger.warning("[push] send abortado: faltan title/message en data")
         return False
+
+    # Filtrar opt-outs (lookup batch, una sola query).
+    try:
+        # Import local para evitar circulo si push_service se importa antes que core.db.
+        from core.db import db as _db
+        disabled = await _db.push_registrations.find(
+            {"user_id": {"$in": recipients}, "notifications_enabled": False},
+            {"user_id": 1, "_id": 0},
+        ).to_list(length=len(recipients))
+        if disabled:
+            disabled_ids = {d["user_id"] for d in disabled}
+            before = len(recipients)
+            recipients = [r for r in recipients if r not in disabled_ids]
+            logger.info(
+                "[push] filtrados opt-outs · before=%d after=%d skipped=%s",
+                before, len(recipients), sorted(disabled_ids)[:5],
+            )
+            if not recipients:
+                return False
+    except Exception as e:  # pylint: disable=broad-except
+        # Si el filtro falla, NO bloqueamos el envío (fail-open). Mejor enviar
+        # de más que silenciar alertas críticas (waitlist).
+        logger.warning("[push] opt-out filter falló — fail-open: %s", str(e)[:120])
 
     payload: dict = {"recipients": recipients, "data": data}
     if idempotency_key:

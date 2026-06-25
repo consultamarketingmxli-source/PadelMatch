@@ -193,5 +193,53 @@ export function usePushRegistration(opts: { user_id?: string | null }) {
     requestAndRegister,
     silentRefreshIfGranted,
     shouldPromptNow,
+
+    /**
+     * Opt-out explícito desde Settings. Marca server-side
+     * `notifications_enabled=false`. No revoca el permiso SO (eso lo hace
+     * el usuario en Ajustes) pero garantiza que NO se envíen push aunque
+     * el sistema los siga aceptando.
+     */
+    async disable(): Promise<boolean> {
+      if (!user_id) return false;
+      try {
+        await api.disablePush(user_id);
+        setStatus("denied"); // refleja UX "apagado"; el estado server real es 'disabled'
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * Re-encender desde Settings: dispara el flujo completo (permisos +
+     * token + register). Idempotente y atómico desde el punto de vista del
+     * usuario — si el SO bloqueó las notifs, el flujo retorna `denied` /
+     * mostrar CTA a Ajustes en el caller.
+     */
+    async enable(): Promise<PushRegistrationResult> {
+      return await requestAndRegister();
+    },
+
+    /** Lee el estado server-side (autoritativo). */
+    async fetchServerStatus(): Promise<{
+      state: "never" | "registered" | "pending_deploy" | "disabled";
+      platform: "android" | "ios" | "web" | null;
+      notifications_enabled: boolean;
+      updated_at: string | null;
+    } | null> {
+      if (!user_id) return null;
+      try {
+        const r = await api.getPushStatus(user_id);
+        return {
+          state: r.state,
+          platform: r.platform,
+          notifications_enabled: r.notifications_enabled,
+          updated_at: r.updated_at,
+        };
+      } catch {
+        return null;
+      }
+    },
   };
 }

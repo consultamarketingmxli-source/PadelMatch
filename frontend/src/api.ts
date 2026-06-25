@@ -801,6 +801,23 @@ export const api = {
       body,
     }),
 
+  /** Lee el estado actual del registro de push para el user_id (lectura propia). */
+  getPushStatus: (user_id: string) =>
+    request<{
+      user_id: string;
+      state: "never" | "registered" | "pending_deploy" | "disabled";
+      platform: "android" | "ios" | "web" | null;
+      notifications_enabled: boolean;
+      updated_at: string | null;
+    }>(`/push-status?user_id=${encodeURIComponent(user_id)}`),
+
+  /** Opt-out explícito desde Settings (no revoca permiso SO, sólo marca server). */
+  disablePush: (user_id: string) =>
+    request<{ status: string; user_id: string }>(`/disable-push`, {
+      method: "POST",
+      body: { user_id },
+    }),
+
   // Helper genérico — usado puntualmente por hooks que no merecen método propio.
   post: <T = unknown>(path: string, body: unknown) =>
     request<T>(path, { method: "POST", body }),
