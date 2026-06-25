@@ -134,3 +134,54 @@ async def obtener_merchant_order(access_token: str, order_id: str) -> dict:
     if resp.status_code != 200:
         raise RuntimeError(f"MP merchant_order {order_id} error {resp.status_code}")
     return resp.json()
+
+
+
+async def refundar_pago(
+    access_token: str,
+    payment_id: str,
+    amount: Optional[float] = None,
+    reason: Optional[str] = None,
+) -> dict:
+    """Emite un refund (total o parcial) contra un payment aprobado.
+
+    Args:
+        access_token: token del organizador que cobró el payment.
+        payment_id: id MP del pago aprobado.
+        amount: monto en MXN (None = refund total).
+        reason: motivo para metadata interna (no se envía a MP).
+
+    Returns:
+        dict con `id`, `status`, `amount` del refund creado.
+
+    Raises:
+        RuntimeError si MP responde != 201.
+    """
+    body: dict = {}
+    if amount is not None:
+        body["amount"] = round(float(amount), 2)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{MP_API_BASE}/v1/payments/{payment_id}/refunds",
+            headers={
+                "Authorization": f"Bearer {access_token.strip()}",
+                "Content-Type": "application/json",
+                # X-Idempotency-Key: previene refunds duplicados ante retries.
+                "X-Idempotency-Key": f"refund-{payment_id}-{int(amount or 0)}",
+            },
+            json=body,
+        )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(
+            f"MP refund {payment_id} fallido: HTTP {resp.status_code} · {resp.text[:200]}"
+        )
+    data = resp.json() or {}
+    logger.info(
+        "[mp] refund emitido · payment=%s refund_id=%s amount=%s reason=%s",
+        payment_id, data.get("id"), data.get("amount"), (reason or "")[:80],
+    )
+    return {
+        "id": str(data.get("id") or ""),
+        "status": data.get("status"),
+        "amount": data.get("amount"),
+    }

@@ -1,0 +1,54 @@
+{
+  "summary": "ITER45 backend-only smoke + regression after the core/helpers.py ImportError fix (expirar_bloqueos_pass) and the introduction of ACID guards in MP/Stripe webhooks + core/transactions.py + mercadopago_service.refundar_pago. 16/16 pytest cases PASS against the public preview URL. The backend boots clean, GET /api/ returns 200, admin login (admin@padelappretas.com / admin123) works, GET /api/public/retas/buscar returns a list, the cron endpoint POST /api/retas/{reta_id}/expirar-pendientes returns {ok, eliminadas, promovidos, retas_afectadas} with proper auth gating and 404 on unknown reta, the jobs worker logs '[jobs] worker loop iniciado · tick=10s' on startup (confirmed in /var/log/supervisor/backend.err.log), MongoDB is reachable for jobs_queue, GET /api/admin/payouts/summary and GET /api/admin/comunidad/asistencia both return 200 with admin auth, and direct-call promover_lista_espera('non-existent') returns None gracefully (idempotent). The new modules core/transactions.safe_transaction and mercadopago_service.refundar_pago are importable and exposed. ACID guard code verified present in routers/mercadopago.py:_aplicar_resultado_pago (lock_actual + cupos_solicitados > max_jugadores check at line 425, refund call at line 578, safe_transaction at line 694) and routers/payments_router.py (max_jug check at line 245, refundar_pago at line 184, safe_transaction at line 279). No real MP/Stripe webhook fired (no live credentials needed per request — flagged as `requires-external`). Standalone Mongo confirmed: safe_transaction will degrade to no-tx mode per design (transactions cache log will emit `[tx] capability detected · replica=False sharded=False → tx=False` on first use).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "Backend startup logs (passlib.handlers.bcrypt)",
+        "issue": "On every backend restart, passlib emits `(trapped) error reading bcrypt version · AttributeError: module 'bcrypt' has no attribute '__about__'`. Harmless (passlib falls back) but noisy in stderr. Fix: pin `bcrypt<4` or upgrade passlib. Cosmetic only."
+      },
+      {
+        "endpoint": "GET /api/public/retas/buscar",
+        "issue": "STILL OPEN from iter44: q with embedded NUL byte returns 500. Not retested here (out of scope), but the regression test is in test_iter44_chaos_destructive.py — main agent should still fix routers/public.py:48 to strip ASCII control chars before re.escape."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_waitlist_acid.py",
+    "/app/test_reports/pytest/iter45_waitlist.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: pin bcrypt<4 to silence the passlib `__about__` warning on every backend restart.",
+    "STILL OPEN (iter44): routers/public.py:48 — sanitize q to strip ASCII control chars before re.escape (null-byte 500 regression).",
+    "NOT TESTED (requires-external): end-to-end MP/Stripe webhook firing with `_aplicar_resultado_pago` overflow → refund automático. Verified by code-review (refund call sites + safe_transaction wrappers present), but actual webhook simulation needs a sandbox curl signature or unit-level mock. If desired, main agent can ask for a unit test that monkeypatches mercadopago_service.refundar_pago and posts a forged /webhook/mp payload with overflow inscritos_lock."
+  ],
+  "critical_code_review_comments": [
+    "✅ core/helpers.py: expirar_bloqueos_pass and handle_waitlist_pending_timeout are now distinct top-level coroutines; the import in routers/retas.py works cleanly.",
+    "✅ POST /api/retas/{reta_id}/expirar-pendientes is admin-gated, returns 404 for unknown reta, and returns {ok, eliminadas, promovidos, retas_afectadas} for valid reta. Idempotent (2nd call still ok=True).",
+    "✅ core/transactions.safe_transaction implements graceful fallback for standalone Mongo (yields None when no replica set / sharded cluster detected).",
+    "✅ routers/mercadopago.py:_aplicar_resultado_pago enforces `lock_actual + cupos_solicitados > max_jugadores` guard BEFORE approving and emits refund via `mps.refundar_pago` when overflow detected (line 425/578); wraps the critical section in `async with safe_transaction() as session:` (line 694).",
+    "✅ routers/payments_router.py mirrors the same guard pattern and calls `payments_stripe.refundar_pago` on overflow.",
+    "✅ mercadopago_service.refundar_pago is defined (line 140) and exported (test_mercadopago_refundar_pago_present PASS).",
+    "✅ Jobs worker is MongoDB-backed (no Redis), logs `[jobs] worker loop iniciado · tick=10s` every supervisor restart (verified in /var/log/supervisor/backend.err.log).",
+    "✅ promover_lista_espera returns None without raising when waitlist is empty (idempotent — verified via direct asyncio.run call).",
+    "ℹ️ Backend is currently running on Mongo standalone — `safe_transaction` will degrade to no-tx; this is by design but means rollback semantics will not apply on multi-document failures. Production deployment SHOULD use a replica set for the ACID guarantees to be strict."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter45_waitlist_acid.py (new — 16 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 pytest cases pass; all 8 review-request items covered)",
+    "frontend": "not-tested (review_request says backend only)"
+  },
+  "seed_data_creation": "None. Tests are read-only on production-like data except for the 4 calls to POST /api/retas/{first_reta_id}/expirar-pendientes which idempotently remove any expired pending inscriptions on the first reta returned by GET /api/retas. No retas / inscripciones / mp_transactions created. No money moved.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_iter45_waitlist_acid.py -v` for the post-import-fix regression. Admin creds confirmed: admin@padelappretas.com / admin123. POST /api/auth/login body shape is {username, password}. Canonical paths (unchanged from iter43): health=GET /api/, admin retas list=GET /api/retas, admin expirar=POST /api/retas/{reta_id}/expirar-pendientes, admin payouts=GET /api/admin/payouts/summary, admin comunidad=GET /api/admin/comunidad/asistencia. For MP/Stripe webhook end-to-end with overflow→refund the test infrastructure needs to monkeypatch mercadopago_service.refundar_pago + payments_stripe.refundar_pago and POST a forged webhook with HMAC; consider doing this as a unit test inside /app/backend/tests rather than going through the public preview URL. Standalone Mongo means safe_transaction will yield None and rollback will not apply — design choice, not a bug.",
+  "rca_of_issue": "Original break (ImportError on `from core.helpers import expirar_bloqueos_pass`) is FULLY RESOLVED. Verified via test_helpers_imports_clean (importlib + inspect.iscoroutinefunction) and via the live POST /api/retas/{id}/expirar-pendientes returning 200 with the expected shape. The fix correctly separates `handle_waitlist_pending_timeout` (handles ONE expired pending inscription, called by the jobs worker) from `expirar_bloqueos_pass` (sweeps ALL expired inscriptions or all pending in a single reta when force_reta_id is passed, called by both the admin button and the periodic cron). Both are top-level async coroutines now; previously the body of expirar_bloqueos_pass was nested inside handle_waitlist_pending_timeout as dead code, which is why `from core.helpers import expirar_bloqueos_pass` failed at module import time and crashed the backend boot."
+}

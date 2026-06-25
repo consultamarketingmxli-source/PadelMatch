@@ -5,6 +5,7 @@ Mantiene la lógica reusable entre routers para evitar import cíclicos.
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -402,12 +403,24 @@ async def crear_inscripcion_free_agent_pendiente(
 
 
 async def promover_lista_espera(reta_id: str) -> Optional[Inscripcion]:
-    """Promueve a la siguiente persona de la lista de espera.
+    """Promueve a la siguiente persona de la lista de espera (FIFO).
 
-    Resiliencia: si Twilio falla notificando al jugador, NO bloqueamos el flujo.
-    Se registra en logs y se salta al siguiente (con un máximo de 5 intentos
-    para evitar promover toda la fila si todos los teléfonos están caídos).
+    Flujo:
+      1. Toma el primero pendiente (sort por posicion_fila asc).
+      2. Reserva atómicamente el cupo recién liberado.
+      3. Crea inscripción en estado `PENDING_PAYMENT` con bloqueo TTL 15 min.
+      4. Dispara CONCURRENTEMENTE Resend (email) + Push (alta prio) + WhatsApp.
+      5. Encola un job de timeout 15 min en `db.jobs_queue`.
+
+    Resiliencia: si email/push fallan, NO bloqueamos el flujo (Twilio sigue
+    siendo el fallback). El job de timeout es la red de seguridad final.
     """
+    from services.email_service import send_waitlist_promotion_email
+    from services.push_service import send_high_priority_push
+    from services.jobs_worker import enqueue as enqueue_job
+    import asyncio as _asyncio
+    ttl_min = int(os.getenv("WAITLIST_PENDING_TTL_MIN", "15"))
+
     max_intentos = 5
     for _ in range(max_intentos):
         next_in_line = await db.lista_espera.find_one(
@@ -417,14 +430,12 @@ async def promover_lista_espera(reta_id: str) -> Optional[Inscripcion]:
         if not next_in_line:
             return None
 
-        # Reserva atómica del cupo recién liberado.
         reta_actual = await reservar_lugar_atomico(reta_id)
         if reta_actual is None:
-            # Otra inscripción tomó el cupo simultáneamente, nada que promover.
             return None
 
         bloqueado_hasta = (
-            datetime.now(timezone.utc) + timedelta(minutes=5)
+            datetime.now(timezone.utc) + timedelta(minutes=ttl_min)
         ).isoformat()
         insc = Inscripcion(
             reta_id=reta_id,
@@ -444,35 +455,104 @@ async def promover_lista_espera(reta_id: str) -> Optional[Inscripcion]:
 
         await db.lista_espera.update_one(
             {"id": next_in_line["id"]},
-            {"$set": {"notificado": True}},
+            {"$set": {"notificado": True, "notificado_en": datetime.now(timezone.utc).isoformat()}},
         )
 
         reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
-        link = f"/retas/{reta['url_slug']}?inscripcion={insc.id}"
-        msg = construir_mensaje_waitlist_promovido(insc.nombre, reta["nombre"], link)
+        slug = (reta or {}).get("url_slug", reta_id)
+        base_url = os.getenv("PUBLIC_BASE_URL") or "https://padelappretas.app"
+        deeplink = f"{base_url}/retas/{slug}?inscripcion={insc.id}"
+        idem = f"promo:{reta_id}:{insc.id}"
 
-        # Circuit breaker: si Twilio falla 2 intentos, lo dejamos pasar.
-        # El cronjob de expiración eventualmente recuperará el cupo y promoverá al siguiente.
-        ok, _ = await safe_run(
-            lambda: send_whatsapp(insc.telefono, msg),
-            label=f"whatsapp:promover:{insc.telefono}",
-            timeout_s=8.0,
-            retries=1,
+        # === Notificaciones CONCURRENTES (Resend + Push + WhatsApp) ===
+        # Cualquier fallo es no-op para el flow; el job de timeout es la red de seguridad.
+        email_to = next_in_line.get("email") or None
+        whatsapp_msg = construir_mensaje_waitlist_promovido(insc.nombre, reta["nombre"], deeplink)
+
+        await _asyncio.gather(
+            (send_waitlist_promotion_email(
+                to_email=email_to or "",
+                player_name=insc.nombre,
+                reta_name=reta["nombre"],
+                deeplink=deeplink,
+                ttl_min=ttl_min,
+                idempotency_key=idem,
+            ) if email_to else _asyncio.sleep(0)),
+            send_high_priority_push(
+                jugador_id=insc.jugador_id,
+                title="⚡ Tu cupo está disponible",
+                body=f"Tienes {ttl_min} min para pagar y confirmar tu lugar en {reta['nombre']}.",
+                deeplink=deeplink,
+                idempotency_key=idem,
+            ),
+            safe_run(
+                lambda: send_whatsapp(insc.telefono, whatsapp_msg),
+                label=f"whatsapp:promover:{insc.telefono}",
+                timeout_s=8.0, retries=1,
+            ),
+            return_exceptions=True,
         )
-        if not ok:
-            logger.warning(
-                "Twilio descartado para %s tras reintentos. La inscripción Pendiente "
-                "sigue válida 5 min; si no confirma, el cronjob promoverá al siguiente.",
-                insc.telefono,
-            )
+
+        # === Encolar job de timeout 15 min ===
+        await enqueue_job(
+            job_type="waitlist_pending_timeout",
+            payload={
+                "reta_id": reta_id,
+                "inscripcion_id": insc.id,
+                "jugador_id": insc.jugador_id,
+            },
+            delay_seconds=ttl_min * 60,
+            idempotency_key=idem,
+        )
         return insc
 
     return None
 
 
+async def handle_waitlist_pending_timeout(payload: dict) -> None:
+    """Handler del job `waitlist_pending_timeout` (TTL 15 min).
+
+    Cuando expira el plazo de un jugador en `PENDING_PAYMENT`:
+      1. Si NO confirmó (aún Pendiente): marcar EXPIRED, liberar cupo,
+         eliminar de waitlist y disparar nuevamente `promover_lista_espera()`
+         para el siguiente FIFO.
+      2. Si YA confirmó (Aprobado): no-op (caso normal).
+    """
+    reta_id = payload.get("reta_id")
+    inscripcion_id = payload.get("inscripcion_id")
+    if not reta_id or not inscripcion_id:
+        return
+
+    insc = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0})
+    if not insc:
+        return
+    if insc.get("estatus_pago") == "Aprobado":
+        # Caso normal: el jugador pagó a tiempo.
+        return
+
+    # Caso TTL expirado: liberar cupo + cascada FIFO.
+    await db.inscripciones.update_one(
+        {"id": inscripcion_id},
+        {"$set": {"estatus_pago": "Expirado",
+                  "expirado_en": datetime.now(timezone.utc).isoformat()}},
+    )
+    await liberar_lugar(reta_id, 1)
+    logger.info(
+        "[waitlist] timeout · insc=%s reta=%s → promoviendo siguiente FIFO",
+        inscripcion_id, reta_id,
+    )
+    await promover_lista_espera(reta_id)
+
+
 async def expirar_bloqueos_pass(force_reta_id: Optional[str] = None) -> dict:
-    """Una pasada de expiración. Si force_reta_id se da, expira TODAS las pendientes
-    de esa reta. Libera cupos en el contador atómico antes de borrar, y promueve waitlist."""
+    """Una pasada de expiración. Si `force_reta_id` se da, expira TODAS las
+    pendientes de esa reta (botón de admin). Caso contrario, sólo las que ya
+    vencieron `bloqueado_hasta`. Libera cupos en el contador atómico antes de
+    borrar, y promueve la waitlist en cada reta afectada.
+
+    Returns:
+        dict con `eliminadas`, `promovidos` y `retas_afectadas` para logging.
+    """
     now_iso = datetime.now(timezone.utc).isoformat()
     query: dict = {"estatus_pago": "Pendiente"}
     if force_reta_id:

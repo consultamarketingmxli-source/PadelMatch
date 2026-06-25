@@ -570,17 +570,60 @@ async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Re
 
 
 # ===================== Webhook =====================
+async def _refund_payment_mp(
+    *, mp_payment_id: str, access_token: str, reason: str,
+) -> dict:
+    """Emite refund total y deja huella en `db.mp_refunds_emitidos` (audit)."""
+    try:
+        refund = await mps.refundar_pago(
+            access_token=access_token,
+            payment_id=mp_payment_id,
+            reason=reason,
+        )
+        await db.mp_refunds_emitidos.insert_one({
+            "mp_payment_id": mp_payment_id,
+            "refund_id": refund.get("id"),
+            "amount": refund.get("amount"),
+            "status": refund.get("status"),
+            "reason": reason,
+            "creado_en": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.warning(
+            "[mp] ACID-refund · payment=%s reason=%s refund=%s",
+            mp_payment_id, reason, refund.get("id"),
+        )
+        return {"ok": True, **refund}
+    except Exception as e:  # pylint: disable=broad-except
+        logger.exception("[mp] ACID-refund FALLÓ · payment=%s err=%s", mp_payment_id, str(e)[:140])
+        await db.mp_refunds_emitidos.insert_one({
+            "mp_payment_id": mp_payment_id,
+            "status": "failed_to_emit",
+            "reason": reason,
+            "error": str(e)[:200],
+            "creado_en": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"ok": False, "error": str(e)[:200]}
+
+
 async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_status: str) -> dict:
     """Idempotente y pareja-aware: actualiza inscripción(es) + tracking según pago.
 
     Si la inscripción pertenece a un grupo de pareja, se confirman/cancelan
     AMBAS al unísono, liberando 2 cupos en caso de rechazo.
+
+    ACID Guard (overflow protection):
+      Antes de pasar Pendiente → Aprobado verificamos transaccionalmente
+      que `inscritos_lock <= max_jugadores`. Si NO se cumple (caso edge: TTL
+      expirado, cupo reasignado, y MP webhook tardío con approved), emitimos
+      refund automático y marcamos la inscripción como `RefundedOverflow`.
     """
+    from core.transactions import safe_transaction
+
     tx = await db.mp_transactions.find_one({"inscripcion_id": inscripcion_id}, {"_id": 0})
     if not tx:
         return {"matched": False}
 
-    if tx.get("payment_status") in ("approved", "rejected", "cancelled"):
+    if tx.get("payment_status") in ("approved", "rejected", "cancelled", "refunded_overflow"):
         return {"matched": True, "already": True, "payment_status": tx["payment_status"]}
 
     insc = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0})
@@ -596,19 +639,75 @@ async def _aplicar_resultado_pago(inscripcion_id: str, mp_payment_id: str, mp_st
         ids = [inscripcion_id]
 
     if mp_status == "approved":
-        if ids:
-            await db.inscripciones.update_many(
-                {"id": {"$in": ids}, "estatus_pago": "Pendiente"},
-                {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
-            )
-        await db.mp_transactions.update_one(
-            {"inscripcion_id": inscripcion_id},
-            {"$set": {
-                "payment_status": "approved",
-                "mp_payment_id": mp_payment_id,
-                "aprobado_en": datetime.now(timezone.utc).isoformat(),
-            }},
+        # ===== ACID Guard: re-verificar capacidad ANTES de marcar Aprobado =====
+        # Caso edge: el TTL handler expiró la inscripción antes del webhook;
+        # el cupo se reasignó al siguiente en waitlist. Si aprobamos ahora
+        # generaríamos overflow (más Aprobados que max_jugadores).
+        reta_pre = await db.retas.find_one({"id": tx["reta_id"]}, {"_id": 0}) or {}
+        max_jug = int(reta_pre.get("max_jugadores") or 0)
+        # Si la inscripción ya NO existe en Pendiente, es porque otro flujo
+        # la cerró (TTL/cancelación). Entonces necesitamos re-reservar cupos
+        # antes de aprobar; si no hay espacio → refund.
+        pendientes_propias = await db.inscripciones.count_documents(
+            {"id": {"$in": ids}, "estatus_pago": "Pendiente"}
         )
+        if pendientes_propias < len(ids):
+            # Algunas (o todas) ya no están en Pendiente. Verificamos espacio
+            # neto y si hay → re-creamos como Aprobado; si no → refund total.
+            aprobados_actual = await db.inscripciones.count_documents({
+                "reta_id": tx["reta_id"], "estatus_pago": "Aprobado",
+            })
+            cupos_libres = max_jug - aprobados_actual
+            if cupos_libres < len(ids):
+                # OVERFLOW → refund + audit trail.
+                admin = await db.admins.find_one(
+                    {"email": ADMIN_EMAIL_DEFAULT}, {"_id": 0}
+                ) or {}
+                access_token = decrypt_token(admin.get("access_token_pasarela") or "") or ""
+                refund_result = {"ok": False, "error": "no_admin_token"}
+                if access_token:
+                    refund_result = await _refund_payment_mp(
+                        mp_payment_id=mp_payment_id,
+                        access_token=access_token,
+                        reason=(
+                            f"ACID overflow guard · reta={tx['reta_id']} "
+                            f"insc={inscripcion_id} (TTL expired / cupo reassigned)"
+                        ),
+                    )
+                await db.mp_transactions.update_one(
+                    {"inscripcion_id": inscripcion_id},
+                    {"$set": {
+                        "payment_status": "refunded_overflow",
+                        "mp_payment_id": mp_payment_id,
+                        "refund_emitido_en": datetime.now(timezone.utc).isoformat(),
+                        "refund_result": refund_result,
+                    }},
+                )
+                return {
+                    "matched": True,
+                    "estatus_pago": "RefundedOverflow",
+                    "refund": refund_result,
+                    "afectadas": 0,
+                }
+
+        # ===== Happy path: transacción atómica de flip + tracking =====
+        async with safe_transaction() as session:
+            opts = {"session": session} if session else {}
+            if ids:
+                await db.inscripciones.update_many(
+                    {"id": {"$in": ids}, "estatus_pago": "Pendiente"},
+                    {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
+                    **opts,
+                )
+            await db.mp_transactions.update_one(
+                {"inscripcion_id": inscripcion_id},
+                {"$set": {
+                    "payment_status": "approved",
+                    "mp_payment_id": mp_payment_id,
+                    "aprobado_en": datetime.now(timezone.utc).isoformat(),
+                }},
+                **opts,
+            )
         # Confirmación por email (fire-and-forget, jamás rompe el webhook).
         try:
             reta = await db.retas.find_one({"id": tx["reta_id"]}, {"_id": 0})

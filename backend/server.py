@@ -157,9 +157,18 @@ async def startup():
     asyncio.create_task(cronjob_recordatorios())
     asyncio.create_task(cronjob_expirar_bloqueos())
 
+    # === Sistema de Cola Distribuida (MongoDB-backed) ===
+    from services.jobs_worker import register_handler, start_worker
+    from core.helpers import handle_waitlist_pending_timeout
+    register_handler("waitlist_pending_timeout", handle_waitlist_pending_timeout)
+    await start_worker()
+    logger.info("[startup] Jobs worker iniciado (MongoDB-backed · tick=10s)")
+
 
 @app.on_event("shutdown")
 async def shutdown():
+    from services.jobs_worker import stop_worker
+    await stop_worker()
     close_db()
 
 

@@ -162,16 +162,67 @@ async def checkout_stripe(reta_id: str, body: StripeCheckoutCreate, request: Req
     )
 
 
-async def _aplicar_resultado_pago(session_id: str, payment_status: str) -> dict:
-    """Idempotente + pareja-aware: dado un session_id, actualiza la(s) inscripción(es)
-    asociadas. Si la transacción incluye un partner_inscripcion_id (dúo), aplica
-    el resultado a AMBAS inscripciones y libera/aprueba 2 cupos.
+async def _refund_payment_stripe(*, session_id: str, reason: str) -> dict:
+    """Emite refund total contra una Stripe Checkout Session ya pagada.
+
+    Usa el PaymentIntent asociado para refundar. Idempotente vía Stripe
+    (cualquier retry no genera doble cargo, lanza error en su lugar).
     """
+    try:
+        # Retrieve session para obtener payment_intent.
+        import stripe as _stripe  # type: ignore
+        _stripe.api_key = payments_stripe._get_api_key()  # noqa: SLF001
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        sess = await loop.run_in_executor(
+            None, lambda: _stripe.checkout.Session.retrieve(session_id),
+        )
+        payment_intent_id = sess.get("payment_intent") if isinstance(sess, dict) else getattr(sess, "payment_intent", None)
+        if not payment_intent_id:
+            logger.warning("[stripe] refund skip · session=%s sin payment_intent", session_id)
+            return {"ok": False, "error": "no_payment_intent"}
+        refund = await payments_stripe.refundar_pago(payment_intent_id=str(payment_intent_id))
+        await db.stripe_refunds_emitidos.insert_one({
+            "session_id": session_id,
+            "payment_intent_id": payment_intent_id,
+            "refund_id": refund.get("id"),
+            "amount": refund.get("amount"),
+            "status": refund.get("status"),
+            "reason": reason,
+            "creado_en": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.warning(
+            "[stripe] ACID-refund · session=%s pi=%s reason=%s",
+            session_id, payment_intent_id, reason,
+        )
+        return {"ok": True, **refund}
+    except Exception as e:  # pylint: disable=broad-except
+        logger.exception("[stripe] ACID-refund FALLÓ · session=%s err=%s", session_id, str(e)[:140])
+        await db.stripe_refunds_emitidos.insert_one({
+            "session_id": session_id,
+            "status": "failed_to_emit",
+            "reason": reason,
+            "error": str(e)[:200],
+            "creado_en": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"ok": False, "error": str(e)[:200]}
+
+
+async def _aplicar_resultado_pago(session_id: str, payment_status: str) -> dict:
+    """Idempotente + pareja-aware + ACID overflow guard.
+
+    ACID Guard (overflow protection):
+      Si las inscripciones Pendientes ya no existen (TTL expirado y cupo
+      reasignado), verifica capacidad neta antes de aprobar. Si no hay
+      espacio, dispara refund automático vía Stripe.
+    """
+    from core.transactions import safe_transaction
+
     tx = await db.stripe_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if not tx:
         return {"matched": False}
 
-    if tx.get("payment_status") in ("paid", "failed", "expired"):
+    if tx.get("payment_status") in ("paid", "failed", "expired", "refunded_overflow"):
         return {"matched": True, "already": True, "estatus_pago": tx["payment_status"]}
 
     insc = await db.inscripciones.find_one({"id": tx["inscripcion_id"]}, {"_id": 0})
@@ -189,14 +240,54 @@ async def _aplicar_resultado_pago(session_id: str, payment_status: str) -> dict:
         ids = [tx["inscripcion_id"]] if insc else []
 
     if payment_status == "paid":
-        if ids:
-            await db.inscripciones.update_many(
-                {"id": {"$in": ids}, "estatus_pago": "Pendiente"},
-                {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
+        # ===== ACID Guard: re-verificar capacidad ANTES de aprobar =====
+        reta_pre = await db.retas.find_one({"id": tx["reta_id"]}, {"_id": 0}) or {}
+        max_jug = int(reta_pre.get("max_jugadores") or 0)
+        pendientes_propias = await db.inscripciones.count_documents(
+            {"id": {"$in": ids}, "estatus_pago": "Pendiente"}
+        ) if ids else 0
+        if pendientes_propias < cupos:
+            aprobados_actual = await db.inscripciones.count_documents({
+                "reta_id": tx["reta_id"], "estatus_pago": "Aprobado",
+            })
+            cupos_libres = max_jug - aprobados_actual
+            if cupos_libres < cupos:
+                # OVERFLOW → refund automático.
+                refund_result = await _refund_payment_stripe(
+                    session_id=session_id,
+                    reason=(
+                        f"ACID overflow guard · reta={tx['reta_id']} "
+                        f"insc={tx['inscripcion_id']} (TTL expired / cupo reassigned)"
+                    ),
+                )
+                await db.stripe_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {
+                        "payment_status": "refunded_overflow",
+                        "refund_emitido_en": datetime.now(timezone.utc).isoformat(),
+                        "refund_result": refund_result,
+                    }},
+                )
+                return {
+                    "matched": True,
+                    "estatus_pago": "RefundedOverflow",
+                    "refund": refund_result,
+                    "afectadas": 0,
+                }
+
+        # ===== Happy path: transacción atómica =====
+        async with safe_transaction() as session:
+            opts = {"session": session} if session else {}
+            if ids:
+                await db.inscripciones.update_many(
+                    {"id": {"$in": ids}, "estatus_pago": "Pendiente"},
+                    {"$set": {"estatus_pago": "Aprobado", "bloqueado_hasta": None}},
+                    **opts,
+                )
+            await db.stripe_transactions.update_one(
+                {"session_id": session_id}, {"$set": {"payment_status": "paid"}},
+                **opts,
             )
-        await db.stripe_transactions.update_one(
-            {"session_id": session_id}, {"$set": {"payment_status": "paid"}},
-        )
         # Confirmación por email (fire-and-forget). Skip silencioso si no
         # tenemos email del comprador (Stripe puede no haberlo recolectado).
         try:
