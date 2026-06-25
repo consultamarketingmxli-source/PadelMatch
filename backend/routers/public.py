@@ -45,10 +45,32 @@ async def buscar(
     # Sanitización defensiva (también pasamos por aquí cuando viene de /radar).
     q_norm: Optional[str] = None
     if q is not None:
-        # Strip caracteres de control ASCII (incluyendo NUL byte 0x00) — Mongo regex
-        # los rechaza con OperationFailure. Mantenemos sólo printables + espacio.
-        # Esto previene también ataques de inyección de control chars.
-        clean = "".join(c for c in q if c == " " or ord(c) >= 0x20)
+        # Strip:
+        #   • Caracteres de control ASCII C0/C1 (incluido NUL 0x00) — Mongo regex
+        #     los rechaza con OperationFailure y antes producían 500.
+        #   • Unicode line/paragraph separators U+2028/U+2029.
+        #   • Unicode bidi override chars U+202A-U+202E / U+2066-U+2069 (anti-spoofing).
+        # Mantenemos cualquier otro printable + espacio (UTF-8 friendly).
+        import unicodedata as _ud
+        BIDI_RANGE = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))
+        SEP_RANGE = {0x2028, 0x2029}
+
+        def _allowed(c: str) -> bool:
+            cp = ord(c)
+            if cp < 0x20 or 0x7F <= cp <= 0x9F:  # C0 + DEL + C1
+                return c == " "  # nunca; ord(" ")==0x20
+            if cp in SEP_RANGE or cp in BIDI_RANGE:
+                return False
+            # Category Cc (control), Cf (format), Co (private use), Cs (surrogate)
+            cat = _ud.category(c)
+            if cat in ("Cc", "Cf", "Co", "Cs"):
+                return False
+            return True
+
+        # Normalizamos NFKC primero (canónica compatible) — colapsa glifos visuales
+        # similares y previene homoglyph attacks básicos.
+        clean = _ud.normalize("NFKC", q)
+        clean = "".join(c for c in clean if _allowed(c))
         q_norm = clean.strip().lower()
         if not q_norm:
             q_norm = None  # texto vacío o solo espacios → ignorar

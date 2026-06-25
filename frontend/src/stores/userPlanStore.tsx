@@ -9,6 +9,25 @@
  *   - Si la lib NO está instalada o no hay API key real → simulación silenciosa.
  *   - simulatePurchase() activa Premium localmente sin llamar APIs reales.
  *
+ * ┌────────────────────────────────────────────────────────────────────────┐
+ * │ 🚧 TODO PRODUCCIÓN — Activar RevenueCat real                            │
+ * │                                                                         │
+ * │   1. Crear app en RevenueCat (https://app.revenuecat.com) y registrar  │
+ * │      bundle iOS/Android.                                                │
+ * │   2. Crear producto IAP en App Store Connect y Play Console con id     │
+ * │      `padelappretas_premium_lifetime`.                                  │
+ * │   3. Asociar SKUs en el dashboard de RevenueCat → entitlement          │
+ * │      `premium_access`.                                                  │
+ * │   4. Pegar las API keys en `/app/frontend/.env`:                        │
+ * │         EXPO_PUBLIC_REVENUECAT_API_KEY_IOS=appl_xxx                     │
+ * │         EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID=goog_xxx                 │
+ * │   5. Rebuild nativo con EAS (`eas build`) — el flujo de compra real    │
+ * │      sólo funciona en build nativo, NO en Expo Go.                      │
+ * │                                                                         │
+ * │   ✅ El código abajo YA está listo: detecta la key real, deja de usar  │
+ * │   simulatePurchase y activa el SDK real automáticamente.                │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
  * Variables de entorno esperadas (cuando se active producción):
  *   - EXPO_PUBLIC_REVENUECAT_API_KEY_IOS
  *   - EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID

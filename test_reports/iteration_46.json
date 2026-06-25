@@ -1,0 +1,41 @@
+{
+  "summary": "Iter46 testing executed: ran `/app/backend/tests/test_iter46_acid_refund_overflow.py` against real MongoDB engine of the pod. ALL 17 test cases PASSED (7 unit tests with monkeypatched refundar_pago for MP + Stripe + safe_transaction fallback, 10 parametrized HTTP integration tests for /api/public/retas/buscar sanitization). Smoke regression also verified: GET /api/ → 200, POST /api/auth/login (admin) → 200 with JWT, GET /api/public/retas/buscar (no params) → 200 with JSON array. PRODUCTION_ACTIVATION_TODO.md exists at /app/memory (129 lines). No bugs, no fixes applied — full PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter46_acid_refund_overflow.py",
+    "/app/test_reports/pytest/iter46_acid_refund.xml"
+  ],
+  "detailed_results": {
+    "TestMPOverflowRefund::test_mp_approved_overflow_triggers_refund": "PASS — refundar_pago invoked exactly 1x with reason containing 'ACID overflow guard' and reta_id; tx.payment_status='refunded_overflow'; mp_refunds_emitidos audit-trail row created with status='approved'.",
+    "TestMPOverflowRefund::test_mp_approved_happy_path_no_refund": "PASS — refundar_pago NOT called; inscripcion flipped to 'Aprobado'; bloqueado_hasta cleared; tx.payment_status='approved'.",
+    "TestMPOverflowRefund::test_mp_already_processed_is_idempotent": "PASS — duplicate webhook with tx already 'refunded_overflow' → result.already=True; no second refund call.",
+    "TestStripeOverflowRefund::test_stripe_paid_overflow_triggers_refund": "PASS — _refund_payment_stripe invoked with correct session_id + 'ACID overflow guard' reason; tx.payment_status='refunded_overflow'; estatus_pago='RefundedOverflow'.",
+    "TestStripeOverflowRefund::test_stripe_paid_happy_path_no_refund": "PASS — refund helper NOT called in happy path; inscripcion flipped to 'Aprobado'.",
+    "TestSafeTransactionFallback::test_safe_transaction_yields_none_on_standalone": "PASS — _detect_transactions_support() → False on standalone MongoDB; safe_transaction yields None without raising.",
+    "TestSafeTransactionFallback::test_safe_transaction_exception_propagates": "PASS — ValueError raised inside `async with safe_transaction()` propagates correctly.",
+    "TestPublicBuscarSanitization (10 parametrized payloads)": "ALL PASS — payloads NUL bytes, C0 controls, C1 (DEL/NEL), bidi overrides (U+202A/U+2066), line separators (U+2028/U+2029), regex metachars and whitespace-only all return HTTP 200 with valid JSON array. Confirms sanitización blindada en /api/public/retas/buscar.",
+    "Smoke regression": "PASS — GET /api/ → 200, GET /api/public/retas/buscar → 200 (lista de retas), POST /api/auth/login admin → 200 (JWT recibido)."
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Warnings only (non-blocking): passlib using deprecated `crypt` module (Python 3.13 removal), python_multipart pending deprecation, emergentintegrations Stripe SDK still using Pydantic V1 `@validator` decorators (V3 migration needed eventually). None affect functionality.",
+    "Test file uses `asyncio.get_event_loop().run_until_complete(...)` via `run()` helper plus per-test `event_loop` fixture — works reliably here but `asyncio.get_event_loop()` is deprecated in 3.12+. Future-proof: switch to `asyncio.new_event_loop()` directly inside `run()` or use `pytest-asyncio`.",
+    "Test data cleanup uses regex match on refund.reason field — correct given the ACID guard message embeds reta_id. Confirmed: no leakage across runs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "N/A (backend only test request)"},
+  "seed_data_creation": "Per-test fixtures create disposable retas (`iter46-acid-test-<uuid>`), inscripciones, mp_transactions, stripe_transactions and audit rows; all deleted by teardown. No persistent seed data added.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter46 fully closes the ACID-refund + q-sanitization regression suite at 17/17 PASS against pod's real MongoDB (standalone, no transactions). PRODUCTION_ACTIVATION_TODO.md is documented (Sentry Source Maps + RevenueCat deferred for prod credentials). No outstanding backend failures. Reuse `pytest tests/test_iter46_acid_refund_overflow.py -v` as canonical regression command going forward.",
+  "rca_of_issue": "N/A — no failures."
+}
