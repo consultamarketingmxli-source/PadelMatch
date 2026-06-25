@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import payments_stripe
 from auth import get_current_admin
 from core.db import db
-from core.helpers import promover_lista_espera
+from core.helpers import MIN_SAMPLE_FOR_ANTIFLAKE, player_attendance_rate, promover_lista_espera
 
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(prefix="/admin", tags=["admin-dashboard"])
@@ -259,3 +259,79 @@ async def refund_inscripcion(
         amount_refunded_mxn=amount_refunded,
         promoted=promoted,
     )
+
+
+# ===================================================================
+# Community Attendance — listado de jugadores con rate de asistencia
+# ===================================================================
+class CommunityMember(BaseModel):
+    nombre: str
+    telefono: str
+    rate_pct: float
+    sample_size: int
+    badge_label: str
+    badge_tone: str  # "elite" | "ok" | "warn" | "danger" | "new"
+
+
+def _badge_for_rate(rate: float, sample: int) -> tuple[str, str]:
+    """Devuelve (label, tone) según rate y sample size."""
+    if sample < MIN_SAMPLE_FOR_ANTIFLAKE:
+        return ("Nuevo · Sin historial", "new")
+    if rate >= 95.0:
+        return ("Élite Confiable", "elite")
+    if rate >= 90.0:
+        return ("Jugador Cumplido", "ok")
+    if rate >= 70.0:
+        return ("Asistencia Regular", "warn")
+    return ("Necesita Mejorar", "danger")
+
+
+@router.get("/comunidad/asistencia", response_model=List[CommunityMember])
+async def get_community_attendance(
+    limit: int = 50,
+    _: dict = Depends(get_current_admin),
+):
+    """Lista única de jugadores de la comunidad con su rate de asistencia.
+
+    Útil para que el organizador identifique a los flakers vs cumplidos antes
+    de invitar a una reta exclusiva. Ordena por rate descendente · sample
+    secundario.
+    """
+    # 1) Recuperar jugadores únicos (nombre, teléfono) de db.inscripciones.
+    pipeline = [
+        {"$group": {
+            "_id": "$telefono",
+            "nombre": {"$first": "$nombre"},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": max(1, min(limit, 200))},
+    ]
+    miembros_raw = await db.inscripciones.aggregate(pipeline).to_list(length=None)
+
+    # 2) Calcular rate para cada uno (paralelizado).
+    import asyncio as _asyncio
+    async def _enrich(m: dict) -> Optional[CommunityMember]:
+        tel = m.get("_id")
+        nombre = m.get("nombre")
+        if not tel or not nombre:
+            return None
+        rate, sample = await player_attendance_rate(tel)
+        label, tone = _badge_for_rate(rate, sample)
+        return CommunityMember(
+            nombre=nombre,
+            telefono=tel,
+            rate_pct=rate,
+            sample_size=sample,
+            badge_label=label,
+            badge_tone=tone,
+        )
+
+    enriched = await _asyncio.gather(*[_enrich(m) for m in miembros_raw])
+    out: List[CommunityMember] = [m for m in enriched if m is not None]
+
+    # 3) Ordenar: élite → cumplido → regular → necesita mejorar → nuevo.
+    tone_order = {"elite": 0, "ok": 1, "warn": 2, "danger": 3, "new": 4}
+    out.sort(key=lambda x: (tone_order.get(x.badge_tone, 5), -x.rate_pct, -x.sample_size))
+    return out
+

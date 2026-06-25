@@ -664,6 +664,20 @@ export const api = {
       min_sample: number;
     }>(`/public/retas/${retaId}/asistencia-check?telefono=${encodeURIComponent(telefono)}`),
 
+  // ===== Admin Comunidad (P3) =====
+  /** Lista única de jugadores con su rate histórico + badge categórico. */
+  adminCommunityAttendance: () =>
+    request<
+      Array<{
+        nombre: string;
+        telefono: string;
+        rate_pct: number;
+        sample_size: number;
+        badge_label: string;
+        badge_tone: "elite" | "ok" | "warn" | "danger" | "new";
+      }>
+    >(`/admin/comunidad/asistencia?limit=100`, { auth: true }),
+
   // ===== soporte (Fase B) =====
   alertarOrganizador: (
     slug: string,
