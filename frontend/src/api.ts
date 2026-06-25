@@ -678,6 +678,24 @@ export const api = {
       }>
     >(`/admin/comunidad/asistencia?limit=100`, { auth: true }),
 
+  /** Resumen de ganancias del organizador (saldo + tx recientes). */
+  adminPayoutsSummary: () =>
+    request<{
+      saldo_disponible_mxn: number;
+      retas_cobradas: number;
+      dinero_recibido_mxn: number;
+      transacciones_recientes: Array<{
+        id: string;
+        reta_nombre: string;
+        club: string;
+        fecha: string;
+        monto_mxn: number;
+        procesador: string;
+        estatus: string;
+      }>;
+      mensaje_legal: string;
+    }>(`/admin/payouts/summary`, { auth: true }),
+
   // ===== soporte (Fase B) =====
   alertarOrganizador: (
     slug: string,

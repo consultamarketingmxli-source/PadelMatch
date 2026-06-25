@@ -335,3 +335,87 @@ async def get_community_attendance(
     out.sort(key=lambda x: (tone_order.get(x.badge_tone, 5), -x.rate_pct, -x.sample_size))
     return out
 
+
+# ===================================================================
+# Organizer Payouts — billetera del organizador (vista showcase)
+# ===================================================================
+class PayoutTransaction(BaseModel):
+    id: str
+    reta_nombre: str
+    club: str
+    fecha: str  # ISO date
+    monto_mxn: float
+    procesador: str  # "Mercado Pago" | "Stripe" | "Manual"
+    estatus: str  # "Completada" | "Pendiente"
+
+
+class PayoutSummary(BaseModel):
+    saldo_disponible_mxn: float
+    retas_cobradas: int
+    dinero_recibido_mxn: float
+    transacciones_recientes: List[PayoutTransaction]
+    mensaje_legal: str
+
+
+@router.get("/payouts/summary", response_model=PayoutSummary)
+async def get_payouts_summary(_: dict = Depends(get_current_admin)):
+    """Resumen de ganancias del organizador con últimas transacciones aprobadas.
+
+    Política: el saldo disponible es la suma de inscripciones Aprobadas en los
+    últimos 30 días, descontando un retainer simbólico del 0% (intermediario-
+    less). Las transacciones se listan en orden temporal descendente.
+    """
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    desde = (now - timedelta(days=30)).isoformat()
+
+    # 1) Recuperar inscripciones Aprobadas recientes con su reta asociada.
+    pipeline = [
+        {"$match": {"estatus_pago": "Aprobado", "creado_en": {"$gte": desde}}},
+        {"$lookup": {
+            "from": "retas", "localField": "reta_id", "foreignField": "id", "as": "reta",
+        }},
+        {"$unwind": {"path": "$reta", "preserveNullAndEmptyArrays": True}},
+        {"$sort": {"creado_en": -1}},
+        {"$limit": 20},
+    ]
+    docs = await db.inscripciones.aggregate(pipeline).to_list(length=None)
+
+    txs: List[PayoutTransaction] = []
+    total_recibido = 0.0
+    retas_set: set = set()
+    for d in docs:
+        reta = d.get("reta") or {}
+        monto = float(reta.get("costo_inscripcion") or 0)
+        if monto < 1:
+            # Saltar retas gratuitas (no generan payout).
+            continue
+        procesador = (d.get("payment_provider") or d.get("provider") or "").title() or "Mercado Pago"
+        if procesador.lower() in {"stripe", "stripe_payment"}:
+            procesador = "Stripe"
+        elif procesador.lower() in {"mercadopago", "mercado_pago", ""}:
+            procesador = "Mercado Pago"
+        txs.append(PayoutTransaction(
+            id=d.get("id", ""),
+            reta_nombre=reta.get("nombre", "Reta sin nombre"),
+            club=reta.get("club", "—"),
+            fecha=(d.get("creado_en") or "")[:10],
+            monto_mxn=monto,
+            procesador=procesador,
+            estatus="Completada",
+        ))
+        total_recibido += monto
+        retas_set.add(d.get("reta_id"))
+
+    return PayoutSummary(
+        saldo_disponible_mxn=round(total_recibido, 2),
+        retas_cobradas=len(retas_set),
+        dinero_recibido_mxn=round(total_recibido, 2),
+        transacciones_recientes=txs[:6],
+        mensaje_legal=(
+            "Directo a tu cuenta sin intermediarios. Cero retenciones de "
+            "PadelAppRetas · sólo comisiones del procesador."
+        ),
+    )
+
+
