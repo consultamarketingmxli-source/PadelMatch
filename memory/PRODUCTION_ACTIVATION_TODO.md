@@ -9,6 +9,118 @@ y activarse automáticamente.
 
 ---
 
+## 📋 TL;DR — Orden de ejecución recomendado en go-live
+
+| # | Tarea | Bloqueador | Estimación | Sección |
+|---|---|---|---:|---|
+| **0** | **🚨 Ingress K8s: rutear `/.well-known/*` al backend** | Config infra DNS+ingress | 30m | §0 |
+| 1 | Reemplazar `EMERGENT_PUSH_KEY=placeholder` por la key real | Pipeline de deploy (automático) | auto | §3 |
+| 2 | Sentry Source Maps upload | `SENTRY_AUTH_TOKEN` | 30m | §1 |
+| 3 | iOS TEAM_ID + Android SHA-256 fingerprints | Apple Dev + keystore | 1h | §7 |
+| 4 | Subir `google-services.json` real | Firebase Console | 15m | §2 |
+| 5 | RevenueCat producción IAP | Stores en revisión | 4h | §2 |
+| 6 | MP credenciales producción | KYC MP completado | 2h | §4 |
+| 7 | Resend dominio propio | DNS configurado | 1h | §5 |
+
+> **El item #0 es CRÍTICO y debe completarse ANTES de submitar a stores** —
+> sin él, Apple/Google no validan los Universal/App Links y los enlaces de
+> WhatsApp se abrirán en el navegador en lugar de la app instalada.
+
+---
+
+## 🚨 0) K8s Ingress Routing — `/.well-known/*` al backend (CRÍTICO)
+
+**Estado actual:** Los endpoints `/.well-known/apple-app-site-association` y
+`/.well-known/assetlinks.json` están **correctamente implementados en el
+backend FastAPI** (verificado en `localhost:8001` con HTTP 200 + JSON válido).
+
+⚠️  **Problema:** El ingress K8s del cluster productivo enruta SÓLO `/api/*`
+al backend. Apple y Google requieren acceder a los archivos en:
+   - `https://padelappretas.app/.well-known/apple-app-site-association`
+   - `https://padelappretas.app/.well-known/assetlinks.json`
+
+Si esos paths siguen llegando al frontend Expo, devolverán HTML (no JSON) y
+**los Universal/App Links no funcionarán** silenciosamente.
+
+### Pasos para activar
+
+**A) Si usas Ingress nginx-controller (estándar):**
+
+Edita el `Ingress` manifest del cluster productivo y AGREGA esta regla **antes** del catch-all del frontend:
+
+```yaml
+# k8s/ingress.yaml — fragmento RELEVANTE
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: padelappretas-ingress
+  annotations:
+    # Importante: Apple requiere Content-Type: application/json EXACTO.
+    # No agregar `add_trailing_slash` ni rewrites en este path.
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  rules:
+  - host: padelappretas.app
+    http:
+      paths:
+      # 1) Backend para /api/*
+      - path: /api
+        pathType: Prefix
+        backend:
+          service: { name: backend, port: { number: 8001 } }
+      # 2) ← NUEVO: well-known al backend (Apple/Google validación)
+      - path: /.well-known
+        pathType: Prefix
+        backend:
+          service: { name: backend, port: { number: 8001 } }
+      # 3) Catch-all → frontend Expo
+      - path: /
+        pathType: Prefix
+        backend:
+          service: { name: frontend, port: { number: 3000 } }
+```
+
+Aplicar:
+```bash
+kubectl apply -f k8s/ingress.yaml
+kubectl rollout status ingress padelappretas-ingress
+```
+
+**B) Si usas Cloudflare / Vercel / Render frente a K8s:**
+
+Agregar una rule de re-route en el provider:
+- **Cloudflare Workers:** `Path matches /.well-known/* → Origin backend:8001`
+- **Vercel:** `vercel.json` → `"rewrites": [{ "source": "/.well-known/(.*)", "destination": "https://backend.padelappretas.app/.well-known/$1" }]`
+- **Caddy / Traefik:** análogo a nginx
+
+### Verificación post-deploy
+
+```bash
+# iOS — debe responder 200 + application/json
+curl -i https://padelappretas.app/.well-known/apple-app-site-association
+# Esperado: Content-Type: application/json
+# Esperado body: {"applinks": {"details": [{"appIDs": ["XXXXXXXXXX.com.padelappretas.app"], ...}]}}
+
+# Android — análogo
+curl -i https://padelappretas.app/.well-known/assetlinks.json
+# Esperado body: [{"relation": [...], "target": {"package_name": "com.padelappretas.app", "sha256_cert_fingerprints": [...]}}]
+
+# Forzar revalidación Apple (cache 24h):
+curl -i "https://app-site-association.cdn-apple.com/a/v1/padelappretas.app"
+```
+
+### Smoke test del Universal Link tras deploy
+
+1. Cierra completamente la app PadelAppRetas (kill desde recents).
+2. Manda este link por WhatsApp a un teléfono con la app instalada:
+   `https://padelappretas.app/retas/<slug-de-una-reta-de-prueba>`
+3. Tap en el link.
+4. ✅ **Esperado:** la app se abre directamente en la pantalla de la reta.
+   ❌ **Si abre el navegador**, hay un problema (typically TEAM_ID/SHA256
+   incorrectos en `wellknown.py` o ingress no aplicado).
+
+---
+
 ## 🛡️ 1) Sentry Source Maps (deobfuscación de stack traces TypeScript)
 
 **Estado actual:** Sentry SDK ya inyectado (frontend `@sentry/react-native/expo`
@@ -77,16 +189,37 @@ Play Store overlay (Android).
 
 ## 🔔 3) Emergent-managed Push Notifications
 
-**Estado actual:** Servicio `services/push_service.py` operativo. Cuando
-`EMERGENT_PUSH_KEY=placeholder` (estado actual) → modo no-op silencioso (logs
-informativos, sin envío real).
+**Estado actual:**
+- Backend completo: `services/push_service.py` + `routers/push_router.py` (Iter47/48)
+- Frontend completo: `usePushRegistration` + `app/configuracion/notificaciones.tsx`
+- `EMERGENT_PUSH_KEY=placeholder` en `/app/backend/.env`
+- Comportamiento actual: upstream Emergent responde 401 → backend mapea a
+  `state="pending_deploy"` (no crash, no toast intrusivo) — verificado con
+  68/68 tests en Iter45-49.
 
-**Pasos para activar:** Esto se hace **automáticamente** en el flujo de
-deploy de Emergent — el placeholder es reemplazado por la key real al
-publicar. No requiere acción manual.
+**Pasos para activar (automático en deploy):**
 
-**Requisito:** Para Android, el usuario debe proveer `google-services.json`
-desde Firebase Console antes de generar el build.
+1. **NO editar manualmente** `EMERGENT_PUSH_KEY` en `.env`. El placeholder
+   se mantiene tal cual durante desarrollo.
+2. Al publicar mediante el botón **"Publish"** de Emergent (top-right del UI),
+   el pipeline inyecta la key real automáticamente en la variable de entorno
+   del pod productivo.
+3. Tras el deploy, en el próximo app-open de cualquier usuario que ya hubiera
+   concedido permiso, `silentRefreshIfGranted()` re-registrará el token y el
+   estado pasará de `pending_deploy` a `registered` sin intervención manual.
+
+**Requisito Android adicional:** Subir `google-services.json` real desde
+Firebase Console a `/app/frontend/google-services.json` ANTES de generar el
+build nativo Android (sin él, `getDevicePushTokenAsync()` retorna vacío).
+Ver `/app/frontend/google-services.json.TODO` para la receta paso-a-paso.
+
+**Verificación post-deploy:**
+```bash
+# Desde el pod productivo (o reemplazar dominio):
+curl -s "https://padelappretas.app/api/push-status?user_id=<un-jugador-real>" \
+  | jq '.state'
+# Esperado: "registered" (no "pending_deploy")
+```
 
 ---
 
