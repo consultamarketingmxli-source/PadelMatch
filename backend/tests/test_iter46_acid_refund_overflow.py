@@ -16,6 +16,11 @@ limpias en MongoDB por test y las borra al final con un cleanup global.
 
 Estos tests corren contra el motor real de MongoDB del pod (a través de
 `core.db.db`) — NO requieren el servidor FastAPI corriendo.
+
+──────────────────────────────────────────────────────────────────────────────
+ANTI-FLAKE: el fixture `fresh_motor_client_per_test` está centralizado en
+`tests/conftest.py` (autouse) para garantizar consistencia cross-suite.
+──────────────────────────────────────────────────────────────────────────────
 """
 import asyncio
 import os
@@ -34,26 +39,10 @@ if BACKEND_ROOT not in sys.path:
 os.environ.setdefault("SENTRY_DSN", "")
 
 
-@pytest.fixture
-def event_loop():
-    """Event loop por test (evita 'attached to a different loop' en motor)."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 def run(coro):
-    """Helper: ejecuta una coroutine y devuelve su resultado.
-
-    Robust against Python 3.10+ deprecation: si no hay loop activo en el
-    thread, crea uno nuevo y lo usa. Esto permite que el test funcione sin
-    pytest-asyncio instalado.
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("loop closed")
-    except RuntimeError:
+    """Helper: ejecuta una coroutine en el loop actual (rebound por conftest)."""
+    loop = asyncio.get_event_loop()
+    if loop.is_closed():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)

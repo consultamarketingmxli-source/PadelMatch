@@ -1,0 +1,72 @@
+{
+  "_comment": "EAS Build configuration for PadelAppRetas. Refer to https://docs.expo.dev/eas/json/ for full schema.",
+  "cli": {
+    "version": ">= 13.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "_comment_development": "Development client + dev server. Use when you need hot-reload on a physical device with native modules (push, deep links).",
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://padel-tournament-hub-9.preview.emergentagent.com",
+        "EXPO_PUBLIC_ENV": "development"
+      }
+    },
+    "_comment_preview": "Internal QA testing — TestFlight (iOS) + Firebase App Distribution / APK (Android). Ideal para validar Universal Links + Push antes de submit a stores.",
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://padelappretas.app",
+        "EXPO_PUBLIC_ENV": "preview"
+      }
+    },
+    "_comment_production": "Production builds. iOS → App Store, Android → Play Store (AAB).",
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://padelappretas.app",
+        "EXPO_PUBLIC_ENV": "production"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "_comment": "Reemplazar con tu Apple ID y App Store Connect API key path tras inscripción en Apple Developer",
+        "appleId": "REEMPLAZAR_APPLE_ID",
+        "ascAppId": "REEMPLAZAR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REEMPLAZAR_TEAM_ID"
+      },
+      "android": {
+        "_comment": "serviceAccountKeyPath debe apuntar a la Service Account JSON descargada de Google Play Console",
+        "serviceAccountKeyPath": "./pc-api-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

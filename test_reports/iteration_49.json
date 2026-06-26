@@ -1,0 +1,43 @@
+{
+  "summary": "Iter49 backend-only verification PASSED. (1) Combined run of iter45+46+47+48 returned 68 passed, 2 skipped, 0 errors, 0 failures — exactly matches expected. The 5 prior ERRORs (Event loop is closed in TestMPOverflowRefund + TestStripeOverflowRefund) are RESOLVED by the new autouse fixture `_motor_loop_rebind` in tests/conftest.py. (2) iter46 alone: 17/17 PASS. (3) iter47 alone: initial run hit 1 transient 429 on TestRegressionSmoke::test_admin_login (rate-limit from back-to-back suites); after 60s cooldown re-ran clean: 17 passed, 2 skipped — no regression introduced by the new fixture. (4) iter48 alone: 18/18 PASS. (5) Smoke endpoints: GET /api/ → 200; POST /api/register-push (with correct field name `device_token`) → 201; GET /api/push-status?user_id=X → 200. GET /.well-known/apple-app-site-association via public URL → 404, but this is a KNOWN ingress limitation (iter47 documents this as INFRA_NOTE and skips the public-URL well-known tests). Backend serves both AASA and assetlinks.json correctly on localhost:8001 with HTTP 200. (6) EAS prebuild audit: `node /app/frontend/scripts/prebuild-check.js` returned exit 0 with exactly 3 warnings (TEAM_ID_TODO, SHA256_FINGERPRINT_TODO, google-services.json.TODO) and 0 errors — matches spec. The autouse conftest fixture correctly no-ops for HTTP-only test files (does nothing when core.db is not in sys.modules), so iter45/47/48 (which are HTTP-only) are unaffected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/register-push", "issue": "Request specification in review_request used field name `expo_push_token`, but actual schema requires `device_token`. Spec text mismatch only — endpoint itself works correctly (returns 201 with device_token)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter49_combined.xml",
+    "/app/backend/tests/test_iter45_waitlist_acid.py",
+    "/app/backend/tests/test_iter46_acid_refund_overflow.py",
+    "/app/backend/tests/test_iter47_deeplink_push.py",
+    "/app/backend/tests/test_iter48_push_settings.py",
+    "/app/backend/tests/conftest.py",
+    "/app/frontend/scripts/prebuild-check.js"
+  ],
+  "action_items": [
+    "Before EAS production submit: replace TEAM_ID_TODO in backend/wellknown.py with the actual Apple Team ID (required for iOS Universal Links).",
+    "Before EAS production submit: replace SHA256_FINGERPRINT_TODO in backend/wellknown.py with the production keystore SHA256 (required for Android App Links autoverification).",
+    "Before EAS Android production build: upload real google-services.json from Firebase Console (currently only .TODO placeholder exists). prebuild-check warns correctly.",
+    "(Optional / infra): If Universal Links must work via the preview URL, configure k8s ingress to route /.well-known/* to backend:8001. Currently only /api/* is routed (this is documented as INFRA_NOTE in iter47 tests and tests skip gracefully — not a code bug).",
+    "(Cosmetic) The review_request smoke spec for POST /api/register-push used `expo_push_token` as the field name; the real schema field is `device_token`. Update internal docs/spec to match."
+  ],
+  "critical_code_review_comments": [
+    "tests/conftest.py:_motor_loop_rebind is well-designed: (a) it's autouse but no-ops when core.db is not loaded, so HTTP-only suites (iter45/47/48) are completely unaffected; (b) it detects closed loops AND mismatched loops via the _io_loop heuristic; (c) it correctly propagates the fresh client/db to all cached modules listed in _MOTOR_REBIND_MODULES; (d) it intentionally skips teardown to avoid double-close. Verified empirically: cross-file suite went from 9 failed + 5 errors → 68 passed, 0 errors.",
+    "Use of _io_loop is a private motor API but is acknowledged in the comments and guarded by try/except — acceptable for a test-only fixture.",
+    "prebuild-check.js covers all 10 categories cleanly with colored output and proper exit codes; good gating tool for CI before EAS builds."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only request)"},
+  "seed_data_creation": "None. Smoke tests used ephemeral user_id 'smoke_iter49' against /api/register-push and /api/push-status (already self-cleaning per existing iter47/48 patterns).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The motor/event-loop rebind fixture (tests/conftest.py:_motor_loop_rebind) is now the canonical mitigation for cross-file pytest flakes in this repo. When adding new test files that interact with core.db, no extra wiring is required — the fixture detects core.db usage automatically. NOTE: when running multiple suites back-to-back hitting /api/auth/login, expect occasional 429 from the rate limiter; add 60s cooldown or run suites individually. The public URL ingress does NOT route /.well-known/* to backend; iter47 tests skip those checks with INFRA_NOTE — do not flag this as a regression.",
+  "rca_of_issue": "ROOT CAUSE (resolved): Motor's AsyncIOMotorClient binds its internal _io_loop to the first asyncio event loop it observes at instantiation. When pytest runs multiple test files in a single process, each file may create/close its own event loop. Modules that did `from core.db import db` at import time held a reference to a client whose _io_loop pointed to an already-closed loop, triggering `RuntimeError: Event loop is closed` on any subsequent direct mongo call (iter46 TestMPOverflowRefund + TestStripeOverflowRefund — 5 ERRORs). REPRO: `pytest test_iter45 test_iter46 test_iter47 test_iter48` → 9 failed + 5 errors. MITIGATION (now in place): autouse fixture `_motor_loop_rebind` in tests/conftest.py: detects closed/mismatched loops, instantiates a fresh AsyncIOMotorClient bound to the active loop, and propagates the new client/db references to all cached modules (core.db, routers.mercadopago, routers.payments_router, core.helpers, core.concurrency, services.push_service). VERIFIED: combined run now 68 passed, 2 skipped, 0 errors, 0 failures."
+}
