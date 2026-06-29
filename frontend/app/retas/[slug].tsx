@@ -41,6 +41,7 @@ import {
 
 import { api, Reta } from "@/src/api";
 import { AttendanceRateCard } from "@/src/components/AttendanceRateCard";
+import { CashPaymentOption } from "@/src/components/iter50/PagoEnCanchaComponents";
 import { TrafficLight } from "@/src/components/TrafficLight";
 import { buildPagoReturnUrl } from "@/src/utils/deepLink";
 import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
@@ -72,6 +73,8 @@ export default function RetaDetailScreen() {
   const [telefono, setTelefono] = useState("");
   const [parejaNombre, setParejaNombre] = useState("");
   const [parejaTelefono, setParejaTelefono] = useState("");
+  // Iter50 — Pago en Cancha
+  const [metodoPago, setMetodoPago] = useState<"online" | "efectivo_cancha">("online");
   const [submitting, setSubmitting] = useState(false);
   const [verifyingPago, setVerifyingPago] = useState(false);
   const [regMode, setRegMode] = useState<RegMode>("solo");
@@ -378,6 +381,7 @@ export default function RetaDetailScreen() {
           telefono: telefono.trim(),
           success_url: `${successUrl}${successUrl.includes("?") ? "&" : "?"}inscripcion_id=`,
           cancel_url: cancelUrl,
+          metodo_pago: metodoPago,
         };
         if (regMode === "duo") {
           checkoutBody.pareja_nombre = parejaNombre.trim();
@@ -657,6 +661,15 @@ export default function RetaDetailScreen() {
               label="Tu compañero/a"
             />
           ) : null}
+
+          {/* Iter50 — Selector "Pagar en línea / Pagar en cancha" */}
+          {!esGratisAmigos && (
+            <CashPaymentOption
+              enabled={!!(reta as any).permitir_pago_cancha}
+              selected={metodoPago}
+              onChange={setMetodoPago}
+            />
+          )}
 
           {/* Fase A — Tarjeta RSVP para retas gratuitas. */}
           {esGratisAmigos ? (

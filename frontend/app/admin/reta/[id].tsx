@@ -41,6 +41,12 @@ import { Button } from "@/src/components/Button";
 import { ClubAutocomplete } from "@/src/components/ClubAutocomplete";
 import { Input } from "@/src/components/Input";
 import { useSubscription } from "@/src/hooks/useSubscription";
+import {
+  AgregarManualModal,
+  AvisosManualesBanner,
+  MarcarPagadoButton,
+  PermitirPagoCanchaToggle,
+} from "@/src/components/iter50/PagoEnCanchaComponents";
 import { gateAntiFlake, gateExport } from "@/src/utils/premiumGate";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
@@ -132,6 +138,8 @@ export default function RetaForm() {
   // Solo visualmente activable si el organizador es Pro. Local state (sin
   // persistir aún en backend; sólo demostración del gating).
   const [antiFlakeEnabled, setAntiFlakeEnabled] = useState<boolean>(false);
+  // Iter50 — Pago en Cancha (toggle por reta)
+  const [permitirPagoCancha, setPermitirPagoCancha] = useState<boolean>(false);
 
   const esParejas = modalidadRegistro !== "individual";
 
@@ -184,6 +192,8 @@ export default function RetaForm() {
         setKoEnabled(!!r.formato_score?.ko_enabled);
         // Anti-Flake Filter (Sandbox Monetization) — leer flag persistido.
         setAntiFlakeEnabled(!!(r as any).requiere_alta_asistencia);
+        // Iter50 — Pago en Cancha
+        setPermitirPagoCancha(!!(r as any).permitir_pago_cancha);
       } catch (e: any) {
         if (!alive) return;
         Alert.alert("Error", e.message ?? "No se pudo cargar");
@@ -274,6 +284,8 @@ export default function RetaForm() {
       // ===== Anti-Flake Filter (PRO feature · Sandbox Monetization) =====
       requiere_alta_asistencia: antiFlakeEnabled,
       asistencia_minima_pct: 90,
+      // ===== Iter50 — Pago en Cancha =====
+      permitir_pago_cancha: permitirPagoCancha,
     };
     try {
       if (isNew) {
@@ -726,6 +738,12 @@ export default function RetaForm() {
               </Text>
             </View>
           </TouchableOpacity>
+
+          {/* ====== Iter50 — Pago en Cancha (toggle por reta) ====== */}
+          <PermitirPagoCanchaToggle
+            value={permitirPagoCancha}
+            onChange={setPermitirPagoCancha}
+          />
 
           {/* ====== Fase 1 (Sección 1) — Parametrización extendida ====== */}
           <Text style={styles.sectionLabel}>JUGADORES POR CANCHA</Text>

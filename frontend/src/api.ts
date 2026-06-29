@@ -786,6 +786,38 @@ export const api = {
       body,
     }),
 
+  // ===== Iter50 — Pago en Cancha + Inscripción Manual =====
+  agregarInscripcionManual: (
+    retaId: string,
+    body: { nombre_temporal: string; telefono?: string; metodo_pago?: "online" | "efectivo_cancha" | "transferencia_manual"; nota?: string },
+  ) =>
+    request<Inscripcion>(`/retas/${retaId}/inscripciones/manual`, {
+      method: "POST",
+      body,
+      auth: true,
+    }),
+  marcarInscripcionPagada: (retaId: string, inscripcionId: string, nota?: string) =>
+    request<Inscripcion>(`/retas/${retaId}/inscripciones/${inscripcionId}/marcar-pagado`, {
+      method: "PATCH",
+      body: { nota },
+      auth: true,
+    }),
+  getAvisosManuales: (retaId: string) =>
+    request<{
+      reta_id: string;
+      reta_nombre: string;
+      total: number;
+      lista_jugadores: Array<{
+        inscripcion_id: string;
+        nombre_temporal: string;
+        telefono: string | null;
+        metodo_pago: string;
+        estatus_pago: string;
+        wa_link: string | null;
+      }>;
+      bulk_whatsapp_payload: string;
+    }>(`/retas/${retaId}/avisos-manuales`, { auth: true }),
+
   // ===== Push notifications (Emergent-managed relay) =====
   /**
    * Registra el push_token del dispositivo en el backend para que la lista
