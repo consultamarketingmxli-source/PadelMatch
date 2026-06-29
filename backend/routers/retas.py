@@ -15,7 +15,16 @@ from core.helpers import compute_public, expirar_bloqueos_pass, strip_mongo
 from core.image_utils import compress_logo_to_webp
 from core.qr_utils import make_qr_png
 from logica_torneo import construir_fecha_local_iso
-from models import Inscripcion, Reta, RetaCreate, RetaPublic
+from models import (
+    AvisoManualPayload,
+    AvisosManualesResponse,
+    Inscripcion,
+    InscripcionManualCreate,
+    MarcarPagadoBody,
+    Reta,
+    RetaCreate,
+    RetaPublic,
+)
 from routers.clubes import upsert_club_silencioso
 
 router = APIRouter(prefix="/retas", tags=["retas"])
@@ -133,6 +142,8 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         # === Anti-Flake Filter (PRO feature) ===
         requiere_alta_asistencia=body.requiere_alta_asistencia,
         asistencia_minima_pct=body.asistencia_minima_pct,
+        # === Iter50 — Pago en Cancha ===
+        permitir_pago_cancha=body.permitir_pago_cancha,
     )
     doc = reta.model_dump()
     doc["creado_en"] = (
@@ -476,4 +487,238 @@ async def reta_qr_png(reta_id: str, current=Depends(get_current_admin)):
             "Cache-Control": "public, max-age=300",
             "Content-Disposition": f'inline; filename="qr-{r["url_slug"]}.png"',
         },
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ITER50 — Pago en Cancha + Inscripción Manual
+# ════════════════════════════════════════════════════════════════════════════
+
+def _assert_es_dueno(reta: dict, current: dict) -> None:
+    """Valida que el caller sea el organizador de la reta.
+
+    Si current["role"] es "admin_master" (super-admin platform-wide) lo
+    dejamos pasar — útil para soporte. En cualquier otro caso, el
+    `current["sub"]` debe coincidir con `reta.organizador_id`.
+    """
+    if current.get("role") == "admin_master":
+        return
+    if str(reta.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(
+            403,
+            "Sólo el organizador dueño de la reta puede agregar inscripciones manuales.",
+        )
+
+
+def _wa_link(telefono: Optional[str], texto: str) -> Optional[str]:
+    """Construye un deeplink wa.me con texto preformateado.
+
+    Acepta formatos `+52155...`, `52155...`, `155...`. Sólo deja dígitos.
+    Si no hay número válido (>=10 dígitos), retorna un link "open" sin
+    destinatario para que el organizador elija contacto manualmente.
+    """
+    if not telefono:
+        return None
+    digits = "".join(c for c in telefono if c.isdigit())
+    if len(digits) < 10:
+        return None
+    from urllib.parse import quote
+    return f"https://wa.me/{digits}?text={quote(texto)}"
+
+
+@router.post(
+    "/{reta_id}/inscripciones/manual",
+    response_model=Inscripcion,
+    status_code=201,
+)
+async def crear_inscripcion_manual(
+    reta_id: str,
+    body: InscripcionManualCreate,
+    current=Depends(get_current_admin),
+):
+    """Inscripción manual creada por el organizador (típicamente para
+    jugadores contactados por WhatsApp que NO tienen cuenta en la app).
+
+    Comportamiento:
+      • Valida ownership del organizador.
+      • Reserva cupo atómico (no bypassa capacidad — si hay overflow → 409).
+      • Crea inscripción con `tipo_inscripcion=MANUAL_ORGANIZADOR`,
+        `estatus_pago=Pendiente`, `metodo_pago=<body>` (default efectivo_cancha).
+      • NO dispara antiflake (no hay historial para jugador sin cuenta).
+      • NO crea mp_transaction ni stripe_transaction.
+    """
+    import uuid as _uuid
+    from core.concurrency import reservar_lugar_atomico, liberar_lugar
+
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    _assert_es_dueno(reta, current)
+
+    # Reserva atómica de cupo
+    reservada = await reservar_lugar_atomico(reta_id)
+    if not reservada:
+        raise HTTPException(
+            409,
+            "La reta está llena. Agrega al jugador a la lista de espera o libera un cupo.",
+        )
+
+    insc_doc = {
+        "id": str(_uuid.uuid4()),
+        "reta_id": reta_id,
+        # jugador_id="" para manuales — back-compat con queries existentes
+        # (todos los .find({"jugador_id": ...}) siguen funcionando).
+        "jugador_id": "",
+        "nombre": body.nombre_temporal.strip(),
+        "telefono": body.telefono or "",
+        "estatus_pago": "Pendiente",
+        "estatus_confirmacion": "aceptado",
+        "bloqueado_hasta": None,
+        "tipo_inscripcion": "MANUAL_ORGANIZADOR",
+        "metodo_pago": body.metodo_pago,
+        "nombre_temporal": body.nombre_temporal.strip(),
+        "pago_manual_nota": body.nota,
+        "creado_en": datetime.now().isoformat(),
+    }
+    try:
+        await db.inscripciones.insert_one(insc_doc)
+    except Exception as e:
+        # Rollback de cupo si la inserción falló (defensivo).
+        await liberar_lugar(reta_id, 1)
+        raise HTTPException(500, f"No se pudo crear la inscripción manual: {e}") from e
+
+    return Inscripcion(**{k: v for k, v in insc_doc.items() if k != "_id"})
+
+
+@router.patch(
+    "/{reta_id}/inscripciones/{inscripcion_id}/marcar-pagado",
+    response_model=Inscripcion,
+)
+async def marcar_inscripcion_pagada(
+    reta_id: str,
+    inscripcion_id: str,
+    body: MarcarPagadoBody,
+    current=Depends(get_current_admin),
+):
+    """Check-in cierre de caja: el organizador marca como Aprobado un pago
+    en efectivo o transferencia manual el día del evento.
+
+    Restricciones:
+      • Sólo organizador dueño (o admin_master).
+      • Sólo aplica si `metodo_pago != "online"` (cash o transferencia).
+      • Sólo si la inscripción está `Pendiente` (idempotente para Aprobado).
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    _assert_es_dueno(reta, current)
+
+    insc = await db.inscripciones.find_one(
+        {"id": inscripcion_id, "reta_id": reta_id}, {"_id": 0},
+    )
+    if not insc:
+        raise HTTPException(404, "Inscripción no encontrada")
+
+    metodo = str(insc.get("metodo_pago") or "online")
+    if metodo == "online":
+        raise HTTPException(
+            400,
+            "Esta inscripción se pagó por gateway (MP/Stripe). El check-in "
+            "manual sólo aplica para pagos en efectivo o transferencia.",
+        )
+    # Idempotencia
+    if insc.get("estatus_pago") == "Aprobado":
+        return Inscripcion(**insc)
+    if insc.get("estatus_pago") != "Pendiente":
+        raise HTTPException(
+            409,
+            f"Esta inscripción está en estado '{insc.get('estatus_pago')}'. "
+            "Sólo se puede marcar como pagada desde estado Pendiente.",
+        )
+
+    nota = (insc.get("pago_manual_nota") or "")
+    if body.nota:
+        nota = f"{nota}\n[{datetime.now().date()}] {body.nota}".strip()
+
+    await db.inscripciones.update_one(
+        {"id": inscripcion_id},
+        {"$set": {
+            "estatus_pago": "Aprobado",
+            "bloqueado_hasta": None,
+            "pago_manual": True,
+            "pago_manual_nota": nota,
+            "checked_in_en": datetime.now().isoformat(),
+        }},
+    )
+    updated = await db.inscripciones.find_one({"id": inscripcion_id}, {"_id": 0})
+    return Inscripcion(**updated)
+
+
+@router.get(
+    "/{reta_id}/avisos-manuales",
+    response_model=AvisosManualesResponse,
+)
+async def listar_avisos_manuales(
+    reta_id: str,
+    current=Depends(get_current_admin),
+):
+    """Lista de inscripciones MANUAL_ORGANIZADOR para que el organizador
+    contacte a los jugadores cuando la reta cambia de fecha o se cancela.
+
+    Estos jugadores NO reciben push/email automático (no tienen app), así
+    que el panel les ofrece:
+      • Lista de nombres + teléfonos
+      • Deeplinks `wa.me/<num>?text=...` por jugador
+      • Un `bulk_whatsapp_payload` con texto pre-armado para copy-paste
+        en cualquier chat/grupo de WhatsApp.
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada")
+    _assert_es_dueno(reta, current)
+
+    cursor = db.inscripciones.find(
+        {"reta_id": reta_id, "tipo_inscripcion": "MANUAL_ORGANIZADOR"},
+        {"_id": 0},
+    ).sort("creado_en", 1).limit(200)
+
+    # Plantilla del mensaje (puede personalizarse en versiones futuras).
+    fecha_evento = str(reta.get("fecha_evento", ""))[:10]
+    plantilla_individual = (
+        f"Hola {{nombre}}, te aviso sobre la reta \"{reta['nombre']}\" "
+        f"({fecha_evento} en {reta.get('club', '')}). "
+        f"Hubo un cambio importante, ¿podemos coordinar?"
+    )
+
+    items: List[AvisoManualPayload] = []
+    nombres_para_bulk: list[str] = []
+    async for d in cursor:
+        nombre = d.get("nombre_temporal") or d.get("nombre") or "Jugador"
+        tel = d.get("telefono") or None
+        texto = plantilla_individual.replace("{nombre}", nombre)
+        items.append(AvisoManualPayload(
+            inscripcion_id=d["id"],
+            nombre_temporal=nombre,
+            telefono=tel,
+            metodo_pago=d.get("metodo_pago", "efectivo_cancha"),
+            estatus_pago=d.get("estatus_pago", "Pendiente"),
+            wa_link=_wa_link(tel, texto),
+        ))
+        nombres_para_bulk.append(f"• {nombre}" + (f" ({tel})" if tel else ""))
+
+    bulk = (
+        f"📣 *Aviso urgente — {reta['nombre']}*\n"
+        f"Fecha: {fecha_evento} · Club: {reta.get('club', '')}\n\n"
+        f"Hubo un cambio importante en la reta. Por favor confirmar disponibilidad.\n\n"
+        f"Jugadores a contactar manualmente:\n"
+        + ("\n".join(nombres_para_bulk) if nombres_para_bulk else "(ninguno)")
+        + "\n\n— Organizador"
+    )
+
+    return AvisosManualesResponse(
+        reta_id=reta_id,
+        reta_nombre=reta["nombre"],
+        total=len(items),
+        lista_jugadores=items,
+        bulk_whatsapp_payload=bulk,
     )

@@ -181,6 +181,11 @@ class RetaCreate(BaseModel):
     # Política para jugadores nuevos: < 3 retas pasadas → exento (rate=100%).
     requiere_alta_asistencia: bool = False
     asistencia_minima_pct: int = Field(default=90, ge=50, le=100)
+    # ===== Iter50 — Pago en Cancha (toggle por reta) =====
+    # Si True, el público checkout muestra el botón "Pagar en cancha" como
+    # alternativa al gateway. Default False para que ninguna reta existente
+    # cambie de comportamiento al desplegar (retro-compat 100%).
+    permitir_pago_cancha: bool = False
 
     @model_validator(mode="after")
     def _coherencia_modalidad(self) -> "RetaCreate":
@@ -231,6 +236,8 @@ class Reta(BaseModel):
     # ===== Anti-Flake Filter (PRO feature · Sandbox Monetization) =====
     requiere_alta_asistencia: bool = False
     asistencia_minima_pct: int = 90
+    # ===== Iter50 — Pago en Cancha =====
+    permitir_pago_cancha: bool = False
     alertas_enviadas: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 
@@ -252,6 +259,10 @@ class InscripcionCreate(BaseModel):
     pareja_nombre: Optional[NombreStr] = None
     pareja_telefono: Optional[PhoneStr] = None
     es_free_agent: bool = False
+    # ===== Iter50 — Pago en Cancha (público checkout) =====
+    # Si "efectivo_cancha" o "transferencia_manual", la reta DEBE tener
+    # `permitir_pago_cancha=True` o se rechaza con 400.
+    metodo_pago: Literal["online", "efectivo_cancha", "transferencia_manual"] = "online"
 
     @model_validator(mode="after")
     def _coherencia_pareja(self) -> "InscripcionCreate":
@@ -316,7 +327,67 @@ class Inscripcion(BaseModel):
     # pago no pasó por Stripe/MP pero el admin lo marcó como Aprobado.
     pago_manual: Optional[bool] = None
     pago_manual_nota: Optional[str] = None
+    # ===== Iter50 — Pago en Cancha + Inscripción Manual =====
+    # tipo_inscripcion:
+    #   DIRECTA_APP        → flujo público clásico (1 usuario con cuenta).
+    #   MANUAL_ORGANIZADOR → agregado por el organizador (típicamente jugador
+    #                        contactado por WhatsApp sin cuenta en la app).
+    #                        En este caso usuario_id puede ser null y nombre_temporal
+    #                        guarda el alias capturado.
+    tipo_inscripcion: Literal["DIRECTA_APP", "MANUAL_ORGANIZADOR"] = "DIRECTA_APP"
+    # metodo_pago: enum extensible. Por default "online" (gateway). Valores:
+    #   online             → flujo gateway (MP / Stripe / cupón).
+    #   efectivo_cancha    → el organizador cobra cash al llegar a la cancha.
+    #   transferencia_manual → transferencia bancaria fuera de la app.
+    metodo_pago: Literal["online", "efectivo_cancha", "transferencia_manual"] = "online"
+    # usuario_id: alias semántico para jugador_id cuando es null (inscripción
+    # manual). NO es un campo persistido distinto — se reutiliza jugador_id
+    # internamente, pero al exponerlo a la API el frontend lee `usuario_id`
+    # para distinguir entre "usuario registrado" (jugador_id real) y "manual"
+    # (jugador_id="" o prefijo "manual-…").
+    # Para preservar back-compat con los 68 tests, mantenemos jugador_id
+    # siempre como string (vacío "" para manuales). En las queries usamos
+    # `tipo_inscripcion == MANUAL_ORGANIZADOR` como discriminador autoritativo.
+    nombre_temporal: Optional[str] = None  # required cuando es MANUAL_ORGANIZADOR
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
+
+
+# ===== Iter50 — Pydantic bodies para endpoints admin de inscripción manual =====
+class InscripcionManualCreate(BaseModel):
+    """Body para `POST /api/retas/{reta_id}/inscripciones/manual`.
+
+    El organizador captura el nombre tal como lo escribió en WhatsApp.
+    Teléfono opcional (si se da, podríamos en futuro enviar SMS/WhatsApp
+    template manual; por ahora es informativo para el panel).
+    """
+    nombre_temporal: NombreStr
+    telefono: Optional[PhoneStr] = None
+    metodo_pago: Literal["online", "efectivo_cancha", "transferencia_manual"] = "efectivo_cancha"
+    nota: Optional[str] = Field(default=None, max_length=240)
+
+
+class MarcarPagadoBody(BaseModel):
+    """Body para `PATCH /api/retas/{reta_id}/inscripciones/{insc_id}/marcar-pagado`."""
+    nota: Optional[str] = Field(default=None, max_length=240)
+
+
+class AvisoManualPayload(BaseModel):
+    """Item del payload de `GET /api/retas/{reta_id}/avisos-manuales`."""
+    inscripcion_id: str
+    nombre_temporal: str
+    telefono: Optional[str] = None
+    metodo_pago: str
+    estatus_pago: str
+    wa_link: Optional[str] = None  # https://wa.me/52... cuando hay teléfono
+
+
+class AvisosManualesResponse(BaseModel):
+    """Respuesta de `GET /api/retas/{reta_id}/avisos-manuales`."""
+    reta_id: str
+    reta_nombre: str
+    total: int
+    lista_jugadores: List[AvisoManualPayload]
+    bulk_whatsapp_payload: str  # texto pre-armado para copy-paste
 
 
 # ============= Lista de espera =============
