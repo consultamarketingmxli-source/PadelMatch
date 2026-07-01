@@ -95,9 +95,24 @@ class TestHealth:
 
 # ═════════════════ 2. GET preauth-form (public) ═════════════════
 class TestPreauthForm:
-    def test_returns_html_200_with_mp_key(self, api):
+    @pytest.fixture(scope="class")
+    def open_reta_slug(self, mongo):
+        """Semilla una reta con open_reta_habilitado=True para probar el form."""
+        rid = f"TEST_iter51_p2_preauth_{uuid.uuid4().hex[:8]}"
+        slug = f"reta-preauth-{uuid.uuid4().hex[:8]}"
+        mongo["retas"].insert_one({
+            "id": rid, "nombre": "Reta Test Preauth", "organizador_id": "test",
+            "max_jugadores": 4, "inscritos_lock": 0, "costo_inscripcion": 100.0,
+            "fecha_evento": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+            "status_public": "open", "url_slug": slug,
+            "open_reta_habilitado": True,
+        })
+        yield slug
+        mongo["retas"].delete_many({"id": rid})
+
+    def test_returns_html_200_with_mp_key(self, api, open_reta_slug):
         r = api.get(
-            f"{BASE_URL}/api/public/retas/padel-tournament-hub-9/preauth-form?amount=100",
+            f"{BASE_URL}/api/public/retas/{open_reta_slug}/preauth-form?amount=100",
             timeout=15,
         )
         assert r.status_code == 200, r.text[:200]
@@ -108,19 +123,19 @@ class TestPreauthForm:
         assert "sdk.mercadopago.com/js/v2" in body
         # MP_PUBLIC_KEY inlined
         assert "APP_USR-" in body or "TEST-" in body
-        # slug escaped in title
-        assert "padel-tournament-hub-9" in body
+        # reta_nombre rendered
+        assert "Reta Test Preauth" in body
         # amount rendered
         assert "100" in body
 
-    def test_no_auth_required(self, api):
+    def test_no_auth_required(self, api, open_reta_slug):
         # explicit no-auth call
         s = requests.Session()
         r = s.get(
-            f"{BASE_URL}/api/public/retas/some-slug/preauth-form?amount=50",
+            f"{BASE_URL}/api/public/retas/{open_reta_slug}/preauth-form?amount=50",
             timeout=15,
         )
-        assert r.status_code in (200, 404, 500), r.status_code
+        assert r.status_code == 200, r.status_code
 
     def test_amount_zero_returns_422(self, api):
         r = api.get(
@@ -130,16 +145,33 @@ class TestPreauthForm:
         # Pydantic Query gt=0 → 422
         assert r.status_code == 422
 
-    def test_html_escapes_lt_gt_in_slug(self, api):
-        # Verify _build_preauth_html escapes < and > via inspection route path
-        # (slug reaches title as `reta_nombre` only when reta not found;
-        # then it falls back to slug directly.)
+    def test_reta_missing_returns_404(self, api):
+        """Iter51-P2 · gate: reta inexistente → 404 (antes se renderizaba HTML)."""
         r = api.get(
-            f"{BASE_URL}/api/public/retas/no-such-reta-xyz/preauth-form?amount=10",
+            f"{BASE_URL}/api/public/retas/no-such-reta-{uuid.uuid4().hex[:6]}/preauth-form?amount=10",
             timeout=10,
         )
-        assert r.status_code == 200
-        assert "no-such-reta-xyz" in r.text
+        assert r.status_code == 404
+
+    def test_open_reta_disabled_returns_403(self, api, mongo):
+        """Iter51-P2 · gate: reta con open_reta_habilitado=False → 403."""
+        rid = f"TEST_iter51_disabled_{uuid.uuid4().hex[:8]}"
+        slug = f"reta-disabled-{uuid.uuid4().hex[:8]}"
+        try:
+            mongo["retas"].insert_one({
+                "id": rid, "nombre": "Reta Closed", "organizador_id": "test",
+                "max_jugadores": 4, "inscritos_lock": 0, "costo_inscripcion": 100.0,
+                "fecha_evento": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+                "status_public": "open", "url_slug": slug,
+                "open_reta_habilitado": False,  # ← toggle OFF
+            })
+            r = api.get(
+                f"{BASE_URL}/api/public/retas/{slug}/preauth-form?amount=100",
+                timeout=10,
+            )
+            assert r.status_code == 403
+        finally:
+            mongo["retas"].delete_many({"id": rid})
 
 
 # ═════════════════ 3. GET /retas/{id}/join-requests ═════════════════

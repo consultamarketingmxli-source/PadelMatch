@@ -144,6 +144,8 @@ async def create_reta(body: RetaCreate, current=Depends(get_current_admin)):
         asistencia_minima_pct=body.asistencia_minima_pct,
         # === Iter50 — Pago en Cancha ===
         permitir_pago_cancha=body.permitir_pago_cancha,
+        # === Iter51 — Open Reta (Pre-Auth) ===
+        open_reta_habilitado=body.open_reta_habilitado,
     )
     doc = reta.model_dump()
     doc["creado_en"] = (

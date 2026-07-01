@@ -744,6 +744,49 @@ frontend:
       - working: "NA"
         agent: "main"
         comment: "Card con disclaimer explicando pre-autorización + botón 'Solicitar unirme'. Al tap abre modal fullscreen con WebView que carga /api/public/retas/{slug}/preauth-form (MP.js Bricks cardPayment brick). MP.js tokeniza on-device, envía token via ReactNativeWebView.postMessage. RN llama POST /api/retas/join-request con card_token + amount. Guard doble-submit + rollback en error 409 / 402 / 424. Web fallback: mensaje 'usar app móvil'. Integrado en retas/[slug].tsx debajo del CheckoutCard cuando: !esGratisAmigos && !lleno && !cuponAplicado && playerAuth.id. Testing pendiente por testing_agent."
+      - working: "NA"
+        agent: "main"
+        comment: "Iter51-P2 · Gated ahora en `reta.open_reta_habilitado === true` (feature flag por reta)."
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Iter51-P2 · Feature Flag + Player "Mis Solicitudes" + Backlog Verification (2026-07-01)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - task: "Iter51-P2 · Feature flag open_reta_habilitado (backend gate)"
+    implemented: true
+    working: true
+    file: "/app/backend/models.py /app/backend/routers/retas.py /app/backend/routers/join_requests.py"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Nuevo campo Reta.open_reta_habilitado (bool, default False, retro-compat 100%). POST /retas/join-request y GET /public/retas/{slug}/preauth-form ahora responden 403 si el flag es False. También la form HTML valida existencia de reta (antes daba 200 con slug fallback). Persistencia en RetaCreate + Reta + retas router.create_reta. 18 tests unit (test_iter51_open_reta_preauth.py) + 21 tests HTTP integration + 10 iter50 = 49/49 passing. Nuevo test test_8b_crear_join_request_403_when_open_reta_disabled + test_open_reta_disabled_returns_403 + test_reta_missing_returns_404 verifican el gate."
+
+  - task: "Iter51-P2 · Frontend toggle en form de crear/editar reta"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/iter51/OpenRetaHabilitadoToggle.tsx /app/frontend/app/admin/reta/[id].tsx"
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Nuevo componente OpenRetaHabilitadoToggle (Switch nativo con estilo iter50 unificado). Integrado en admin/reta/[id].tsx debajo del PermitirPagoCanchaToggle. State + save() + load() todos wired al backend body.open_reta_habilitado. Label: 'Permitir solicitudes de unión (Open Reta)'. Hint alineado con especificación del arquitecto."
+
+  - task: "Iter51-P2 · Player 'Mis Solicitudes' screen con countdown en tiempo real"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/player/solicitudes.tsx /app/backend/routers/join_requests.py"
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Ruta /player/solicitudes con FlatList de join_requests del jugador (GET /api/players/{player_id}/join-requests). Hook useCountdownTo2hBeforeMatch con tick de 1s calcula tiempo hasta 2h antes del match_start_time. Badge de estado (pendiente/aprobado/rechazado/expirado/falló), monto retenido/cobrado/liberado, motivo de rechazo cuando aplica. Empty states para (a) no auth OTP (b) sin solicitudes. Pull-to-refresh. Countdown crítico (rojo) cuando quedan <30 min. Backend endpoint: GET /players/{player_id}/join-requests con status=active|all|<estado>. Batch fetch de retas para evitar N+1. Testing pendiente por testing_agent."
+
+  - task: "Iter51-P2 · PRODUCTION_ACTIVATION_TODO backlog verification"
+    implemented: true
+    working: true
+    file: "/app/memory/PRODUCTION_ACTIVATION_TODO.md /app/frontend/scripts/prebuild-check.js"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Auditoría del manifest de producción. Todas las variables coinciden con el código: SENTRY_DSN + EXPO_PUBLIC_SENTRY_DSN + @sentry/react-native/expo plugin en app.json (§1); EXPO_PUBLIC_REVENUECAT_API_KEY_(IOS|ANDROID) referenciadas en userPlanStore.tsx líneas 74-75 con fallback MOCK_API_KEY (§2); EMERGENT_PUSH_KEY=placeholder según manifest (§3); MP_CLIENT_ID/SECRET/WEBHOOK_SECRET/TOKEN_ENCRYPTION_KEY/OAUTH_STATE_SECRET presentes (§4); RESEND_API_KEY + RESEND_FROM_EMAIL presentes (§5); wellknown.py TEAM_ID_TODO + SHA256_FINGERPRINT_TODO placeholders (§7). El script prebuild-check.js ejecutado exitosamente detecta las 3 pending activations: (a) TEAM_ID iOS, (b) SHA-256 Android, (c) google-services.json real (actualmente .TODO). Sin deploy — sólo validación."
 
 
 metadata:

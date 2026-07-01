@@ -34,6 +34,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router as expoRouter } from "expo-router";
 import { WebView } from "react-native-webview";
 import { CheckCircle2, Info, Shield, X } from "lucide-react-native";
 
@@ -212,6 +213,10 @@ export function MpPreAuthWebViewSheet({
           Alert.alert(
             "¡Solicitud enviada!",
             `Retuvimos $${amount.toFixed(2)} MXN en tu tarjeta. El organizador de ${retaNombre} decidirá pronto. Te avisamos por email y push.`,
+            [
+              { text: "Ver mis solicitudes", onPress: () => { try { expoRouter.push("/player/solicitudes" as any); } catch { /* ignore */ } } },
+              { text: "OK", style: "cancel" },
+            ],
           );
           onSuccess(res.payment_id);
         } catch (e: any) {

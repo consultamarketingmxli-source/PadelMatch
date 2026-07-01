@@ -100,6 +100,10 @@ export type Reta = {
   /** Anti-Flake Filter (PRO feature · Sandbox Monetization). */
   requiere_alta_asistencia?: boolean;
   asistencia_minima_pct?: number;
+  /** Iter50 — Pago en Cancha (toggle organizador). */
+  permitir_pago_cancha?: boolean;
+  /** Iter51 — Open Reta pre-auth (toggle organizador). */
+  open_reta_habilitado?: boolean;
   inscritos_count: number;
   waitlist_count: number;
   capacidad_pct: number;
@@ -1104,6 +1108,29 @@ export const api = {
   /** URL absoluta del formulario HTML para tokenizar tarjeta (usa WebView). */
   getPreauthFormUrl: (slug: string, amount: number): string =>
     `${BASE}/api/public/retas/${encodeURIComponent(slug)}/preauth-form?amount=${amount}`,
+
+  /** Jugador lista sus propias solicitudes (self-service, pública por player_id). */
+  listMyJoinRequests: (
+    playerId: string,
+    status: "active" | "all" | "pending_approval" | "approved" | "rejected" | "expired" | "failed" = "active",
+  ) =>
+    request<{
+      total: number;
+      items: Array<{
+        id: string;
+        match_id: string;
+        reta_nombre: string;
+        reta_slug?: string;
+        reta_club: string;
+        reta_fecha_evento?: string;
+        amount: number;
+        payment_id?: string;
+        status: "pending_approval" | "approved" | "rejected" | "expired" | "failed";
+        decision_reason?: string | null;
+        created_at: string;
+        decided_at?: string | null;
+      }>;
+    }>(`/players/${playerId}/join-requests?status=${status}`),
 
   // ===== admin dashboard =====
   adminMetrics: () => request<AdminMetrics>(`/admin/metrics`, { auth: true }),

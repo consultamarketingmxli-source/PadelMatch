@@ -167,6 +167,66 @@ async def listar_join_requests(
     }
 
 
+@router.get("/players/{player_id}/join-requests")
+async def listar_join_requests_del_jugador(
+    player_id: str,
+    status: str = Query(default="active", pattern="^(active|all|pending_approval|approved|rejected|expired|failed)$"),
+) -> dict:
+    """Lista los join_requests del propio jugador (self-service).
+
+    Endpoint PÚBLICO (sin auth admin). Autorización débil por `player_id` en
+    URL — el jugador ya está identificado via OTP en su dispositivo. La app
+    filtra por su propio `jugador_id` local (nunca expone IDs ajenos porque
+    se requiere conocer el UUID). Para reforzar podríamos exigir un token,
+    pero el flujo público de join_request ya funciona así.
+
+    status:
+      • `active` (default) → sólo `pending_approval` (lo más útil en la app).
+      • `all` → todos los estados.
+      • Cualquier otro estado individual: filtra por ese estado.
+
+    Cada item incluye info de la reta (nombre, fecha, slug, costo) para que
+    la UI pueda pintar cards ricas sin fetch adicional por cada request.
+    """
+    query: dict = {"player_id": player_id}
+    if status == "active":
+        query["status"] = "pending_approval"
+    elif status != "all":
+        query["status"] = status
+
+    cursor = db.join_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(50)
+    docs = await cursor.to_list(length=50)
+
+    # Fetch retas en batch para evitar N+1.
+    match_ids = list({d["match_id"] for d in docs})
+    retas_map: dict = {}
+    if match_ids:
+        async for r in db.retas.find(
+            {"id": {"$in": match_ids}},
+            {"_id": 0, "id": 1, "nombre": 1, "url_slug": 1, "club": 1, "fecha_evento": 1, "costo_inscripcion": 1},
+        ):
+            retas_map[r["id"]] = r
+
+    items = []
+    for d in docs:
+        reta_info = retas_map.get(d["match_id"], {})
+        items.append({
+            "id": d["id"],
+            "match_id": d["match_id"],
+            "reta_nombre": reta_info.get("nombre", "Reta borrada"),
+            "reta_slug": reta_info.get("url_slug"),
+            "reta_club": reta_info.get("club", ""),
+            "reta_fecha_evento": reta_info.get("fecha_evento"),
+            "amount": d.get("amount", 0),
+            "payment_id": d.get("payment_id"),
+            "status": d["status"],
+            "decision_reason": d.get("decision_reason"),
+            "created_at": d.get("created_at"),
+            "decided_at": d.get("decided_at"),
+        })
+    return {"total": len(items), "items": items}
+
+
 @router.post("/retas/join-request", status_code=201, response_model=JoinRequestOut)
 async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
     """1) Retiene fondos en tarjeta (capture=False) y persiste el join_request.
@@ -179,6 +239,14 @@ async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
     reta = await db.retas.find_one({"id": body.match_id}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta no encontrada.")
+    # Iter51-P2 — Toggle "Open Reta". Sólo se aceptan join-requests si el
+    # organizador habilitó explícitamente esta modalidad. Retro-compat: retas
+    # antiguas tienen open_reta_habilitado=False por default (Pydantic).
+    if not bool(reta.get("open_reta_habilitado", False)):
+        raise HTTPException(
+            403,
+            "Esta reta no acepta solicitudes de unión. Contacta al organizador para inscribirte directamente.",
+        )
     if str(reta.get("status_public") or reta.get("status") or "open").lower() in ("cancelled", "full"):
         raise HTTPException(409, "La reta ya no acepta pre-autorizaciones.")
 
@@ -486,8 +554,12 @@ async def preauth_form(slug: str, amount: float = Query(gt=0)) -> HTMLResponse:
     if not mp_public_key:
         raise HTTPException(500, "MP_PUBLIC_KEY no configurado en el servidor.")
 
-    reta = await db.retas.find_one({"url_slug": slug}, {"nombre": 1, "_id": 0})
-    reta_nombre = (reta or {}).get("nombre") or slug
+    reta = await db.retas.find_one({"url_slug": slug}, {"nombre": 1, "open_reta_habilitado": 1, "_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada.")
+    if not bool(reta.get("open_reta_habilitado", False)):
+        raise HTTPException(403, "Esta reta no acepta solicitudes de unión.")
+    reta_nombre = reta.get("nombre") or slug
 
     html = _build_preauth_html(
         mp_public_key=mp_public_key,

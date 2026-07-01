@@ -47,6 +47,7 @@ import {
   MarcarPagadoButton,
   PermitirPagoCanchaToggle,
 } from "@/src/components/iter50/PagoEnCanchaComponents";
+import { OpenRetaHabilitadoToggle } from "@/src/components/iter51/OpenRetaHabilitadoToggle";
 import { gateAntiFlake, gateExport } from "@/src/utils/premiumGate";
 import { colors, radii, spacing, typography } from "@/src/theme";
 
@@ -140,6 +141,7 @@ export default function RetaForm() {
   const [antiFlakeEnabled, setAntiFlakeEnabled] = useState<boolean>(false);
   // Iter50 — Pago en Cancha (toggle por reta)
   const [permitirPagoCancha, setPermitirPagoCancha] = useState<boolean>(false);
+  const [openRetaHabilitado, setOpenRetaHabilitado] = useState<boolean>(false);
 
   const esParejas = modalidadRegistro !== "individual";
 
@@ -194,6 +196,8 @@ export default function RetaForm() {
         setAntiFlakeEnabled(!!(r as any).requiere_alta_asistencia);
         // Iter50 — Pago en Cancha
         setPermitirPagoCancha(!!(r as any).permitir_pago_cancha);
+        // Iter51-P2 — Open Reta
+        setOpenRetaHabilitado(!!(r as any).open_reta_habilitado);
       } catch (e: any) {
         if (!alive) return;
         Alert.alert("Error", e.message ?? "No se pudo cargar");
@@ -286,6 +290,8 @@ export default function RetaForm() {
       asistencia_minima_pct: 90,
       // ===== Iter50 — Pago en Cancha =====
       permitir_pago_cancha: permitirPagoCancha,
+      // ===== Iter51-P2 — Open Reta (Pre-Auth) =====
+      open_reta_habilitado: openRetaHabilitado,
     };
     try {
       if (isNew) {
@@ -743,6 +749,12 @@ export default function RetaForm() {
           <PermitirPagoCanchaToggle
             value={permitirPagoCancha}
             onChange={setPermitirPagoCancha}
+          />
+
+          {/* ====== Iter51-P2 — Open Reta (Pre-Auth) toggle ====== */}
+          <OpenRetaHabilitadoToggle
+            value={openRetaHabilitado}
+            onChange={setOpenRetaHabilitado}
           />
 
           {/* ====== Fase 1 (Sección 1) — Parametrización extendida ====== */}

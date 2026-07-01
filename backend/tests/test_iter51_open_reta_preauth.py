@@ -59,8 +59,13 @@ def _run(coro):
     return loop.run_until_complete(coro)
 
 
-async def _mk_reta(match_id: str, organizador_id: str, max_jug: int = 4) -> None:
-    """Inserta una reta mínima para los tests."""
+async def _mk_reta(match_id: str, organizador_id: str, max_jug: int = 4, open_reta: bool = True) -> None:
+    """Inserta una reta mínima para los tests.
+
+    `open_reta` default True porque casi todos los casos verifican el flujo
+    Open Reta feliz. Los tests que validan el gate lo pasan explicitamente
+    en False.
+    """
     fecha = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
     await db.retas.insert_one({
         "id": match_id,
@@ -72,6 +77,7 @@ async def _mk_reta(match_id: str, organizador_id: str, max_jug: int = 4) -> None
         "fecha_evento": fecha,
         "status_public": "open",
         "url_slug": f"reta-{match_id[:6]}",
+        "open_reta_habilitado": open_reta,
     })
 
 
@@ -298,6 +304,36 @@ def test_8_crear_join_request_404_reta_missing():
         assert exc.value.status_code == 404
 
     _run(scenario())
+
+
+def test_8b_crear_join_request_403_when_open_reta_disabled():
+    """Iter51-P2 · gate: si `open_reta_habilitado` es False → 403 antes de MP."""
+    match_id = f"m-{uuid.uuid4().hex[:8]}"
+    admin_id = f"a-{uuid.uuid4().hex[:8]}"
+    player_id = f"p-{uuid.uuid4().hex[:8]}"
+
+    async def scenario():
+        # Reta con open_reta_habilitado=False → no acepta solicitudes.
+        await _mk_reta(match_id, admin_id, open_reta=False)
+        await _mk_admin(admin_id)
+        with patch.object(mps, "hold_funds", new_callable=AsyncMock) as mock_hold:
+            body = jr.JoinRequestCreate(
+                match_id=match_id, player_id=player_id, amount=100.0,
+                card_token="TOK-abcdef", payer_email="p@test.com",
+            )
+            with pytest.raises(HTTPException) as exc:
+                await jr.crear_join_request(body)
+            assert exc.value.status_code == 403
+            assert "solicitudes" in exc.value.detail.lower()
+            mock_hold.assert_not_called()  # NUNCA toca MP si el gate falla
+        # Nada persistido en DB.
+        doc = await db.join_requests.find_one({"match_id": match_id})
+        assert doc is None
+
+    try:
+        _run(scenario())
+    finally:
+        _run(_cleanup(match_id, admin_id))
 
 
 # ═══════════════════════════ decidir_join_request ═══════════════════════════

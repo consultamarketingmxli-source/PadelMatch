@@ -186,6 +186,13 @@ class RetaCreate(BaseModel):
     # alternativa al gateway. Default False para que ninguna reta existente
     # cambie de comportamiento al desplegar (retro-compat 100%).
     permitir_pago_cancha: bool = False
+    # ===== Iter51 — Open Reta (Pre-Auth) =====
+    # Si True, permite que jugadores fuera del círculo del organizador
+    # soliciten unirse mediante `POST /retas/join-request` con pre-auth MP
+    # (`capture=False`). El organizador debe aprobar/rechazar cada solicitud.
+    # Default False para que retas existentes NO acepten join-requests hasta
+    # que el organizador lo habilite explícitamente.
+    open_reta_habilitado: bool = False
 
     @model_validator(mode="after")
     def _coherencia_modalidad(self) -> "RetaCreate":
@@ -238,6 +245,8 @@ class Reta(BaseModel):
     asistencia_minima_pct: int = 90
     # ===== Iter50 — Pago en Cancha =====
     permitir_pago_cancha: bool = False
+    # ===== Iter51 — Open Reta (Pre-Auth) =====
+    open_reta_habilitado: bool = False
     alertas_enviadas: bool = False
     creado_en: datetime = Field(default_factory=lambda: datetime.now())
 

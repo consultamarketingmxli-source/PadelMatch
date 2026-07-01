@@ -731,10 +731,10 @@ export default function RetaDetailScreen() {
           )}
 
           {/* Iter51 — Open Reta: alternativa "Solicitar unirme" con pre-auth MP.
-              Sólo se muestra en retas de pago (no gratis) con cupo disponible
-              y jugador autenticado por OTP. Los fondos se retienen hasta que
-              el organizador aprueba. */}
-          {!esGratisAmigos && !lleno && !cuponAplicado && playerAuth.id && (
+              Sólo se muestra si el organizador habilitó Open Reta EN esta reta,
+              no es gratis, tiene cupo, sin cupón, y el jugador está autenticado
+              por OTP. Los fondos se retienen hasta que el organizador aprueba. */}
+          {!esGratisAmigos && !lleno && !cuponAplicado && playerAuth.id && !!(reta as any).open_reta_habilitado && (
             <OpenRetaJoinCard
               retaId={reta.id}
               retaSlug={reta.url_slug}
