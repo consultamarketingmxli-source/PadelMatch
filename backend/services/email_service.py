@@ -148,3 +148,98 @@ async def send_waitlist_promotion_email(
             to_email, str(e)[:120], idempotency_key,
         )
         return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ITER51 — Notificaciones Open Reta Pre-auth
+# ════════════════════════════════════════════════════════════════════════════
+async def _send_via_resend(*, to: str, subject: str, html: str, tag: str = "open_reta") -> bool:
+    """Wrapper genérico de envío via Resend. No lanza excepciones."""
+    if not _ensure_init():
+        return False
+    if not to or "@" not in to:
+        return False
+    from_email = os.getenv("RESEND_FROM_EMAIL", "PadelAppRetas <onboarding@resend.dev>")
+    try:
+        import asyncio
+        params = {
+            "from": from_email,
+            "to": [to],
+            "subject": subject,
+            "html": html,
+            "tags": [{"name": "category", "value": tag}],
+        }
+        res = await asyncio.to_thread(resend.Emails.send, params)
+        msg_id = (res or {}).get("id") if isinstance(res, dict) else None
+        logger.info("[email] %s enviado · to=%s resend_id=%s", tag, to, msg_id)
+        return True
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("[email] %s falló · to=%s err=%s", tag, to, str(e)[:120])
+        return False
+
+
+async def send_join_request_approved(
+    *, to: str, reta_nombre: str, fecha_evento: str, amount: float,
+) -> bool:
+    """Email de confirmación cuando el organizador aprueba el join_request."""
+    if not to:
+        return False
+    subject = f"¡Aprobado! Tu cupo en {reta_nombre} está confirmado"
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:520px;margin:auto;padding:24px;background:#f8fafc">
+      <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+        <div style="background:#10B981;width:56px;height:56px;border-radius:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+          <span style="color:#fff;font-size:28px">✓</span>
+        </div>
+        <h1 style="color:#0F172A;text-align:center;font-size:22px;margin:0 0 12px">¡Cupo confirmado!</h1>
+        <p style="color:#475569;line-height:1.6;text-align:center;font-size:15px">
+          El organizador aprobó tu solicitud para <b>{reta_nombre}</b>.
+        </p>
+        <div style="background:#f1f5f9;border-radius:12px;padding:16px;margin:20px 0">
+          <p style="margin:4px 0;color:#334155"><b>Fecha:</b> {fecha_evento}</p>
+          <p style="margin:4px 0;color:#334155"><b>Cargo realizado:</b> ${amount:.2f} MXN</p>
+        </div>
+        <p style="color:#94a3b8;font-size:13px;text-align:center;margin-top:24px">
+          Nos vemos en la cancha 🎾
+        </p>
+      </div>
+    </div>
+    """
+    return await _send_via_resend(to=to, subject=subject, html=html)
+
+
+async def send_join_request_rejected(
+    *, to: str, reta_nombre: str, motivo: Optional[str] = None,
+) -> bool:
+    """Email cuando el organizador rechaza (o auto-expira) el join_request.
+
+    Aclaramos explícitamente que el hold fue LIBERADO (0% comisión).
+    """
+    if not to:
+        return False
+    subject = f"Actualización sobre tu solicitud para {reta_nombre}"
+    razon = motivo or "El organizador no pudo confirmar tu lugar en esta ocasión."
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:520px;margin:auto;padding:24px;background:#f8fafc">
+      <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+        <h1 style="color:#0F172A;font-size:22px;margin:0 0 12px">Tu solicitud no se completó</h1>
+        <p style="color:#475569;line-height:1.6;font-size:15px">
+          Sobre tu solicitud para <b>{reta_nombre}</b>:
+        </p>
+        <div style="background:#fef3c7;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #f59e0b">
+          <p style="margin:0;color:#78350f;font-size:14px">{razon}</p>
+        </div>
+        <div style="background:#ecfdf5;border-radius:12px;padding:16px;margin:16px 0;border-left:4px solid #10b981">
+          <p style="margin:0;color:#065f46;font-size:14px">
+            <b>✓ La retención de tu tarjeta fue liberada al 100%.</b><br>
+            No se realizó ningún cargo. Los fondos vuelven a estar disponibles.
+          </p>
+        </div>
+        <p style="color:#94a3b8;font-size:13px;text-align:center;margin-top:24px">
+          Sigue buscando retas activas en la app.
+        </p>
+      </div>
+    </div>
+    """
+    return await _send_via_resend(to=to, subject=subject, html=html)
+

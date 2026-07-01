@@ -96,6 +96,7 @@ from routers.soporte import router_public as soporte_public_router
 from routers.legal_router import router as legal_router
 from routers.push_router import router as push_router
 from routers.wellknown import router as wellknown_router
+from routers.join_requests import router as join_requests_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -138,6 +139,7 @@ api.include_router(soporte_public_router)
 api.include_router(soporte_admin_router)
 api.include_router(security_admin_router)
 api.include_router(push_router)
+api.include_router(join_requests_router)
 # Módulo de cumplimiento legal — montado bajo /api/v1/...
 app.include_router(legal_router, prefix="/api")
 
@@ -167,7 +169,9 @@ async def startup():
     # === Sistema de Cola Distribuida (MongoDB-backed) ===
     from services.jobs_worker import register_handler, start_worker
     from core.helpers import handle_waitlist_pending_timeout
+    from routers.join_requests import handle_join_request_auto_expire, JOB_AUTO_EXPIRE
     register_handler("waitlist_pending_timeout", handle_waitlist_pending_timeout)
+    register_handler(JOB_AUTO_EXPIRE, handle_join_request_auto_expire)
     await start_worker()
     logger.info("[startup] Jobs worker iniciado (MongoDB-backed · tick=10s)")
 

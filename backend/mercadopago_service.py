@@ -185,3 +185,122 @@ async def refundar_pago(
         "status": data.get("status"),
         "amount": data.get("amount"),
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ITER51 — Pre-authorization (hold) + Capture flow for Open Reta
+# ════════════════════════════════════════════════════════════════════════════
+async def hold_funds(
+    *,
+    access_token: str,
+    amount: float,
+    card_token: str,
+    payer_email: str,
+    installments: int = 1,
+    payment_method_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> dict:
+    """Retiene (autoriza) fondos SIN capturarlos. `capture=False`.
+
+    MP mantiene los fondos bloqueados en la tarjeta hasta:
+      - Un PUT posterior con `capture=True` → cobro efectivo.
+      - Un PUT con `status="cancelled"` → liberación total al 0% comisión.
+      - Vencimiento automático del hold (típ. 7-30 días según banco).
+
+    Returns:
+        dict crudo de MP con `id`, `status` (authorized/rejected), `status_detail`.
+    Raises:
+        RuntimeError si MP responde no-2xx.
+    """
+    body: dict = {
+        "transaction_amount": round(float(amount), 2),
+        "token": card_token,
+        "installments": int(installments),
+        "payer": {"email": payer_email},
+        "capture": False,
+        "description": "PadelAppRetas — Hold Open Reta",
+    }
+    if payment_method_id:
+        body["payment_method_id"] = payment_method_id
+    if metadata:
+        body["metadata"] = metadata
+
+    headers = {
+        "Authorization": f"Bearer {access_token.strip()}",
+        "Content-Type": "application/json",
+    }
+    if idempotency_key:
+        headers["X-Idempotency-Key"] = idempotency_key
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(f"{MP_API_BASE}/v1/payments", headers=headers, json=body)
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"MP hold_funds HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json() or {}
+    logger.info(
+        "[mp] hold · payment=%s status=%s amount=%s idem=%s",
+        data.get("id"), data.get("status"), amount, idempotency_key,
+    )
+    return data
+
+
+async def capture_funds(*, access_token: str, payment_id: str, amount: Optional[float] = None) -> dict:
+    """Captura un hold previamente autorizado. PUT con `capture=True`.
+
+    Args:
+        amount: opcional para captura PARCIAL (menor o igual al autorizado).
+                Por default captura el monto total del hold.
+
+    Returns:
+        dict con `id`, `status` (approved/rejected), `status_detail`.
+    """
+    body: dict = {"capture": True}
+    if amount is not None:
+        body["transaction_amount"] = round(float(amount), 2)
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.put(
+            f"{MP_API_BASE}/v1/payments/{payment_id}",
+            headers={
+                "Authorization": f"Bearer {access_token.strip()}",
+                "Content-Type": "application/json",
+                "X-Idempotency-Key": f"capture-{payment_id}",
+            },
+            json=body,
+        )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"MP capture_funds HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json() or {}
+    logger.info(
+        "[mp] capture · payment=%s status=%s status_detail=%s",
+        payment_id, data.get("status"), data.get("status_detail"),
+    )
+    return data
+
+
+async def cancel_hold(*, access_token: str, payment_id: str) -> dict:
+    """Libera un hold sin cobrar. PUT con `status="cancelled"`.
+
+    Comisión: 0% (el hold nunca se convierte en cargo).
+    Idempotente: llamar sobre un pago ya cancelado retorna el estado actual.
+    """
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.put(
+            f"{MP_API_BASE}/v1/payments/{payment_id}",
+            headers={
+                "Authorization": f"Bearer {access_token.strip()}",
+                "Content-Type": "application/json",
+                "X-Idempotency-Key": f"cancel-{payment_id}",
+            },
+            json={"status": "cancelled"},
+        )
+    if resp.status_code not in (200, 201):
+        # 400 con status_detail="cannot_cancel" cuando ya está cancelled → OK idempotente
+        if resp.status_code == 400 and "cannot" in resp.text.lower():
+            logger.info("[mp] cancel_hold ya-cancelado (idempotent) · payment=%s", payment_id)
+            return {"id": payment_id, "status": "cancelled", "idempotent": True}
+        raise RuntimeError(f"MP cancel_hold HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json() or {}
+    logger.info("[mp] cancel_hold · payment=%s status=%s", payment_id, data.get("status"))
+    return data
+
