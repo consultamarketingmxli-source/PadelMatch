@@ -265,7 +265,10 @@ async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
 
 
 @router.post("/retas/decide-request")
-async def decidir_join_request(body: DecideRequestBody) -> dict:
+async def decidir_join_request(
+    body: DecideRequestBody,
+    current=Depends(get_current_admin),
+) -> dict:
     """2) Approve/reject de un join_request.
 
     Approve: reserva cupo atómicamente → captura fondos → crea inscripción.
@@ -273,16 +276,26 @@ async def decidir_join_request(body: DecideRequestBody) -> dict:
 
     Idempotente: llamadas posteriores sobre un request ya `approved`/`rejected`
     retornan el estado actual sin re-ejecutar la lógica de pago.
+
+    Auth: SÓLO el organizador dueño de la reta puede decidir. Este endpoint
+    dispara movimientos de dinero, así que 401/403 son estrictos.
     """
     req = await db.join_requests.find_one({"id": body.request_id}, {"_id": 0})
     if not req:
         raise HTTPException(404, "join_request no encontrado.")
-    if req["status"] in ("approved", "rejected", "expired", "failed"):
-        return {"success": True, "status": req["status"], "already_processed": True}
 
     reta = await db.retas.find_one({"id": req["match_id"]}, {"_id": 0})
     if not reta:
         raise HTTPException(404, "Reta asociada no encontrada.")
+
+    # Ownership check — sólo el organizador puede aprobar/rechazar solicitudes
+    # de SU reta. Sin este check, cualquier admin autenticado podría capturar
+    # fondos en holds ajenos.
+    if str(reta.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
+
+    if req["status"] in ("approved", "rejected", "expired", "failed"):
+        return {"success": True, "status": req["status"], "already_processed": True}
 
     access_token = await _resolve_organizer_token(reta)
 

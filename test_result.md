@@ -720,6 +720,12 @@ frontend:
       - working: true
         agent: "main"
         comment: "3 endpoints POST creados: (1) POST /api/retas/join-request — hold MP capture=False + persiste join_request + encola auto-expire; (2) POST /api/retas/decide-request — approve captura + inscripción atómica, reject cancel_hold + email; (3) GET /api/retas/{id}/join-requests — organizer lists pending. Además: GET /api/public/retas/{slug}/preauth-form serving MP.js Bricks HTML for on-device tokenization. Fixed 2 bugs from previous session: (a) import de core.security_utils → core.crypto, (b) _send_via_resend helper faltante en email_service. 16/16 tests unit passing (test_iter51_open_reta_preauth.py: hold_funds capture=False, capture PUT, cancel_hold idempotente 400, crear duplicate 409, card rejected 402, reta llena rollback, capture failure rollback lugar, reject cancel_hold, idempotency status ya decidido, auto_expire cancels+marks expired, auto_expire noop si decidido, auto_expire reta deleted). Zero lint issues. Backend arranca clean."
+      - working: true
+        agent: "testing"
+        comment: "🚨 CRITICAL SECURITY BUG FOUND: POST /api/retas/decide-request estaba UNAUTHENTICATED. Cualquier cliente con un request_id válido podía disparar MP capture (robar dinero de holds) o cancel_hold (revenue loss). Reproducción: curl POST sin auth → 404 en vez de 401."
+      - working: true
+        agent: "main"
+        comment: "SECURITY FIX aplicado: agregado Depends(get_current_admin) + ownership check (reta.organizador_id == current.sub) a decidir_join_request. Añadido test_13b_decidir_403_when_not_organizer que verifica: (a) admin ajeno recibe 403, (b) NO se llama a capture_funds ni cancel_hold, (c) request queda pending_approval sin cambios. Suite total ahora 47/47 passing (17 unit iter51 + 20 HTTP integration iter51 + 10 iter50). Testing agent xfail test flipped a pass. Backend clean."
 
   - task: "Iter51 · Frontend JoinRequestsPanel (Organizer)"
     implemented: true

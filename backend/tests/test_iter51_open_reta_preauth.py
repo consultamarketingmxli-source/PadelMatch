@@ -325,7 +325,7 @@ def test_9_decidir_approve_captures_and_creates_inscripcion():
             mock_push.send_high_priority_push = AsyncMock(return_value=True)
 
             body = jr.DecideRequestBody(request_id=req_id, action="approve")
-            res = await jr.decidir_join_request(body)
+            res = await jr.decidir_join_request(body, current={"sub": admin_id, "role": "admin"})
 
         assert res["success"] is True
         assert res["status"] == "approved"
@@ -369,7 +369,7 @@ def test_10_decidir_approve_reta_llena_rollback():
             mock_cancel.return_value = {"status": "cancelled"}
             body = jr.DecideRequestBody(request_id=req_id, action="approve")
             with pytest.raises(HTTPException) as exc:
-                await jr.decidir_join_request(body)
+                await jr.decidir_join_request(body, current={"sub": admin_id, "role": "admin"})
             assert exc.value.status_code == 409
             mock_cancel.assert_awaited_once()
             mock_cap.assert_not_called()
@@ -404,7 +404,7 @@ def test_11_decidir_approve_capture_fails_rollback_lugar():
             mock_cap.side_effect = RuntimeError("MP 502 Timeout")
             body = jr.DecideRequestBody(request_id=req_id, action="approve")
             with pytest.raises(HTTPException) as exc:
-                await jr.decidir_join_request(body)
+                await jr.decidir_join_request(body, current={"sub": admin_id, "role": "admin"})
             assert exc.value.status_code == 502
 
         doc = await db.join_requests.find_one({"id": req_id}, {"_id": 0})
@@ -442,7 +442,7 @@ def test_12_decidir_reject_cancels_hold_and_marks_rejected():
             body = jr.DecideRequestBody(
                 request_id=req_id, action="reject", motivo="No cumple nivel",
             )
-            res = await jr.decidir_join_request(body)
+            res = await jr.decidir_join_request(body, current={"sub": admin_id, "role": "admin"})
         assert res["status"] == "rejected"
         doc = await db.join_requests.find_one({"id": req_id}, {"_id": 0})
         assert doc["status"] == "rejected"
@@ -470,7 +470,7 @@ def test_13_decidir_idempotent_already_approved():
         })
         with patch.object(mps, "capture_funds", new_callable=AsyncMock) as mock_cap:
             body = jr.DecideRequestBody(request_id=req_id, action="approve")
-            res = await jr.decidir_join_request(body)
+            res = await jr.decidir_join_request(body, current={"sub": admin_id, "role": "admin"})
             assert res["already_processed"] is True
             assert res["status"] == "approved"
             mock_cap.assert_not_called()  # no debe re-capturar
@@ -479,6 +479,41 @@ def test_13_decidir_idempotent_already_approved():
         _run(scenario())
     finally:
         _run(_cleanup(match_id, admin_id))
+
+
+def test_13b_decidir_403_when_not_organizer():
+    """SECURITY: admin autenticado ≠ organizador dueño → 403 antes de tocar MP."""
+    match_id = f"m-{uuid.uuid4().hex[:8]}"
+    owner_id = f"a-{uuid.uuid4().hex[:8]}"
+    other_admin_id = f"a-{uuid.uuid4().hex[:8]}"
+    req_id = str(uuid.uuid4())
+
+    async def scenario():
+        await _mk_reta(match_id, owner_id)  # reta pertenece a owner_id
+        await _mk_admin(owner_id)
+        await db.join_requests.insert_one({
+            "id": req_id, "match_id": match_id, "player_id": "p1",
+            "payment_id": "PAY-403", "status": "pending_approval",
+            "amount": 100.0, "payer_email": "p@test.com",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        with patch.object(mps, "capture_funds", new_callable=AsyncMock) as mock_cap, \
+             patch.object(mps, "cancel_hold", new_callable=AsyncMock) as mock_cancel:
+            body = jr.DecideRequestBody(request_id=req_id, action="approve")
+            with pytest.raises(HTTPException) as exc:
+                # other_admin_id intenta aprobar una reta ajena
+                await jr.decidir_join_request(body, current={"sub": other_admin_id, "role": "admin"})
+            assert exc.value.status_code == 403
+            mock_cap.assert_not_called()
+            mock_cancel.assert_not_called()
+        # request debe seguir en pending_approval — sin cambios.
+        doc = await db.join_requests.find_one({"id": req_id}, {"_id": 0})
+        assert doc["status"] == "pending_approval"
+
+    try:
+        _run(scenario())
+    finally:
+        _run(_cleanup(match_id, owner_id))
 
 
 # ══════════════════════ handle_join_request_auto_expire ══════════════════════
