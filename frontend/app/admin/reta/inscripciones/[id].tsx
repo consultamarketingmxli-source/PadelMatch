@@ -35,6 +35,7 @@ import {
 import { Inscripcion, Reta, api } from "@/src/api";
 import { ImportarJugadoresModal } from "@/src/components/ImportarJugadoresModal";
 import { AdminInscripcionSheet } from "@/src/components/AdminInscripcionSheet";
+import { JoinRequestsPanel } from "@/src/components/iter51/JoinRequestsPanel";
 import { OfflineQueueBanner } from "@/src/components/OfflineQueueBanner";
 import { useOfflineSync } from "@/src/hooks/useOfflineSync";
 import { useSyncLock } from "@/src/hooks/useSyncLock";
@@ -387,6 +388,7 @@ export default function AdminInscripciones() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
+          ListHeaderComponent={id ? <JoinRequestsPanel retaId={id} /> : null}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>Sin inscripciones</Text>

@@ -1,0 +1,61 @@
+{
+  "summary": "Iter51 Open Reta Pre-Auth backend testing complete. Unit suite 16/16 PASS, iter50 regression 10/10 PASS, HTTP integration 19/20 PASS (1 xfail documenting a CRITICAL security bug: POST /api/retas/decide-request is UNAUTHENTICATED — anyone can approve/reject join_requests and trigger MP capture/cancel_hold without admin auth). GET /api/retas/{id}/join-requests correctly enforces auth+ownership (401/403/404/200 all validated with seed data). GET /api/public/retas/{slug}/preauth-form returns valid HTML 200 with MP.js v2 SDK, MP_PUBLIC_KEY inlined, slug escaped, and rejects amount=0 with 422. POST /api/retas/join-request Pydantic validation works (422 on missing card_token / invalid email / negative amount / short card_token) and returns 404 for missing reta. Backend boots clean; /api/ returns 200. /api/health returns 404 (route not defined — cosmetic).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/retas/decide-request",
+        "issue": "Missing admin authentication. Handler `decidir_join_request` at /app/backend/routers/join_requests.py:268 has NO `Depends(get_current_admin)` dependency. Verified via anonymous curl: returns 404 for bogus request_id (business logic ran) instead of 401/403. Any client that guesses/observes a valid request_id can (a) approve → capture funds on the player's card AND insert an unauthorized inscripcion, or (b) reject → release a legitimate hold. Also missing the ownership check `reta.organizador_id == current.sub` that the GET listing endpoint has.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/health",
+        "issue": "Route not registered — returns 404. Not blocking (root /api/ works), but conventional health probe missing."
+      },
+      {
+        "endpoint": "routers/join_requests.py:_resolve_organizer_token",
+        "issue": "Fallback branch searches admins by hard-coded email `admin@padelappretas.com` when reta.organizador_id doesn't map to any admin. In multi-tenant setups this could route holds/captures through the wrong MP account. Consider removing the fallback or gating it behind a single-tenant flag."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_open_reta_preauth.py (16 unit tests · already existed · 16/16 PASS)",
+    "/app/backend/tests/test_iter51_http_integration.py (20 HTTP integration tests · NEW · 19 pass + 1 xfail flagging security bug)",
+    "/app/test_reports/pytest/iter51_open_reta.xml",
+    "/app/test_reports/pytest/iter51_http_integration.xml",
+    "/app/test_reports/pytest/iter51_regression_iter50.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Add `current=Depends(get_current_admin)` to `decidir_join_request` in /app/backend/routers/join_requests.py (line 267-268). After the request/reta lookups, add ownership check: `if str(reta.get('organizador_id')) != str(current.get('sub')): raise HTTPException(403, ...)` — mirror the pattern already used in `listar_join_requests` (line 120-121).",
+    "After fixing auth, flip the xfail test `TestDecideRequest.test_requires_auth_SECURITY_BUG` in /app/backend/tests/test_iter51_http_integration.py back to a strict `assert r.status_code in (401, 403)`.",
+    "OPTIONAL: Add a GET /api/health endpoint returning `{status: 'ok'}` for standard k8s probes.",
+    "OPTIONAL: Reconsider the hard-coded `admin@padelappretas.com` fallback in _resolve_organizer_token — it can mis-route MP holds across tenants."
+  ],
+  "critical_code_review_comments": [
+    "decidir_join_request lacks auth — see CRITICAL bug above. This is the single biggest issue in the Iter51 delivery.",
+    "listar_join_requests correctly checks ownership; use it as the template for decidir_join_request.",
+    "crear_join_request is correctly public (mobile client hits it after WebView tokenization). Validation is complete via Pydantic (`Field(min_length=8)`, `EmailStr`, `gt=0`).",
+    "preauth-form correctly escapes <> in reta_nombre (line 490) but note: the `slug` path param itself is inserted into the HTML title without escaping — a slug like `<script>` in the URL would inject. FastAPI's path param regex would need tightening or the slug needs escaping too (line 496 uses `safe_nombre` but only after the reta lookup — if the reta is missing, `reta_nombre = slug` and slug is NOT escaped before that assignment).",
+    "_build_preauth_html: the `amount` is inlined directly into JS as a numeric literal (line 551) — fine because Pydantic Query gt=0 already validates it's a float; no injection vector.",
+    "Auto-expire job scheduling uses `delay_seconds = max(0, ...)` — safe against past events. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter51_http_integration.py (new · 20 HTTP tests)"
+  ],
+  "success_rate": {
+    "backend": "97.8% (45/46 tests — 16 unit + 10 iter50 regression + 19 HTTP integration passing; 1 xfail flagging critical security bug)",
+    "frontend": "not tested (backend-only scope per request)"
+  },
+  "seed_data_creation": "Ephemeral fixtures only — every HTTP integration test inserts and then cleans its own retas / join_requests / inscripciones docs prefixed TEST_iter51_*. No residual test data.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent adds auth to `decidir_join_request`, re-run `pytest /app/backend/tests/test_iter51_http_integration.py` — the xfail case should be flipped to a strict assertion (401/403). Also verify a positive path: with valid admin token but wrong `organizador_id`, decide-request should return 403 (mirror TestListJoinRequests.test_403_when_reta_not_owned). Consider seeding a pending join_request with a foreign organizador to write that case explicitly.",
+  "rca_of_issue": "RCA — Missing auth on decide-request: The developer added `Depends(get_current_admin)` to `listar_join_requests` (line 110) but forgot the same dependency on `decidir_join_request` (line 268). The bug isn't caught by the mocked pytest suite because those tests call the coroutine directly (`await jr.decidir_join_request(body)`) — bypassing FastAPI's dependency injection layer entirely. Reproduction: `curl -X POST <BASE>/api/retas/decide-request -H 'Content-Type: application/json' -d '{\"request_id\":\"any\",\"action\":\"approve\"}'` → 404 (business error), not 401. Mitigation: (1) add `current=Depends(get_current_admin)` to signature; (2) add ownership guard against `reta.organizador_id`; (3) flip xfail → assert."
+}

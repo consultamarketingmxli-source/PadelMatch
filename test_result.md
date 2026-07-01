@@ -708,6 +708,38 @@ frontend:
         agent: "main"
         comment: "Player: tarjeta 'Centro de Privacidad y Seguridad' en /mi-cuenta (arriba del bloque rojo de eliminar cuenta). Admin: icon ShieldOff azul (testID='security-center-btn') en header de /admin/index junto a dashboard."
 
+  # ══════════════════════════════════════════════════════════════════════════
+  # Iter51 · Open Reta Pre-Authorization Workflow (2026-07-01)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - task: "Iter51 · Backend Open Reta pre-auth endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/join_requests.py /app/backend/mercadopago_service.py /app/backend/services/email_service.py"
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "3 endpoints POST creados: (1) POST /api/retas/join-request — hold MP capture=False + persiste join_request + encola auto-expire; (2) POST /api/retas/decide-request — approve captura + inscripción atómica, reject cancel_hold + email; (3) GET /api/retas/{id}/join-requests — organizer lists pending. Además: GET /api/public/retas/{slug}/preauth-form serving MP.js Bricks HTML for on-device tokenization. Fixed 2 bugs from previous session: (a) import de core.security_utils → core.crypto, (b) _send_via_resend helper faltante en email_service. 16/16 tests unit passing (test_iter51_open_reta_preauth.py: hold_funds capture=False, capture PUT, cancel_hold idempotente 400, crear duplicate 409, card rejected 402, reta llena rollback, capture failure rollback lugar, reject cancel_hold, idempotency status ya decidido, auto_expire cancels+marks expired, auto_expire noop si decidido, auto_expire reta deleted). Zero lint issues. Backend arranca clean."
+
+  - task: "Iter51 · Frontend JoinRequestsPanel (Organizer)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/iter51/JoinRequestsPanel.tsx /app/frontend/app/admin/reta/inscripciones/[id].tsx"
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Componente que lista solicitudes pending_approval con botones Aceptar/Rechazar. Optimistic UI: quita row al éxito, rollback en error. Rechazar abre modal con motivo (opcional, se envía al email al jugador). Integrado en Inscripciones tab (paga branch) via ListHeaderComponent. Auto-oculta si no hay pendientes. Refresh manual + auto-refresh on error 409 (reta llena). Testing pendiente por testing_agent."
+
+  - task: "Iter51 · Frontend OpenRetaJoinCard + MpPreAuthWebViewSheet (Player)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/iter51/OpenRetaJoinCard.tsx /app/frontend/app/retas/[slug].tsx"
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Card con disclaimer explicando pre-autorización + botón 'Solicitar unirme'. Al tap abre modal fullscreen con WebView que carga /api/public/retas/{slug}/preauth-form (MP.js Bricks cardPayment brick). MP.js tokeniza on-device, envía token via ReactNativeWebView.postMessage. RN llama POST /api/retas/join-request con card_token + amount. Guard doble-submit + rollback en error 409 / 402 / 424. Web fallback: mensaje 'usar app móvil'. Integrado en retas/[slug].tsx debajo del CheckoutCard cuando: !esGratisAmigos && !lleno && !cuponAplicado && playerAuth.id. Testing pendiente por testing_agent."
+
+
 metadata:
   iteration: 33
   test_reports:

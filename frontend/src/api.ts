@@ -1038,6 +1038,73 @@ export const api = {
   mpPaymentStatus: (inscripcionId: string) =>
     request<MpPaymentStatusType>(`/public/inscripciones/${inscripcionId}/mp-status`),
 
+  // ===== Iter51 — Open Reta Pre-Authorization (MP hold + capture) =====
+  /**
+   * Organizador lista solicitudes de unión (por default `pending_approval`).
+   * Requiere auth admin + ownership de la reta.
+   */
+  listJoinRequests: (
+    retaId: string,
+    status: "pending_approval" | "approved" | "rejected" | "expired" | "failed" | "all" = "pending_approval",
+  ) =>
+    request<{
+      reta_id: string;
+      reta_nombre: string;
+      total: number;
+      status_filter: string;
+      items: Array<{
+        id: string;
+        match_id: string;
+        player_id: string;
+        player_name: string;
+        payer_email: string;
+        payer_phone: string;
+        payment_id: string;
+        amount: number;
+        status: "pending_approval" | "approved" | "rejected" | "expired" | "failed";
+        mp_status?: string | null;
+        mp_status_detail?: string | null;
+        decision_reason?: string | null;
+        created_at: string;
+        decided_at?: string | null;
+      }>;
+    }>(`/retas/${retaId}/join-requests?status=${status}`, { auth: true }),
+
+  /** Organizador aprueba/rechaza una solicitud de unión (Open Reta). */
+  decideJoinRequest: (body: { request_id: string; action: "approve" | "reject"; motivo?: string }) =>
+    request<{
+      success: boolean;
+      status: "approved" | "rejected" | "failed";
+      inscripcion_id?: string;
+      already_processed?: boolean;
+    }>(`/retas/decide-request`, { method: "POST", body, auth: true }),
+
+  /**
+   * Jugador solicita unirse a una reta abierta con pre-autorización (capture=False).
+   * El `card_token` viene de MP.js Bricks (nunca desde el cliente RN directo).
+   */
+  crearJoinRequest: (body: {
+    match_id: string;
+    player_id: string;
+    amount: number;
+    card_token: string;
+    payer_email: string;
+    installments?: number;
+    payment_method_id?: string | null;
+  }) =>
+    request<{
+      id: string;
+      match_id: string;
+      player_id: string;
+      payment_id: string;
+      status: string;
+      created_at: string;
+    }>(`/retas/join-request`, { method: "POST", body }),
+
+  /** URL absoluta del formulario HTML para tokenizar tarjeta (usa WebView). */
+  getPreauthFormUrl: (slug: string, amount: number): string =>
+    `${BASE}/api/public/retas/${encodeURIComponent(slug)}/preauth-form?amount=${amount}`,
+
   // ===== admin dashboard =====
   adminMetrics: () => request<AdminMetrics>(`/admin/metrics`, { auth: true }),
   refundInscripcion: (retaId: string, inscripcionId: string) =>

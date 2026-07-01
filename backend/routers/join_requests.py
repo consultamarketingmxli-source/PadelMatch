@@ -20,10 +20,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 import mercadopago_service as mps
+from auth import get_current_admin
 from core.concurrency import liberar_lugar, reservar_lugar_atomico
 from core.db import db
 from core.crypto import decrypt_token
@@ -102,6 +103,70 @@ def _parse_iso(dt: str | None) -> Optional[datetime]:
 
 
 # ───────────────────────────── Endpoints ───────────────────────────────
+@router.get("/retas/{reta_id}/join-requests")
+async def listar_join_requests(
+    reta_id: str,
+    status: str = Query(default="pending_approval", pattern="^(pending_approval|approved|rejected|expired|failed|all)$"),
+    current=Depends(get_current_admin),
+) -> dict:
+    """Lista los join_requests de una reta (organizador only).
+
+    Filtro por status (default `pending_approval` — lo más útil para el organizador).
+    Retorna items con datos denormalizados del jugador (si existe en `players`).
+    """
+    reta = await db.retas.find_one({"id": reta_id}, {"_id": 0})
+    if not reta:
+        raise HTTPException(404, "Reta no encontrada.")
+    if str(reta.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
+
+    query: dict = {"match_id": reta_id}
+    if status != "all":
+        query["status"] = status
+
+    cursor = db.join_requests.find(query, {"_id": 0}).sort("created_at", 1)
+    docs = await cursor.to_list(length=200)
+
+    # Denormalizar nombre del jugador si existe en `players`.
+    items = []
+    for d in docs:
+        player_id = d.get("player_id")
+        player_name = d.get("player_name") or ""
+        if not player_name and player_id:
+            try:
+                player = await db.players.find_one(
+                    {"id": player_id}, {"nombre": 1, "telefono": 1, "_id": 0},
+                )
+                if player:
+                    player_name = player.get("nombre") or ""
+                    d["payer_phone"] = d.get("payer_phone") or player.get("telefono") or ""
+            except Exception:  # pylint: disable=broad-except
+                pass
+        items.append({
+            "id": d["id"],
+            "match_id": d["match_id"],
+            "player_id": player_id,
+            "player_name": player_name or (d.get("payer_email") or "Sin nombre"),
+            "payer_email": d.get("payer_email", ""),
+            "payer_phone": d.get("payer_phone", ""),
+            "payment_id": d.get("payment_id", ""),
+            "amount": d.get("amount", 0),
+            "status": d["status"],
+            "mp_status": d.get("mp_status"),
+            "mp_status_detail": d.get("mp_status_detail"),
+            "decision_reason": d.get("decision_reason"),
+            "created_at": d.get("created_at"),
+            "decided_at": d.get("decided_at"),
+        })
+    return {
+        "reta_id": reta_id,
+        "reta_nombre": reta.get("nombre", ""),
+        "total": len(items),
+        "status_filter": status,
+        "items": items,
+    }
+
+
 @router.post("/retas/join-request", status_code=201, response_model=JoinRequestOut)
 async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
     """1) Retiene fondos en tarjeta (capture=False) y persiste el join_request.
@@ -377,3 +442,144 @@ async def handle_join_request_auto_expire(payload: dict) -> None:
     except Exception:  # pylint: disable=broad-except
         pass
     logger.info("[auto-expire] request=%s expirado (2h pre-match)", request_id)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ITER51 · Public endpoint — HTML tokenization form for Open Reta pre-auth
+# ══════════════════════════════════════════════════════════════════════════
+# Se sirve DENTRO del WebView del cliente mobile. Usa MP.js clásico para
+# tokenizar la tarjeta ON-DEVICE (los datos nunca tocan nuestro backend) y
+# luego postea `{card_token, payment_method_id, installments}` de vuelta via
+# `window.ReactNativeWebView.postMessage()`.
+#
+# Flujo:
+#   1. Mobile abre WebView con `<BASE>/api/public/retas/{slug}/preauth-form?amount=X`
+#   2. Usuario captura tarjeta → MP.js genera token (client-side)
+#   3. WebView emite mensaje con el token → RN llama /api/retas/join-request
+#   4. WebView se cierra al éxito o al error.
+from fastapi.responses import HTMLResponse  # noqa: E402
+
+
+@router.get("/public/retas/{slug}/preauth-form", response_class=HTMLResponse)
+async def preauth_form(slug: str, amount: float = Query(gt=0)) -> HTMLResponse:
+    """Devuelve HTML self-contained con MP.js CardPayment Brick.
+
+    Args:
+        slug: identificador de la reta (para display en el título).
+        amount: monto MXN a pre-autorizar.
+    """
+    import os as _os
+    mp_public_key = _os.getenv("MP_PUBLIC_KEY", "").strip()
+    if not mp_public_key:
+        raise HTTPException(500, "MP_PUBLIC_KEY no configurado en el servidor.")
+
+    reta = await db.retas.find_one({"url_slug": slug}, {"nombre": 1, "_id": 0})
+    reta_nombre = (reta or {}).get("nombre") or slug
+
+    html = _build_preauth_html(
+        mp_public_key=mp_public_key,
+        amount=round(float(amount), 2),
+        reta_nombre=reta_nombre,
+    )
+    return HTMLResponse(content=html, status_code=200)
+
+
+def _build_preauth_html(*, mp_public_key: str, amount: float, reta_nombre: str) -> str:
+    """Construye el HTML para el formulario de pre-auth MP dentro del WebView."""
+    # Escapamos el nombre para evitar rompimiento de HTML.
+    safe_nombre = (reta_nombre or "").replace("<", "&lt;").replace(">", "&gt;")
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Solicitar unirme — {safe_nombre}</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  html, body {{ margin:0; padding:0; background:#F8FAFC; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#0F172A; }}
+  .wrap {{ max-width:520px; margin:0 auto; padding:20px 16px 60px; }}
+  h1 {{ font-size:20px; margin:0 0 6px; font-weight:800; color:#0F172A; letter-spacing:-0.3px; }}
+  .sub {{ font-size:13px; color:#64748B; margin-bottom:20px; }}
+  .amount-card {{ background:#EFF6FF; border:1px solid #BFDBFE; border-radius:14px; padding:16px; margin-bottom:22px; text-align:center; }}
+  .amount-label {{ font-size:11px; color:#1E40AF; text-transform:uppercase; letter-spacing:1px; font-weight:700; }}
+  .amount-val {{ font-size:32px; color:#1E3A8A; font-weight:900; margin-top:4px; }}
+  .amount-hint {{ font-size:12px; color:#3B82F6; margin-top:6px; font-weight:600; }}
+  #brick-container {{ min-height:340px; }}
+  .footer {{ text-align:center; font-size:11px; color:#94A3B8; margin-top:20px; line-height:1.5; }}
+  .badge {{ display:inline-block; background:#ECFDF5; color:#065F46; padding:4px 10px; border-radius:100px; font-size:11px; font-weight:700; margin:4px 0; }}
+  .fatal {{ background:#FEE2E2; color:#991B1B; padding:12px; border-radius:12px; margin:16px 0; font-size:13px; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Solicitar unirme</h1>
+  <p class="sub">{safe_nombre}</p>
+  <div class="amount-card">
+    <div class="amount-label">Se retiene en tu tarjeta</div>
+    <div class="amount-val">${amount:,.2f} MXN</div>
+    <div class="amount-hint">🔒 Sin cargo hasta que el organizador apruebe</div>
+    <div class="badge">Si te rechaza, se libera 100%</div>
+  </div>
+  <div id="brick-container"></div>
+  <div class="footer">
+    Pago procesado por Mercado Pago · Datos encriptados end-to-end.
+    <br />La retención expira automáticamente 2 h antes del partido si no hay decisión.
+  </div>
+</div>
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+<script>
+(function() {{
+  function post(msg) {{
+    try {{
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {{
+        window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+      }} else {{
+        // fallback web: postMessage al parent
+        window.parent && window.parent.postMessage(msg, '*');
+      }}
+    }} catch(e) {{ /* silent */ }}
+  }}
+  if (typeof MercadoPago === 'undefined') {{
+    document.getElementById('brick-container').innerHTML =
+      '<div class="fatal">No pudimos cargar Mercado Pago. Verifica tu conexión e inténtalo de nuevo.</div>';
+    post({{ event: 'error', reason: 'sdk_not_loaded' }});
+    return;
+  }}
+  const mp = new MercadoPago('{mp_public_key}', {{ locale: 'es-MX' }});
+  const bricksBuilder = mp.bricks();
+  bricksBuilder.create('cardPayment', 'brick-container', {{
+    initialization: {{ amount: {amount} }},
+    customization: {{
+      visual: {{
+        style: {{ theme: 'default' }},
+        hidePaymentButton: false,
+      }},
+      paymentMethods: {{ maxInstallments: 12 }},
+    }},
+    callbacks: {{
+      onReady: function() {{ post({{ event: 'ready' }}); }},
+      onSubmit: function(cardFormData) {{
+        // cardFormData contiene: token, issuer_id, payment_method_id, installments,
+        // payer.email, payer.identification (opcional).
+        post({{
+          event: 'submit',
+          card_token: cardFormData.token,
+          payment_method_id: cardFormData.payment_method_id,
+          installments: cardFormData.installments || 1,
+          issuer_id: cardFormData.issuer_id || null,
+          payer_email: (cardFormData.payer && cardFormData.payer.email) || '',
+        }});
+        // MP.js espera una promise; la resolvemos aquí porque nosotros manejamos
+        // el POST al backend desde React Native. `resolve()` limpia el spinner.
+        return new Promise(function(resolve) {{ resolve(); }});
+      }},
+      onError: function(err) {{
+        post({{ event: 'error', reason: (err && err.message) || 'unknown' }});
+      }},
+    }},
+  }});
+}})();
+</script>
+</body>
+</html>
+"""

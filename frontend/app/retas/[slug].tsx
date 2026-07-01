@@ -42,6 +42,7 @@ import {
 import { api, Reta } from "@/src/api";
 import { AttendanceRateCard } from "@/src/components/AttendanceRateCard";
 import { CashPaymentOption } from "@/src/components/iter50/PagoEnCanchaComponents";
+import { OpenRetaJoinCard } from "@/src/components/iter51/OpenRetaJoinCard";
 import { TrafficLight } from "@/src/components/TrafficLight";
 import { buildPagoReturnUrl } from "@/src/utils/deepLink";
 import { openInMaps, buildGoogleMapsUrl } from "@/src/utils/mapsDeepLink";
@@ -93,6 +94,21 @@ export default function RetaDetailScreen() {
     open: boolean;
     joining?: boolean;
   }>({ open: false });
+
+  // ===== Iter51 — Open Reta Pre-Auth =====
+  // Cargamos jugador_id del OTP flow. Sin auth → no mostramos la card
+  // (el usuario verá el mensaje "inicia sesión" al tocar el botón).
+  const [playerAuth, setPlayerAuth] = useState<{ id: string | null }>({ id: null });
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await getPlayerInfo();
+        setPlayerAuth({ id: info?.jugador_id ?? null });
+      } catch {
+        /* swallow */
+      }
+    })();
+  }, []);
 
   // ===== Push Permission Prompt (contextual, post-waitlist) =====
   // Se dispara la PRIMERA vez que el usuario se une a una waitlist y aún
@@ -711,6 +727,22 @@ export default function RetaDetailScreen() {
               ctaText={ctaText}
               submitting={submitting}
               onAction={handleAction}
+            />
+          )}
+
+          {/* Iter51 — Open Reta: alternativa "Solicitar unirme" con pre-auth MP.
+              Sólo se muestra en retas de pago (no gratis) con cupo disponible
+              y jugador autenticado por OTP. Los fondos se retienen hasta que
+              el organizador aprueba. */}
+          {!esGratisAmigos && !lleno && !cuponAplicado && playerAuth.id && (
+            <OpenRetaJoinCard
+              retaId={reta.id}
+              retaSlug={reta.url_slug}
+              retaNombre={reta.nombre}
+              amount={reta.costo_inscripcion}
+              playerId={playerAuth.id}
+              playerEmail={null}
+              onSuccess={() => void load()}
             />
           )}
         </ScrollView>
