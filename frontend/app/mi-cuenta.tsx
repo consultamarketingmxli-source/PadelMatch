@@ -33,6 +33,7 @@ import {
   LifeBuoy,
   LogOut,
   Shield,
+  ShieldCheck,
   ShieldOff,
   Trash2,
   Trophy,
@@ -263,6 +264,24 @@ export default function MiCuenta() {
 
         {/* Promo Premium — sólo visible para usuarios Free (Sandbox Monetization) */}
         <PremiumPromoCard />
+
+        {/* === Iter51-P2 · Mis Solicitudes Open Reta (money-critical action) === */}
+        <TouchableOpacity
+          onPress={() => router.push("/player/solicitudes" as any)}
+          style={[styles.linkCard, styles.linkCardHighlight]}
+          testID="btn-mis-solicitudes"
+          accessibilityLabel="Mis solicitudes Open Reta"
+        >
+          <ShieldCheck size={18} color={colors.brand.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Mis solicitudes (Open Reta)</Text>
+            <Text style={styles.linkHint}>
+              Consulta el estado de tus solicitudes con fondos retenidos y cuánto falta para
+              la decisión del organizador.
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.text.tertiary} />
+        </TouchableOpacity>
 
         {/* === Privacidad y Seguridad (Apple App Store 5.1.1) === */}
         <Text style={styles.section}>Privacidad y seguridad</Text>
@@ -622,6 +641,10 @@ const styles = StyleSheet.create({
   },
   linkTitle: { ...typography.bodyBold, fontSize: 13, color: colors.text.primary },
   linkHint: { color: colors.text.secondary, fontSize: 11, marginTop: 1 },
+  linkCardHighlight: {
+    borderColor: colors.brand.primary,
+    backgroundColor: colors.brand.primaryMuted,
+  },
   privacyCard: {
     backgroundColor: "#FFF5F5",
     borderWidth: 1,
