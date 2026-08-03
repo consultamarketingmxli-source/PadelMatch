@@ -81,14 +81,32 @@ if (iosBundle && androidPkg && iosBundle !== androidPkg) {
 // Cross-check contra el wellknown backend
 if (fs.existsSync(BACKEND_WELLKNOWN)) {
   const wk = fs.readFileSync(BACKEND_WELLKNOWN, "utf8");
-  const match = wk.match(/ANDROID_PACKAGE\s*=\s*["']([^"']+)["']/);
-  if (match && androidPkg && match[1] !== androidPkg) {
-    fail(`Package mismatch: app.json="${androidPkg}" vs backend/wellknown.py="${match[1]}". Esto romperá App Links.`);
-  } else if (match) {
-    ok(`wellknown.py ANDROID_PACKAGE coincide con app.json (${match[1]})`);
+  const match = wk.match(/ANDROID_PACKAGE\s*=\s*os\.getenv\(\s*["']ANDROID_PACKAGE["']\s*,\s*["']([^"']+)["']|ANDROID_PACKAGE\s*=\s*["']([^"']+)["']/);
+  const wkPkg = match ? match[1] || match[2] : null;
+  if (wkPkg && androidPkg && wkPkg !== androidPkg) {
+    fail(`Package mismatch: app.json="${androidPkg}" vs backend/wellknown.py="${wkPkg}". Esto romperá App Links.`);
+  } else if (wkPkg) {
+    ok(`wellknown.py ANDROID_PACKAGE coincide con app.json (${wkPkg})`);
   }
-  if (/TEAM_ID_TODO/.test(wk)) warn("backend/wellknown.py contiene TEAM_ID_TODO — reemplazar antes de iOS Universal Links.");
-  if (/SHA256_FINGERPRINT_TODO/.test(wk)) warn("backend/wellknown.py contiene SHA256_FINGERPRINT_TODO — reemplazar antes de Android App Links.");
+  // Iter51-Publish · Los placeholders ahora viven en backend/.env (leídos dinámicamente).
+  const backendEnv = path.resolve(ROOT, "..", "backend", ".env");
+  if (fs.existsSync(backendEnv)) {
+    const envContent = fs.readFileSync(backendEnv, "utf8");
+    const teamIdMatch = envContent.match(/^IOS_TEAM_ID\s*=\s*["']?([^"'\n]+)/m);
+    const shaMatch = envContent.match(/^ANDROID_SHA256_FINGERPRINTS\s*=\s*["']?([^"'\n]+)/m);
+    if (!teamIdMatch || /TODO/i.test(teamIdMatch[1])) {
+      warn("backend/.env IOS_TEAM_ID en placeholder — reemplazar antes de iOS Universal Links.");
+    } else {
+      ok(`IOS_TEAM_ID configurado (${teamIdMatch[1].slice(0, 4)}…)`);
+    }
+    if (!shaMatch || /TODO/i.test(shaMatch[1])) {
+      warn("backend/.env ANDROID_SHA256_FINGERPRINTS en placeholder — reemplazar antes de Android App Links.");
+    } else {
+      ok(`ANDROID_SHA256_FINGERPRINTS configurado (${shaMatch[1].slice(0, 12)}…)`);
+    }
+  } else {
+    warn("backend/.env no encontrado — no se pudo validar IOS_TEAM_ID/ANDROID_SHA256_FINGERPRINTS.");
+  }
 } else {
   warn("backend/routers/wellknown.py no se encontró — saltando cross-check");
 }
@@ -158,7 +176,14 @@ if (!gsf) {
     ok(`googleServicesFile encontrado: ${gsf}`);
   } else {
     const todoPath = fullPath + ".TODO";
-    if (fs.existsSync(todoPath)) {
+    const hasAppConfig = fs.existsSync(path.resolve(ROOT, "app.config.js"));
+    if (hasAppConfig) {
+      warn(
+        `googleServicesFile referencia ${gsf} pero solo existe el .TODO. ` +
+          `app.config.js detectado — omitirá la referencia dinámicamente en build. ` +
+          `Push Android deshabilitado hasta que subas el archivo real de Firebase.`,
+      );
+    } else if (fs.existsSync(todoPath)) {
       warn(`googleServicesFile referencia ${gsf} pero solo existe el .TODO. Sube el real de Firebase Console antes de build de producción.`);
     } else {
       fail(`googleServicesFile referenciado pero archivo ${gsf} no existe`);
