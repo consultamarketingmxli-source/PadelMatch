@@ -15,8 +15,26 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-ADMIN_EMAIL_DEFAULT = "admin@padelappretas.com"
-ADMIN_PASSWORD_DEFAULT = "admin123"
+# ══════════════════════════════════════════════════════════════════════════
+# Admin bootstrap credentials — MUST come from environment in production.
+# ══════════════════════════════════════════════════════════════════════════
+# Estos valores se usan UNA sola vez al arrancar el backend cuando la
+# colección `admins` está vacía (bootstrap inicial). En producción, siempre
+# se debe setear `ADMIN_BOOTSTRAP_EMAIL` + `ADMIN_BOOTSTRAP_PASSWORD` en el
+# `.env` para evitar credenciales predecibles.
+#
+# Fallback SÓLO se activa si `IS_PROD` NO es truthy (dev / test). En prod
+# sin env vars, `bootstrap_admin_if_empty` skipea el seed y loguea una
+# advertencia para que el operador cree el admin manualmente.
+_IS_PROD = os.getenv("IS_PROD", "").lower() in ("1", "true", "yes")
+ADMIN_EMAIL_DEFAULT = os.getenv(
+    "ADMIN_BOOTSTRAP_EMAIL",
+    "admin@padelappretas.com" if not _IS_PROD else "",
+)
+ADMIN_PASSWORD_DEFAULT = os.getenv(
+    "ADMIN_BOOTSTRAP_PASSWORD",
+    "admin123" if not _IS_PROD else "",
+)
 
 
 async def setup_indexes() -> None:
@@ -115,6 +133,20 @@ async def setup_indexes() -> None:
 
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
+    """Seedea admin bootstrap si la colección está vacía.
+
+    En producción, requiere que `ADMIN_BOOTSTRAP_EMAIL` y
+    `ADMIN_BOOTSTRAP_PASSWORD` estén definidos en el entorno. Si faltan,
+    NO se seedea y el operador debe crear el admin manualmente.
+    """
+    import logging as _logging
+    _logger = _logging.getLogger("padelappretas-os")
+    if not ADMIN_EMAIL_DEFAULT or not ADMIN_PASSWORD_DEFAULT:
+        _logger.warning(
+            "[bootstrap] Admin no seedeado — falta ADMIN_BOOTSTRAP_EMAIL/PASSWORD en env. "
+            "Créalo manualmente vía POST /api/admin/register o el CLI de seed."
+        )
+        return False
     existing = await db.admins.find_one({"email": ADMIN_EMAIL_DEFAULT})
     if existing:
         return False

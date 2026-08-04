@@ -162,7 +162,7 @@ async def startup():
     await setup_indexes()
     seeded = await seed_admin_if_needed(hash_password)
     if seeded:
-        logger.info("Admin seedeado (admin@padelappretas.com / admin123)")
+        logger.info("[bootstrap] Admin inicial seedeado desde ADMIN_BOOTSTRAP_EMAIL")
     asyncio.create_task(cronjob_recordatorios())
     asyncio.create_task(cronjob_expirar_bloqueos())
 
