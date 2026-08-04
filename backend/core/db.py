@@ -16,25 +16,21 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 # ══════════════════════════════════════════════════════════════════════════
-# Admin bootstrap credentials — MUST come from environment in production.
+# Admin bootstrap credentials — SIEMPRE desde environment.
 # ══════════════════════════════════════════════════════════════════════════
-# Estos valores se usan UNA sola vez al arrancar el backend cuando la
-# colección `admins` está vacía (bootstrap inicial). En producción, siempre
-# se debe setear `ADMIN_BOOTSTRAP_EMAIL` + `ADMIN_BOOTSTRAP_PASSWORD` en el
-# `.env` para evitar credenciales predecibles.
+# `seed_admin_if_needed` corre sólo en el startup del backend cuando la
+# colección `admins` está vacía. En cualquier ambiente (dev / staging /
+# producción) se requiere que `ADMIN_BOOTSTRAP_EMAIL` y
+# `ADMIN_BOOTSTRAP_PASSWORD` estén definidos en el `.env`. Sin ellos, el
+# seed se skipea y se loguea una advertencia — nunca se escribe una
+# credencial predecible en la base de datos.
 #
-# Fallback SÓLO se activa si `IS_PROD` NO es truthy (dev / test). En prod
-# sin env vars, `bootstrap_admin_if_empty` skipea el seed y loguea una
-# advertencia para que el operador cree el admin manualmente.
-_IS_PROD = os.getenv("IS_PROD", "").lower() in ("1", "true", "yes")
-ADMIN_EMAIL_DEFAULT = os.getenv(
-    "ADMIN_BOOTSTRAP_EMAIL",
-    "admin@padelappretas.com" if not _IS_PROD else "",
-)
-ADMIN_PASSWORD_DEFAULT = os.getenv(
-    "ADMIN_BOOTSTRAP_PASSWORD",
-    "admin123" if not _IS_PROD else "",
-)
+# Ejemplos:
+#   dev:   ADMIN_BOOTSTRAP_EMAIL=admin@padelappretas.com  (en backend/.env)
+#          ADMIN_BOOTSTRAP_PASSWORD=admin123              (en backend/.env)
+#   prod:  Setear vía Emergent env secrets con valores fuertes.
+ADMIN_EMAIL_DEFAULT = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip()
+ADMIN_PASSWORD_DEFAULT = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
 
 
 async def setup_indexes() -> None:

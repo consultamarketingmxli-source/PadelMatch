@@ -1,0 +1,62 @@
+{
+  "summary": "Post deploy-blocker + security-refactor regression PASS. All 8 requested regression checks green: (1) Admin login POST /api/auth/login with admin@padelappretas.com/admin123 -> 200 + valid JWT (access_token, refresh_token, expires_in=900). (2) Backend boots clean on sentry-sdk==2.20.0, `import sentry_sdk` -> version 2.20.0, no ImportError; GET /api/ -> 200 {status:ok}. (3) seed_admin_if_needed(hash_password) on populated DB returns False (idempotent) and ADMIN_EMAIL_DEFAULT/PASSWORD are read from env (not hardcoded). (4) Old credential-disclosing log line ('Admin seedeado (admin@padelappretas.com / admin123)') is GONE from server.py source; only a historical 2026-05-27 log entry remains — current boot emits the sanitized 'Admin inicial seedeado desde ADMIN_BOOTSTRAP_EMAIL' path (only when seed actually runs). (5) pytest suite iter50 (10) + iter51 unit (18) + iter51 http (21) = 49/49 PASS in 3.48s. (6) Frontend /localhost:3000/ served HTML contains the google-site-verification meta with content=Aqzz6Phf6_t49Gk9Iql8aSCLA_g8RX_6b2GNSPBrK94. (7) app.config.js evaluates cleanly via require() and correctly strips android.googleServicesFile when the real file is missing (only google-services.json.TODO present). (8) wellknown endpoints: GET /.well-known/apple-app-site-association -> 200 JSON with AASA payload using IOS_TEAM_ID from env; GET /.well-known/assetlinks.json -> 200 JSON with ANDROID_SHA256_FINGERPRINTS from env. Security refactor is fully transparent — no functional regression detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "startup logs",
+        "issue": "Benign passlib+bcrypt AttributeError trace on startup (bcrypt.__about__ missing) from passlib 1.7.4 vs bcrypt 4.1.3. Non-blocking; hashing still works (login PASS). Pre-existing warning, not caused by this refactor."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter50_pago_cancha.py (10/10 PASS)",
+    "/app/backend/tests/test_iter51_open_reta_preauth.py (18/18 PASS)",
+    "/app/backend/tests/test_iter51_http_integration.py (21/21 PASS)",
+    "/app/test_reports/pytest/iter52_deploy_regression.xml"
+  ],
+  "verification_checklist": {
+    "admin_login_still_works_post_refactor": true,
+    "backend_boots_clean_no_ImportError": true,
+    "sentry_sdk_2_20_0_importable": true,
+    "seed_admin_returns_False_on_populated_db": true,
+    "ADMIN_BOOTSTRAP_EMAIL_and_PASSWORD_read_from_env": true,
+    "credential_disclosing_log_line_removed_from_source": true,
+    "new_log_line_has_no_credentials": true,
+    "iter50_iter51_unit_iter51_http_all_pass": "49/49",
+    "html_google_site_verification_meta_present": true,
+    "app_config_js_loadable_and_strips_googleServicesFile": true,
+    "wellknown_aasa_returns_200_json": true,
+    "wellknown_assetlinks_returns_200_json": true
+  },
+  "action_items": [
+    "No blockers. Deploy pipeline should be unblocked from the code side — user can re-attempt deploy via Emergent UI.",
+    "OPTIONAL: silence the passlib bcrypt.__about__ AttributeError by pinning bcrypt<4 or upgrading passlib>=1.7.5. Currently benign but noisy in logs.",
+    "REMINDER: before exposing padelappretas.emergent.host publicly, rotate ADMIN_BOOTSTRAP_PASSWORD in backend/.env to a strong value (current admin123 is dev-only)."
+  ],
+  "critical_code_review_comments": [
+    "core/db.py — seed_admin_if_needed now correctly gates on env presence: returns False + warning log if either ADMIN_BOOTSTRAP_EMAIL or ADMIN_BOOTSTRAP_PASSWORD is missing. Uses os.getenv with empty-string default (falsy) so a missing env is unambiguous. Good.",
+    "server.py — new bootstrap log 'Admin inicial seedeado desde ADMIN_BOOTSTRAP_EMAIL' contains no credentials. Only prints when seeded=True.",
+    "backend/.env — ADMIN_BOOTSTRAP_EMAIL/PASSWORD present (dev values) with clear comment about rotating in production. Correct.",
+    "requirements.txt — sentry-sdk==2.20.0 pinned and importable; sentry_sdk.init runs successfully via SENTRY_DSN env.",
+    "frontend/app/+html.tsx — google-site-verification meta correctly wired and served in the Expo Web SSR HTML output at localhost:3000.",
+    "frontend/app.config.js — small, focused, guards on fs.existsSync; verified via `node -e require()` that the exported expo.android object has NO googleServicesFile key when only .TODO exists.",
+    "routers/wellknown.py — dynamic env-driven, .strip() on IOS_TEAM_ID, comma-split + empty-filter for fingerprints; startup warnings fire when placeholders detected."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (49/49 pytest cases + all 8 regression bullet checks passed)",
+    "frontend": "not exercised via UI (backend-only scope). HTML meta tag verified via curl."
+  },
+  "seed_data_creation": "None. Pytest fixtures create + delete TEST retas within each test scope.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Deploy-blocker fixes and security refactor are fully validated at the code-readiness level. If user re-runs the deploy and it still fails, root cause is not in these files — check the Emergent deploy pipeline directly (image build, secrets injection of ADMIN_BOOTSTRAP_*). Note: the /var/log/supervisor/backend.err.log CONTAINS ONE historical entry from 2026-05-27 with the old credential-disclosing message; it's from a previous boot BEFORE the refactor and cannot be retroactively purged — it does NOT reappear on current boots. If you need a clean log, restart backend after rotating logs.",
+  "rca_of_issue": "N/A — this iteration is regression validation, no bugs found. All 8 requested behaviors verified with real HTTP calls, direct function invocation (seed_admin_if_needed), source grep for removed hardcoded credentials, and node-level evaluation of app.config.js."
+}
