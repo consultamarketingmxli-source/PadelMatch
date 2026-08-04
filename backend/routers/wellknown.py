@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["wellknown"])
@@ -49,6 +49,46 @@ if IOS_TEAM_ID == "TEAM_ID_TODO":
     logger.warning("[wellknown] IOS_TEAM_ID en placeholder — Universal Links iOS NO validarán")
 if any("TODO" in fp for fp in ANDROID_SHA256_FINGERPRINTS):
     logger.warning("[wellknown] ANDROID_SHA256_FINGERPRINTS en placeholder — App Links Android NO auto-verify")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Google Search Console — verificación por HTML file en la raíz del dominio.
+# ══════════════════════════════════════════════════════════════════════════
+# Ambos valores leídos desde env para rotación sin refactor de código:
+#   GOOGLE_VERIFICATION_FILE_NAME  = "googlea85e4f73dfe1ad08.html"
+#   GOOGLE_VERIFICATION_FILE_CONTENT = "google-site-verification: googlea85e4f73dfe1ad08.html"
+#
+# Google fetching el archivo espera:
+#   HTTP 200 · Content-Type text/html · body ES el contenido literal
+GOOGLE_VERIFICATION_FILE_NAME = os.getenv(
+    "GOOGLE_VERIFICATION_FILE_NAME",
+    "googlea85e4f73dfe1ad08.html",
+).strip()
+GOOGLE_VERIFICATION_FILE_CONTENT = os.getenv(
+    "GOOGLE_VERIFICATION_FILE_CONTENT",
+    "google-site-verification: googlea85e4f73dfe1ad08.html",
+)
+
+
+@router.get("/{filename}", include_in_schema=False)
+async def google_site_verification_file(filename: str) -> PlainTextResponse:
+    """Sirve el archivo HTML de verificación de Google Search Console.
+
+    Match SÓLO para el filename exacto configurado en `GOOGLE_VERIFICATION_FILE_NAME`.
+    Cualquier otro path retorna 404 para no exponer un catch-all en la raíz.
+
+    IMPORTANTE — ordering: este route va DESPUÉS de los routers /api/* y
+    /.well-known/* porque FastAPI matchea en orden de registro. Está registrado
+    dentro de `wellknown_router` que se incluye antes que `api` en server.py,
+    pero como sólo matchea filenames con patrón `google*.html`, no colisiona
+    con las rutas del frontend.
+    """
+    if filename != GOOGLE_VERIFICATION_FILE_NAME:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return PlainTextResponse(
+        content=GOOGLE_VERIFICATION_FILE_CONTENT,
+        media_type="text/html; charset=utf-8",
+    )
 
 
 @router.get("/.well-known/apple-app-site-association", include_in_schema=False)
