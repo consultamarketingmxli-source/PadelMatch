@@ -80,9 +80,9 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
-.env
-.env.*
-*.env
+# .env (removed — deployment pipeline requires .env* to be tracked)
+# .env.*
+# *.env
 credentials.json
 *.key
 .credentials
