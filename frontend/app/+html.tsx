@@ -12,6 +12,11 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
+        {/* Google Search Console — verificación de propiedad (padelappretas.emergent.host) */}
+        <meta
+          name="google-site-verification"
+          content="Aqzz6Phf6_t49Gk9Iql8aSCLA_g8RX_6b2GNSPBrK94"
+        />
         {/*
           Disable body scrolling on web to make ScrollView components work correctly.
           If you want to enable scrolling, remove `ScrollViewStyleReset` and
