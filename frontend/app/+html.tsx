@@ -15,7 +15,7 @@ export default function Root({ children }: PropsWithChildren) {
         {/* Google Search Console — verificación de propiedad (padelappretas.emergent.host) */}
         <meta
           name="google-site-verification"
-          content="Aqzz6Phf6_t49Gk9Iql8aSCLA_g8RX_6b2GNSPBrK94"
+          content="Aqzz6Phf6_t49Gl-U4_G93G0Kpxu6uEIn27z075C5pQ"
         />
         {/*
           Disable body scrolling on web to make ScrollView components work correctly.
