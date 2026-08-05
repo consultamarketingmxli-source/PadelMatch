@@ -20,7 +20,7 @@
         "applinks:www.padelappretas.app"
       ],
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Para mostrarte retas cercanas a tu ubicación",
+        "NSLocationWhenInUseUsageDescription": "Para mostrarte retas cercanas a tu ubicaci\u00f3n",
         "NSUserNotificationsUsageDescription": "Te avisamos al instante cuando se libere tu cupo",
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -60,7 +60,10 @@
               "pathPrefix": "/retas/"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -92,16 +95,17 @@
       [
         "@sentry/react-native/expo",
         {
-          "organization": "padelappretas",
-          "project": "padelappretas-mobile",
-          "url": "https://sentry.io/"
+          "organization": "placeholder",
+          "project": "placeholder",
+          "url": "https://sentry.io/",
+          "note": "Auto-upload disabled (no SENTRY_AUTH_TOKEN in build)"
         }
       ],
       [
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-5641434677902126~1440922796",
-          "userTrackingPermission": "Permíteme mostrarte anuncios relevantes para apoyar PadelAppRetas."
+          "userTrackingPermission": "Perm\u00edteme mostrarte anuncios relevantes para apoyar PadelAppRetas."
         }
       ]
     ],
