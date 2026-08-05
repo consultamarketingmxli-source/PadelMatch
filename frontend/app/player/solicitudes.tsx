@@ -35,6 +35,7 @@ import { AlertTriangle, Check, Clock, Search, ShieldCheck, X } from "lucide-reac
 import { api } from "@/src/api";
 import { colors, radii, shadows, spacing, typography } from "@/src/theme";
 import { getPlayerInfo } from "@/src/utils/playerInfo";
+import { playerTokenStore } from "@/src/utils/playerTokenStore";
 
 type JoinRequestItem = {
   id: string;
@@ -73,10 +74,22 @@ export default function MisSolicitudesScreen() {
     }
     try {
       setError(null);
-      const r = await api.listMyJoinRequests(playerId, "all");
+      // SEC-003 · endpoint ahora requiere JWT del jugador
+      const tok = await playerTokenStore.get();
+      if (!tok) {
+        setError("Sesión expirada — verifica tu teléfono de nuevo.");
+        setItems([]);
+        return;
+      }
+      const r = await api.listMyJoinRequests(playerId, tok, "all");
       setItems(r.items as JoinRequestItem[]);
     } catch (e: any) {
-      setError(e?.message || "No se pudieron cargar las solicitudes.");
+      const msg = e?.message || "";
+      if (msg.includes("401") || msg.includes("403")) {
+        setError("Sesión expirada — verifica tu teléfono de nuevo.");
+      } else {
+        setError(msg || "No se pudieron cargar las solicitudes.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

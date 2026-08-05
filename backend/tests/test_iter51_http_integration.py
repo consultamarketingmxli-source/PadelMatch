@@ -137,13 +137,16 @@ class TestPreauthForm:
         )
         assert r.status_code == 200, r.status_code
 
-    def test_amount_zero_returns_422(self, api):
+    def test_amount_query_param_ignored(self, api):
+        """SEC-001 fix · el amount del cliente ya NO se acepta. El endpoint lo
+        deriva de `reta.costo_inscripcion`. Se acepta con cualquier valor pero
+        no afecta el HTML (server-side amount). Reta inexistente → 404."""
         r = api.get(
-            f"{BASE_URL}/api/public/retas/x/preauth-form?amount=0",
+            f"{BASE_URL}/api/public/retas/nonexistent-{uuid.uuid4().hex[:6]}/preauth-form?amount=0",
             timeout=10,
         )
-        # Pydantic Query gt=0 → 422
-        assert r.status_code == 422
+        # Ya no da 422 — ahora la reta inexistente da 404 (SEC-001 comportamiento).
+        assert r.status_code == 404
 
     def test_reta_missing_returns_404(self, api):
         """Iter51-P2 · gate: reta inexistente → 404 (antes se renderizaba HTML)."""

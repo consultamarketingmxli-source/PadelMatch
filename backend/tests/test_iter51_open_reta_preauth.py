@@ -34,6 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from dotenv import load_dotenv
+from starlette.requests import Request as StarletteRequest
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
@@ -42,11 +43,41 @@ load_dotenv(BACKEND_DIR / ".env")
 import mercadopago_service as mps  # noqa: E402
 from core.crypto import encrypt_token  # noqa: E402
 from core.db import db  # noqa: E402
+from core.security import limiter  # noqa: E402  · SEC-004 · reset entre tests
 from fastapi import HTTPException  # noqa: E402
 from routers import join_requests as jr  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """SEC-004 · SlowAPI acumula estado entre tests unit-level. Reseteamos
+    para que los rate-limits no colisionen entre casos independientes."""
+    try:
+        limiter.reset()
+    except Exception:  # pylint: disable=broad-except
+        pass
+    yield
+
+
 # ═══════════════════════════════ Helpers ═══════════════════════════════
+def _fake_request() -> StarletteRequest:
+    """Construye un Starlette Request mínimo para pasar el guard de SlowAPI.
+
+    SlowAPI valida `isinstance(request, starlette.requests.Request)` — un
+    MagicMock no pasa. Este helper genera un objeto real con scope mínimo.
+    """
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/retas/join-request",
+        "headers": [],
+        "client": ("127.0.0.1", 0),
+        "server": ("testserver", 8001),
+        "scheme": "http",
+    }
+    return StarletteRequest(scope)
+
+
 def _run(coro):
     """Ejecuta corutina en el loop activo (o crea uno)."""
     try:
@@ -217,12 +248,18 @@ def test_5_crear_join_request_happy_path():
                 match_id=match_id, player_id=player_id, amount=100.0,
                 card_token="TOK-abcdef", payer_email="p@test.com",
             )
-            out = await jr.crear_join_request(body)
+            # SEC-004 · endpoint ahora decorado con @limiter — pasamos Request mock
+            fake_req = _fake_request()
+            out = await jr.crear_join_request(fake_req, body)
         assert out.status == "pending_approval"
         assert out.payment_id == "PAY-42"
         doc = await db.join_requests.find_one({"id": out.id}, {"_id": 0})
         assert doc["status"] == "pending_approval"
         assert doc["payment_id"] == "PAY-42"
+        # SEC-001 · el monto persistido es server-side (100.0 del `_mk_reta`), no del cliente.
+        assert doc["amount"] == 100.0
+        # MP fue llamado con server_amount
+        assert mock_hold.call_args.kwargs["amount"] == 100.0
         # enqueue del auto-expire se llamó una vez
         assert mock_enq.call_count == 1
         assert mock_enq.call_args.kwargs["job_type"] == jr.JOB_AUTO_EXPIRE
@@ -254,7 +291,7 @@ def test_6_crear_join_request_duplicate_returns_409():
                 card_token="TOK-abcdef", payer_email="p@test.com",
             )
             with pytest.raises(HTTPException) as exc:
-                await jr.crear_join_request(body)
+                await jr.crear_join_request(_fake_request(), body)
             assert exc.value.status_code == 409
             mock_hold.assert_not_called()  # No debe haber tocado MP
 
@@ -281,7 +318,7 @@ def test_7_crear_join_request_402_when_card_rejected():
                 card_token="TOK-abcdef", payer_email="p@test.com",
             )
             with pytest.raises(HTTPException) as exc:
-                await jr.crear_join_request(body)
+                await jr.crear_join_request(_fake_request(), body)
             assert exc.value.status_code == 402
         # No debe haberse persistido nada.
         doc = await db.join_requests.find_one({"match_id": match_id})
@@ -300,7 +337,7 @@ def test_8_crear_join_request_404_reta_missing():
             card_token="TOK-abcdef", payer_email="p@test.com",
         )
         with pytest.raises(HTTPException) as exc:
-            await jr.crear_join_request(body)
+            await jr.crear_join_request(_fake_request(), body)
         assert exc.value.status_code == 404
 
     _run(scenario())
@@ -322,7 +359,7 @@ def test_8b_crear_join_request_403_when_open_reta_disabled():
                 card_token="TOK-abcdef", payer_email="p@test.com",
             )
             with pytest.raises(HTTPException) as exc:
-                await jr.crear_join_request(body)
+                await jr.crear_join_request(_fake_request(), body)
             assert exc.value.status_code == 403
             assert "solicitudes" in exc.value.detail.lower()
             mock_hold.assert_not_called()  # NUNCA toca MP si el gate falla
@@ -334,6 +371,87 @@ def test_8b_crear_join_request_403_when_open_reta_disabled():
         _run(scenario())
     finally:
         _run(_cleanup(match_id, admin_id))
+
+
+def test_8c_sec001_client_amount_ignored_uses_server_price():
+    """SEC-001 · Underpayment attempt: cliente envía amount=1 pero reta cuesta 100.
+    El backend DEBE holdear los 100 reales, no los 1 del cliente."""
+    match_id = f"m-{uuid.uuid4().hex[:8]}"
+    admin_id = f"a-{uuid.uuid4().hex[:8]}"
+    player_id = f"p-{uuid.uuid4().hex[:8]}"
+
+    async def scenario():
+        await _mk_reta(match_id, admin_id)  # costo_inscripcion=100.0
+        await _mk_admin(admin_id)
+        with patch.object(mps, "hold_funds", new_callable=AsyncMock) as mock_hold, \
+             patch.object(jr, "enqueue", new_callable=AsyncMock):
+            mock_hold.return_value = {"id": "PAY-sec001", "status": "authorized"}
+            body = jr.JoinRequestCreate(
+                match_id=match_id, player_id=player_id,
+                amount=1.00,  # ← intento de underpayment
+                card_token="TOK-attack", payer_email="attacker@test.com",
+            )
+            out = await jr.crear_join_request(_fake_request(), body)
+        # MP fue llamado con el precio del server (100), NO con el del cliente (1)
+        assert mock_hold.call_args.kwargs["amount"] == 100.0
+        # DB persistió el amount server-side
+        doc = await db.join_requests.find_one({"id": out.id}, {"_id": 0})
+        assert doc["amount"] == 100.0
+
+    try:
+        _run(scenario())
+    finally:
+        _run(_cleanup(match_id, admin_id))
+
+
+def test_8d_sec001_400_when_reta_has_no_price():
+    """SEC-001 · edge case: reta con costo_inscripcion=0 → 400 antes de MP."""
+    match_id = f"m-{uuid.uuid4().hex[:8]}"
+    admin_id = f"a-{uuid.uuid4().hex[:8]}"
+
+    async def scenario():
+        await _mk_reta(match_id, admin_id)
+        # Forzamos precio inválido
+        await db.retas.update_one({"id": match_id}, {"$set": {"costo_inscripcion": 0}})
+        await _mk_admin(admin_id)
+        with patch.object(mps, "hold_funds", new_callable=AsyncMock) as mock_hold:
+            body = jr.JoinRequestCreate(
+                match_id=match_id, player_id="p1", amount=50.0,
+                card_token="TOK-abcdef", payer_email="p@test.com",
+            )
+            with pytest.raises(HTTPException) as exc:
+                await jr.crear_join_request(_fake_request(), body)
+            assert exc.value.status_code == 400
+            mock_hold.assert_not_called()
+
+    try:
+        _run(scenario())
+    finally:
+        _run(_cleanup(match_id, admin_id))
+
+
+def test_8e_sec003_players_list_requires_own_token():
+    """SEC-003 · admin token o token de OTRO jugador → 403."""
+    my_id = f"p-{uuid.uuid4().hex[:8]}"
+    other_id = f"p-{uuid.uuid4().hex[:8]}"
+
+    async def scenario():
+        # Jugador con token válido para SUS solicitudes → OK
+        res = await jr.listar_join_requests_del_jugador(
+            player_id=my_id, status="active",
+            current={"sub": my_id, "role": "player"},
+        )
+        assert res["total"] == 0
+
+        # Jugador intenta ver las de OTRO → 403
+        with pytest.raises(HTTPException) as exc:
+            await jr.listar_join_requests_del_jugador(
+                player_id=other_id, status="active",
+                current={"sub": my_id, "role": "player"},
+            )
+        assert exc.value.status_code == 403
+
+    _run(scenario())
 
 
 # ═══════════════════════════ decidir_join_request ═══════════════════════════

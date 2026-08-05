@@ -62,11 +62,11 @@ if any("TODO" in fp for fp in ANDROID_SHA256_FINGERPRINTS):
 #   HTTP 200 · Content-Type text/html · body ES el contenido literal
 GOOGLE_VERIFICATION_FILE_NAME = os.getenv(
     "GOOGLE_VERIFICATION_FILE_NAME",
-    "googlea85e4f73dfe1ad08.html",
+    "googlea05e4f73dfe1ad09.html",
 ).strip()
 GOOGLE_VERIFICATION_FILE_CONTENT = os.getenv(
     "GOOGLE_VERIFICATION_FILE_CONTENT",
-    "google-site-verification: googlea85e4f73dfe1ad08.html",
+    "google-site-verification: googlea05e4f73dfe1ad09.html",
 )
 
 

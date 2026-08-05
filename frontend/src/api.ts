@@ -1109,9 +1109,10 @@ export const api = {
   getPreauthFormUrl: (slug: string, amount: number): string =>
     `${BASE}/api/public/retas/${encodeURIComponent(slug)}/preauth-form?amount=${amount}`,
 
-  /** Jugador lista sus propias solicitudes (self-service, pública por player_id). */
+  /** Jugador lista sus propias solicitudes (self-service, requiere auth de jugador · SEC-003 fix). */
   listMyJoinRequests: (
     playerId: string,
+    playerToken: string,
     status: "active" | "all" | "pending_approval" | "approved" | "rejected" | "expired" | "failed" = "active",
   ) =>
     request<{
@@ -1130,7 +1131,9 @@ export const api = {
         created_at: string;
         decided_at?: string | null;
       }>;
-    }>(`/players/${playerId}/join-requests?status=${status}`),
+    }>(`/players/${playerId}/join-requests?status=${status}`, {
+      headers: { Authorization: `Bearer ${playerToken}` },
+    }),
 
   // ===== admin dashboard =====
   adminMetrics: () => request<AdminMetrics>(`/admin/metrics`, { auth: true }),

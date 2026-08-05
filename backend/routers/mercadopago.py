@@ -32,6 +32,7 @@ from core.circuit import with_timeout_and_retry
 from core.crypto import decrypt_token, encrypt_token
 from core.db import db, ADMIN_EMAIL_DEFAULT
 from core.email_service import email_service
+from core.security import limiter  # SEC-004 · rate limit endpoints públicos de pago
 from core.helpers import (
     assert_player_passes_antiflake,
     assert_reta_no_cerrada,
@@ -394,6 +395,7 @@ async def mp_oauth_callback(
     "/public/retas/{reta_id}/checkout-mercadopago",
     response_model=MpCheckoutResponse,
 )
+@limiter.limit("10/minute")  # SEC-004 · anti card-testing/abuse en checkout público
 async def checkout_mercadopago(reta_id: str, body: MpCheckoutCreate, request: Request):
     """Crea inscripción Pendiente + Preference MP del organizador.
     El dinero va 100% a la cuenta MP del organizador (no marketplace_fee por defecto).

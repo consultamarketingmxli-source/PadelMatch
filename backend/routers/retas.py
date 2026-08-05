@@ -171,6 +171,9 @@ async def get_reta_admin(reta_id: str, current=Depends(get_current_admin)):
     r = await db.retas.find_one({"id": reta_id}, {"_id": 0})
     if not r:
         raise HTTPException(404, "Reta no encontrada")
+    # SEC-002 · Iter52 audit: sólo el organizador dueño puede ver el detalle.
+    if str(r.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
     await compute_public(r)
     return RetaPublic(**r)
 
@@ -180,6 +183,9 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
     r = await db.retas.find_one({"id": reta_id})
     if not r:
         raise HTTPException(404, "Reta no encontrada")
+    # SEC-002 · ownership antes de mutación.
+    if str(r.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
     fecha_iso = construir_fecha_local_iso(body.fecha_str, body.hora_str, body.tz_offset_minutes)
     max_jug = _resolve_max_jugadores(body)
     canchas = _derive_canchas(max_jug, body.canchas_disponibles)
@@ -245,6 +251,12 @@ async def update_reta(reta_id: str, body: RetaCreate, current=Depends(get_curren
 
 @router.delete("/{reta_id}")
 async def delete_reta(reta_id: str, current=Depends(get_current_admin)):
+    # SEC-002 · ownership antes de borrar (evita destrucción de retas ajenas).
+    r = await db.retas.find_one({"id": reta_id}, {"organizador_id": 1, "_id": 0})
+    if not r:
+        raise HTTPException(404, "Reta no encontrada")
+    if str(r.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
     res = await db.retas.delete_one({"id": reta_id})
     if res.deleted_count == 0:
         raise HTTPException(404, "Reta no encontrada")
@@ -257,6 +269,12 @@ async def delete_reta(reta_id: str, current=Depends(get_current_admin)):
 
 @router.get("/{reta_id}/inscripciones", response_model=List[Inscripcion])
 async def list_inscripciones(reta_id: str, current=Depends(get_current_admin)):
+    # SEC-002 · ownership antes de exponer PII de jugadores (nombre/telefono).
+    r = await db.retas.find_one({"id": reta_id}, {"organizador_id": 1, "_id": 0})
+    if not r:
+        raise HTTPException(404, "Reta no encontrada")
+    if str(r.get("organizador_id") or "") != str(current.get("sub") or ""):
+        raise HTTPException(403, "No autorizado — esta reta no te pertenece.")
     cursor = db.inscripciones.find({"reta_id": reta_id}, {"_id": 0}).sort("creado_en", 1).limit(500)
     out = []
     async for d in cursor:

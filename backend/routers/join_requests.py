@@ -13,14 +13,13 @@ Concurrency safety:
   • Si la reserva falla → refund del hold + 409 al cliente.
   • Si el capture MP falla después de la reserva → rollback (`liberar_lugar`).
 """
-from __future__ import annotations
-
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, Field
 
 import mercadopago_service as mps
@@ -31,6 +30,8 @@ from core.crypto import decrypt_token
 from core.security import limiter
 from services import email_service, push_service
 from services.jobs_worker import enqueue
+# SEC-003 · lazy import para evitar ciclos (player_auth importa services)
+from routers.player_auth import get_current_player
 
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(tags=["join-requests"])
@@ -178,14 +179,14 @@ async def listar_join_requests(
 async def listar_join_requests_del_jugador(
     player_id: str,
     status: str = Query(default="active", pattern="^(active|all|pending_approval|approved|rejected|expired|failed)$"),
+    current=Depends(get_current_player),
 ) -> dict:
     """Lista los join_requests del propio jugador (self-service).
 
-    Endpoint PÚBLICO (sin auth admin). Autorización débil por `player_id` en
-    URL — el jugador ya está identificado via OTP en su dispositivo. La app
-    filtra por su propio `jugador_id` local (nunca expone IDs ajenos porque
-    se requiere conocer el UUID). Para reforzar podríamos exigir un token,
-    pero el flujo público de join_request ya funciona así.
+    SECURITY · SEC-003 fix: requiere JWT de jugador (`role="player"`) y el
+    `sub` (jugador_id del token) DEBE coincidir con el `player_id` del path.
+    Antes era público — cualquiera con un UUID leía email + payment_id + historial
+    de pagos de otros jugadores.
 
     status:
       • `active` (default) → sólo `pending_approval` (lo más útil en la app).
@@ -195,6 +196,10 @@ async def listar_join_requests_del_jugador(
     Cada item incluye info de la reta (nombre, fecha, slug, costo) para que
     la UI pueda pintar cards ricas sin fetch adicional por cada request.
     """
+    # SEC-003 · ownership check: sólo puedes ver TUS propias solicitudes.
+    if str(current.get("sub") or "") != str(player_id):
+        raise HTTPException(403, "No autorizado — sólo puedes consultar tus propias solicitudes.")
+
     query: dict = {"player_id": player_id}
     if status == "active":
         query["status"] = "pending_approval"
@@ -236,7 +241,7 @@ async def listar_join_requests_del_jugador(
 
 @router.post("/retas/join-request", status_code=201, response_model=JoinRequestOut)
 @limiter.limit("5/minute")  # SEC-004 · anti card-testing / abuse
-async def crear_join_request(request: Request, body: JoinRequestCreate) -> JoinRequestOut:
+async def crear_join_request(request: Request, body: JoinRequestCreate = Body(...)):
     """1) Retiene fondos en tarjeta (capture=False) y persiste el join_request.
 
     Idempotencia: `player_id + match_id + status=pending_approval` — si ya existe
@@ -357,7 +362,7 @@ async def crear_join_request(request: Request, body: JoinRequestCreate) -> JoinR
 
 @router.post("/retas/decide-request")
 async def decidir_join_request(
-    body: DecideRequestBody,
+    body: DecideRequestBody = Body(...),
     current=Depends(get_current_admin),
 ) -> dict:
     """2) Approve/reject de un join_request.
@@ -561,12 +566,11 @@ async def handle_join_request_auto_expire(payload: dict) -> None:
 #   2. Usuario captura tarjeta → MP.js genera token (client-side)
 #   3. WebView emite mensaje con el token → RN llama /api/retas/join-request
 #   4. WebView se cierra al éxito o al error.
-from fastapi.responses import HTMLResponse  # noqa: E402
 
 
 @router.get("/public/retas/{slug}/preauth-form", response_class=HTMLResponse)
 @limiter.limit("20/minute")  # SEC-004 · limitar scraping / abuse
-async def preauth_form(request: Request, slug: str) -> HTMLResponse:
+async def preauth_form(request: Request, slug: str):
     """Devuelve HTML self-contained con MP.js CardPayment Brick.
 
     SECURITY · SEC-001 fix: el monto renderizado en el brick lo determina el
