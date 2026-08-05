@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
 
 import mercadopago_service as mps
@@ -28,6 +28,7 @@ from auth import get_current_admin
 from core.concurrency import liberar_lugar, reservar_lugar_atomico
 from core.db import db
 from core.crypto import decrypt_token
+from core.security import limiter
 from services import email_service, push_service
 from services.jobs_worker import enqueue
 
@@ -44,7 +45,13 @@ AUTO_EXPIRE_LEAD_HOURS = 2
 class JoinRequestCreate(BaseModel):
     match_id: str = Field(min_length=1, max_length=64)
     player_id: str = Field(min_length=1, max_length=64)
-    amount: float = Field(gt=0, le=100000)
+    # SEC-001 FIX · Iter52 audit
+    # ─────────────────────────
+    # `amount` YA NO define el monto real del hold. El backend siempre lee
+    # `reta.costo_inscripcion` para setear el hold. Se mantiene el campo por
+    # compatibilidad temporal con clientes que aún lo envíen — se usa sólo
+    # como verificación cruzada opcional en logs, pero jamás toca MP.
+    amount: float = Field(default=0, ge=0, le=100000, description="DEPRECATED · ignorado (server-side lookup)")
     card_token: str = Field(min_length=8, max_length=128)
     payer_email: EmailStr
     installments: int = Field(default=1, ge=1, le=12)
@@ -228,13 +235,18 @@ async def listar_join_requests_del_jugador(
 
 
 @router.post("/retas/join-request", status_code=201, response_model=JoinRequestOut)
-async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
+@limiter.limit("5/minute")  # SEC-004 · anti card-testing / abuse
+async def crear_join_request(request: Request, body: JoinRequestCreate) -> JoinRequestOut:
     """1) Retiene fondos en tarjeta (capture=False) y persiste el join_request.
 
-    Idempotencia: `player_id + match_id + created_within_1h` — si ya existe uno
-    pendiente para este par, retornamos 409 en lugar de duplicar hold.
+    Idempotencia: `player_id + match_id + status=pending_approval` — si ya existe
+    uno pendiente para este par, retornamos 409 en lugar de duplicar hold.
 
     Programa auto-expiración via jobs_queue con delay = (fecha_evento - 2h - now).
+
+    SECURITY · SEC-001 fix: el monto del hold lo determina el server desde
+    `reta.costo_inscripcion`. `body.amount` se ignora (se persiste sólo en logs
+    como cross-check si se detecta discrepancia con el precio de la reta).
     """
     reta = await db.retas.find_one({"id": body.match_id}, {"_id": 0})
     if not reta:
@@ -249,6 +261,17 @@ async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
         )
     if str(reta.get("status_public") or reta.get("status") or "open").lower() in ("cancelled", "full"):
         raise HTTPException(409, "La reta ya no acepta pre-autorizaciones.")
+
+    # SEC-001 · monto autoritativo del server, no del cliente.
+    server_amount = float(reta.get("costo_inscripcion") or 0)
+    if server_amount <= 0:
+        raise HTTPException(400, "La reta no tiene un costo válido configurado.")
+    # Log cross-check para detectar clientes intentando underpayment.
+    if body.amount and abs(body.amount - server_amount) > 0.01:
+        logger.warning(
+            "[join-request][SEC-001] Discrepancia amount cliente=%s server=%s match_id=%s player_id=%s",
+            body.amount, server_amount, body.match_id, body.player_id,
+        )
 
     # Anti-duplicación: no permitir dos holds pendientes del mismo player para
     # la misma reta (evita bloquear 2x el mismo dinero por error de UI).
@@ -270,7 +293,7 @@ async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
     try:
         payment = await mps.hold_funds(
             access_token=access_token,
-            amount=body.amount,
+            amount=server_amount,  # SEC-001 · server-side, no `body.amount`
             card_token=body.card_token,
             payer_email=str(body.payer_email),
             installments=body.installments,
@@ -299,7 +322,7 @@ async def crear_join_request(body: JoinRequestCreate) -> JoinRequestOut:
         "match_id": body.match_id,
         "player_id": body.player_id,
         "payment_id": str(payment["id"]),
-        "amount": body.amount,
+        "amount": server_amount,  # SEC-001 · fuente única de verdad
         "payer_email": str(body.payer_email),
         "status": "pending_approval",
         "mp_status": payment.get("status"),
@@ -542,28 +565,40 @@ from fastapi.responses import HTMLResponse  # noqa: E402
 
 
 @router.get("/public/retas/{slug}/preauth-form", response_class=HTMLResponse)
-async def preauth_form(slug: str, amount: float = Query(gt=0)) -> HTMLResponse:
+@limiter.limit("20/minute")  # SEC-004 · limitar scraping / abuse
+async def preauth_form(request: Request, slug: str) -> HTMLResponse:
     """Devuelve HTML self-contained con MP.js CardPayment Brick.
 
+    SECURITY · SEC-001 fix: el monto renderizado en el brick lo determina el
+    server desde `reta.costo_inscripcion`. YA NO se acepta un `amount` en el
+    querystring — cualquier valor ahí se ignora. Esto elimina el vector de
+    manipulación cliente-side del monto pre-autorizado.
+
     Args:
-        slug: identificador de la reta (para display en el título).
-        amount: monto MXN a pre-autorizar.
+        slug: identificador único público de la reta.
     """
     import os as _os
     mp_public_key = _os.getenv("MP_PUBLIC_KEY", "").strip()
     if not mp_public_key:
         raise HTTPException(500, "MP_PUBLIC_KEY no configurado en el servidor.")
 
-    reta = await db.retas.find_one({"url_slug": slug}, {"nombre": 1, "open_reta_habilitado": 1, "_id": 0})
+    reta = await db.retas.find_one(
+        {"url_slug": slug},
+        {"nombre": 1, "open_reta_habilitado": 1, "costo_inscripcion": 1, "_id": 0},
+    )
     if not reta:
         raise HTTPException(404, "Reta no encontrada.")
     if not bool(reta.get("open_reta_habilitado", False)):
         raise HTTPException(403, "Esta reta no acepta solicitudes de unión.")
+
+    server_amount = float(reta.get("costo_inscripcion") or 0)
+    if server_amount <= 0:
+        raise HTTPException(400, "La reta no tiene un costo válido configurado.")
     reta_nombre = reta.get("nombre") or slug
 
     html = _build_preauth_html(
         mp_public_key=mp_public_key,
-        amount=round(float(amount), 2),
+        amount=round(server_amount, 2),
         reta_nombre=reta_nombre,
     )
     return HTMLResponse(content=html, status_code=200)
