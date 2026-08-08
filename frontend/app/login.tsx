@@ -12,7 +12,6 @@
  */
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -33,6 +32,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { BrandWordmark } from "@/src/components/BrandWordmark";
+import { Toast } from "@/src/components/Toast";
 import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
@@ -40,6 +40,11 @@ import { playerTokenStore } from "@/src/utils/playerTokenStore";
 import { deepLinkStore } from "@/src/utils/deepLinkStore";
 import { LegalConsent } from "@/src/components/LegalConsent";
 import { acceptLegal } from "@/src/utils/legalConsent";
+import {
+  formatPhoneWhileTyping,
+  normalizePhoneToE164,
+  parseApiErrorMessage,
+} from "@/src/utils/phoneFormat";
 
 const PLAYER_INFO_KEY = "padelappretas.player.info";
 
@@ -52,30 +57,97 @@ export default function PlayerLogin() {
   const [step, setStep] = useState<"request" | "verify">("request");
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [telefonoE164, setTelefonoE164] = useState(""); // normalizado para verify
   const [codigo, setCodigo] = useState("");
   const [loading, setLoading] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const [sandboxInfo, setSandboxInfo] = useState<{
+    joinCode: string;
+    number: string;
+  } | null>(null);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    tone: "info" | "warn" | "error";
+  }>({ visible: false, message: "", tone: "info" });
+
+  const showToast = (
+    message: string,
+    tone: "info" | "warn" | "error" = "info",
+  ) => setToast({ visible: true, message, tone });
 
   const requestOtp = async () => {
-    if (nombre.trim().length < 2) return Alert.alert("Datos", "Ingresa tu nombre.");
-    if (telefono.trim().length < 8) return Alert.alert("Datos", "Ingresa un teléfono válido.");
+    if (nombre.trim().length < 2) {
+      showToast("Ingresá tu nombre para continuar.", "warn");
+      return;
+    }
+    // Normalizamos el teléfono en cliente ANTES de llamar al backend.
+    const e164 = normalizePhoneToE164(telefono);
+    if (!e164) {
+      showToast(
+        "Teléfono inválido. Ingresá 10 dígitos (ej. 55 1234 5678).",
+        "error",
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      const r = await api.playerRequestOtp({ nombre: nombre.trim(), telefono: telefono.trim() });
+      const r = await api.playerRequestOtp({
+        nombre: nombre.trim(),
+        telefono: e164,
+      });
+      setTelefonoE164(e164);
       setHint(r.mensaje);
+      // Guardar info de sandbox si backend indica que estamos en Sandbox mode.
+      if (r.sandbox_mode && r.sandbox_join_code && r.sandbox_number) {
+        setSandboxInfo({
+          joinCode: r.sandbox_join_code,
+          number: r.sandbox_number,
+        });
+      } else {
+        setSandboxInfo(null);
+      }
       setStep("verify");
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "No se pudo enviar el código");
+      showToast(
+        "Código enviado a tu WhatsApp. Si no llega en 60s, pedí otro.",
+        "info",
+      );
+    } catch (e: unknown) {
+      const parsed = parseApiErrorMessage(
+        e,
+        "No se pudo enviar el código. Intentá de nuevo.",
+      );
+      // Errores específicos con instrucciones accionables.
+      if (parsed.code === "sandbox_not_joined" || parsed.twilioCode === 63015) {
+        Alert.alert(
+          "Activá WhatsApp Sandbox",
+          parsed.message,
+          [{ text: "Entendido" }],
+        );
+      } else if (parsed.code === "opted_out") {
+        Alert.alert("Recepción bloqueada", parsed.message);
+      } else if (parsed.code === "invalid_phone") {
+        showToast(parsed.message, "error");
+      } else {
+        showToast(parsed.message, "error");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const verifyOtp = async () => {
-    if (codigo.trim().length < 4) return Alert.alert("Código", "Ingresa el código de 6 dígitos.");
+    if (codigo.trim().length < 4) {
+      showToast("Ingresá el código de 6 dígitos.", "warn");
+      return;
+    }
     setLoading(true);
     try {
-      const r = await api.playerVerifyOtp({ telefono: telefono.trim(), codigo: codigo.trim() });
+      const r = await api.playerVerifyOtp({
+        telefono: telefonoE164 || normalizePhoneToE164(telefono) || telefono.trim(),
+        codigo: codigo.trim(),
+      });
       await playerTokenStore.set(r.access_token);
       await AsyncStorage.setItem(
         PLAYER_INFO_KEY,
@@ -105,8 +177,12 @@ export default function PlayerLogin() {
       } catch {
         router.replace("/mi-cuenta" as any);
       }
-    } catch (e: any) {
-      Alert.alert("Código incorrecto", e.message ?? "Inténtalo de nuevo o solicita uno nuevo.");
+    } catch (e: unknown) {
+      const parsed = parseApiErrorMessage(
+        e,
+        "Código incorrecto o expirado.",
+      );
+      showToast(parsed.message, "error");
     } finally {
       setLoading(false);
     }
@@ -153,12 +229,15 @@ export default function PlayerLogin() {
                 <Input
                   label="Teléfono"
                   value={telefono}
-                  onChangeText={setTelefono}
-                  placeholder="+5215512345678"
+                  onChangeText={(v) => setTelefono(formatPhoneWhileTyping(v))}
+                  placeholder="(55) 1234 5678"
                   keyboardType="phone-pad"
                   maxLength={20}
                   testID="phone-input"
                 />
+                <Text style={styles.phoneHint}>
+                  Ingresá tu número de 10 dígitos. Añadimos +52 automáticamente.
+                </Text>
                 <Button
                   title="Enviarme código"
                   onPress={requestOtp}
@@ -177,6 +256,25 @@ export default function PlayerLogin() {
                   Enviado a {telefono}
                   {hint ? `\n\n${hint}` : ""}
                 </Text>
+                {sandboxInfo ? (
+                  <View style={styles.sandboxBanner}>
+                    <Text style={styles.sandboxTitle}>
+                      ⚠️ Modo Sandbox de pruebas
+                    </Text>
+                    <Text style={styles.sandboxBody}>
+                      Si no te llega el código: primero envía por WhatsApp el
+                      mensaje{" "}
+                      <Text style={styles.sandboxCode}>
+                        {sandboxInfo.joinCode}
+                      </Text>{" "}
+                      al número{" "}
+                      <Text style={styles.sandboxCode}>
+                        {sandboxInfo.number}
+                      </Text>{" "}
+                      y volvé a solicitar el código.
+                    </Text>
+                  </View>
+                ) : null}
                 <Input
                   label="Código de 6 dígitos"
                   value={codigo}
@@ -227,6 +325,13 @@ export default function PlayerLogin() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {/* Toast global — confirmaciones y errores no-bloqueantes */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        tone={toast.tone}
+        onHide={() => setToast((t) => ({ ...t, visible: false }))}
+      />
     </SafeAreaView>
   );
 }
@@ -303,6 +408,39 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     fontSize: 13,
     lineHeight: 19,
+  },
+  phoneHint: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: -spacing.xs,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 2,
+  },
+  sandboxBanner: {
+    backgroundColor: "#FEF3C7", // amber-100
+    borderWidth: 1,
+    borderColor: "#F59E0B", // amber-500
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: 6,
+  },
+  sandboxTitle: {
+    color: "#78350F", // amber-900
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  sandboxBody: {
+    color: "#78350F",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  sandboxCode: {
+    fontWeight: "700",
+    color: "#111827",
+    backgroundColor: "rgba(0,0,0,0.06)",
+    paddingHorizontal: 3,
   },
   linkAlt: { color: colors.brand.primary, fontSize: 12, textDecorationLine: "underline" },
 

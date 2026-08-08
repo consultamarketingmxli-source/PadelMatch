@@ -1145,7 +1145,14 @@ export const api = {
 
   // ===== player auth (OTP) =====
   playerRequestOtp: (body: { nombre: string; telefono: string }) =>
-    request<{ ok: boolean; enviado_por_sms: boolean; mensaje: string }>(
+    request<{
+      ok: boolean;
+      enviado_por_sms: boolean;
+      mensaje: string;
+      sandbox_mode?: boolean;
+      sandbox_join_code?: string | null;
+      sandbox_number?: string | null;
+    }>(
       `/players/auth/otp/request`,
       { method: "POST", body },
     ),

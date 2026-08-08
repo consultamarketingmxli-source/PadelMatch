@@ -1,0 +1,33 @@
+{
+  "summary": "Player OTP Login flow (Iter55) fully verified. Backend endpoint POST /api/players/auth/otp/request accepts phones without +, with separators, and in strict E.164 form — always returns sandbox_mode:true with sandbox_join_code='join busy-crack' and sandbox_number='+14155238886'. Pydantic rejects invalid phone ('abc') and short name with 422 including '10 dígitos' message. OTP verify regression passes: wrong code → 401, real code (fetched from Mongo) → 200 with access_token/jugador_id/nombre/telefono. Validator unit tests confirm _validate_phone handles all 5 input formats and rejects abc/empty/+1. Frontend UI verified on BOTH localhost:3000 (form + placeholder + hint + auto-format + warn toast) and the deployed URL (full request→verify flow including sandbox banner, join code + sandbox number highlighted, confirmation toast, back link). 8/8 backend tests PASSED. All action items from the review request are satisfied — no regressions detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "login.tsx pointerEvents prop", "issue": "React Native web warning: `props.pointerEvents is deprecated. Use style.pointerEvents`. Non-blocking but should be migrated. Reference: /app/frontend/app/login.tsx line ~308 `pointerEvents: 'none'` used as prop instead of style."},
+      {"component": "global shadow* styles", "issue": "React Native web warning: `\"shadow*\" style props are deprecated. Use \"boxShadow\"`. Emitted at login screen mount. Not owned by this iteration but flagged for main agent awareness."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter55_player_otp_sandbox.py",
+    "/app/test_reports/pytest/iter55_player_otp.xml"
+  ],
+  "action_items": [
+    "Optional: migrate `pointerEvents='none'` on the courtImageWrap View to `style={{ pointerEvents: 'none' }}` in /app/frontend/app/login.tsx to silence RNW deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "player_auth.py request_otp: rollback of the OTP document when Twilio fails is correct and prevents orphan codes.",
+    "validators._validate_phone: fallback that prepends +52 for 10-digit inputs matches the frontend `normalizePhoneToE164` helper — defense-in-depth is consistent.",
+    "phoneFormat.ts: parseApiErrorMessage correctly extracts detail.message from `<status>: <json>` error strings thrown by api.request(). Good UX for structured backend errors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter55_player_otp_sandbox.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (all critical checks pass on both localhost and deployed URL)"},
+  "seed_data_creation": "None — tests use synthetic TEST_ phones. Verify test consumed and deleted OTP for +525599990001.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter55 focused on Player OTP UX. Twilio Sandbox is REAL and Mongo persists OTPs for retrieval when WhatsApp delivery isn't verifiable from CI. Rate limit is 5/min per IP on /players/auth/otp/request — spread tests with sleeps if running back-to-back. Deployed URL used for full E2E: https://padel-tournament-hub-9.preview.emergentagent.com/login. Localhost:3000 preview cannot POST to backend due to CORS (external URL); this is expected and not a bug."
+}

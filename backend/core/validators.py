@@ -36,11 +36,51 @@ def _strip_phone(raw: str) -> str:
     return s
 
 
+# País por defecto cuando el usuario ingresa un número sin código internacional.
+# México (+52) es el mercado principal de PadelAppRetas.
+DEFAULT_COUNTRY_CODE = "+52"
+
+
 def _validate_phone(raw: str) -> str:
+    """Valida y normaliza a formato E.164.
+
+    Tolerante con la UX del cliente: si el usuario tipeó sólo los 10 dígitos
+    locales sin código de país (ej. `5512345678`), auto-prependemos
+    `DEFAULT_COUNTRY_CODE` (+52 MX). Esto elimina la fricción del "+" para
+    el usuario final pero mantiene E.164 estricto en base de datos.
+
+    Casos aceptados:
+        "+5215512345678"     → "+5215512345678"  (E.164 ya correcto)
+        "5215512345678"      → "+5215512345678"  (falta "+", lo agregamos)
+        "5512345678"         → "+525512345678"   (10 dígitos MX, prepend +52)
+        "(55) 1234-5678"     → "+525512345678"   (separadores + prepend +52)
+        "521 55 1234 5678"   → "+5215512345678"  (separadores, ya tiene lada)
+
+    Rechaza cualquier otro formato con mensaje claro.
+    """
     s = _strip_phone(raw)
+    if not s:
+        raise ValueError("Teléfono requerido.")
+
+    # Si NO empieza con "+", intentamos inferir el formato:
+    if not s.startswith("+"):
+        digits = re.sub(r"\D", "", s)
+        # Caso 1: 10 dígitos → asumimos número local MX, prepend +52
+        if len(digits) == 10:
+            s = f"{DEFAULT_COUNTRY_CODE}{digits}"
+        # Caso 2: 11-15 dígitos → asumimos que ya trae lada, sólo agregamos "+"
+        elif 11 <= len(digits) <= 15:
+            s = f"+{digits}"
+        else:
+            raise ValueError(
+                "Teléfono inválido. Ingresa 10 dígitos (México) o el número "
+                "completo con lada. Ejemplo: (55) 1234 5678",
+            )
+
     if not _PHONE_RE.match(s):
         raise ValueError(
-            "Teléfono inválido. Usa formato internacional con +. Ejemplo: +5215512345678",
+            "Teléfono inválido. Verifica que tenga entre 10 y 15 dígitos. "
+            "Ejemplo: (55) 1234 5678",
         )
     return s
 

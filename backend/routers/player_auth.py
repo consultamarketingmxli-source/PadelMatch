@@ -132,32 +132,130 @@ async def get_current_player(authorization: Optional[str] = Header(None)) -> dic
 @router.post("/auth/otp/request")
 @limiter.limit("5/minute")
 async def request_otp(request: Request, body: OtpRequest):
-    """Genera OTP de 6 dígitos. Si Twilio está, lo envía por WhatsApp.
-    Si no, lo loguea (sólo en desarrollo)."""
+    """Genera OTP de 6 dígitos y lo envía por WhatsApp vía Twilio.
+
+    Contract (Iter52 hardening):
+      • Si Twilio NO está configurado (dev/mock) → 200 con `enviado_por_sms=false`
+        y el código queda en logs del backend.
+      • Si Twilio SÍ está configurado y el envío falla (sandbox no unido,
+        opted-out, timeout, credenciales inválidas, etc.), NO avanzamos al
+        usuario a la pantalla de código. Devolvemos error específico con
+        `twilio_code` para que el frontend muestre instrucciones accionables.
+      • En caso de fallo, borramos el OTP recién generado para evitar dejar
+        huellas de códigos no enviados.
+    """
     codigo = _generar_codigo()
     await _store_otp(body.telefono, codigo)
 
     twilio_listo = is_twilio_configured()
-    # En todos los casos intentamos enviar (notifications.send_whatsapp es mock por defecto)
     msg = (
         f"Hola {body.nombre} 👋 Tu código PadelappRetas es: {codigo}\n"
         f"Vence en 5 minutos. No lo compartas con nadie."
     )
-    await send_whatsapp(body.telefono, msg)
-    if not twilio_listo:
-        logger.warning("[OTP DEV] Código para %s = %s", body.telefono, codigo)
+    result = await send_whatsapp(body.telefono, msg)
 
-    # Asegurar que el jugador existe en usuarios (registro lazy)
+    if not twilio_listo:
+        # Modo DEV: sólo log, no exigimos entrega real.
+        logger.warning("[OTP DEV] Código para %s = %s", body.telefono, codigo)
+        await upsert_jugador(body.nombre, body.telefono)
+        return {
+            "ok": True,
+            "enviado_por_sms": False,
+            "mensaje": (
+                "OTP generado. En modo DEV puedes verlo en los logs del backend."
+            ),
+        }
+
+    # Twilio configurado — el resultado del envío es fuente de verdad.
+    status = (result or {}).get("status")
+    if status != "sent":
+        # Rollback: eliminamos el OTP para no dejar códigos huérfanos.
+        await db.player_otps.delete_one({"telefono": body.telefono})
+
+        twilio_code = result.get("twilio_code")
+        detail_msg = result.get("detail", "error desconocido")
+
+        # 63015 = El destinatario no se ha unido al sandbox de Twilio.
+        if twilio_code == 63015:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "sandbox_not_joined",
+                    "twilio_code": 63015,
+                    "message": (
+                        "Tu número no está habilitado en el sandbox de "
+                        "WhatsApp. Envía por WhatsApp \"" +
+                        (os.getenv('TWILIO_JOIN_CODE') or 'join code') +
+                        "\" al " +
+                        (os.getenv('TWILIO_WHATSAPP_FROM', 'whatsapp:+14155238886')
+                         .replace('whatsapp:', '')) +
+                        " y volvé a intentar."
+                    ),
+                    "join_instructions": result.get("join_instructions"),
+                },
+            )
+        # 63050 = Opted-out (el usuario bloqueó al remitente).
+        if twilio_code == 63050:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "opted_out",
+                    "twilio_code": 63050,
+                    "message": (
+                        "Tu número está bloqueado para recibir mensajes de "
+                        "este remitente. Contacta a soporte."
+                    ),
+                },
+            )
+        # 21211 = Número inválido / no existe.
+        if twilio_code == 21211:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_phone",
+                    "twilio_code": 21211,
+                    "message": (
+                        "El número ingresado no es válido para WhatsApp. "
+                        "Verificá lada y cantidad de dígitos."
+                    ),
+                },
+            )
+        # Timeout u otros errores de Twilio → 502 Bad Gateway.
+        logger.error(
+            "[OTP] Fallo enviando a %s. twilio_code=%s detail=%s",
+            body.telefono, twilio_code, detail_msg,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "whatsapp_delivery_failed",
+                "twilio_code": twilio_code,
+                "message": (
+                    "No pudimos enviar el código por WhatsApp en este momento. "
+                    "Intentalo de nuevo en unos segundos."
+                ),
+            },
+        )
+
+    # Envío OK — registrar jugador (upsert lazy) y devolver éxito.
     await upsert_jugador(body.nombre, body.telefono)
+
+    # Detectar modo Sandbox (Twilio devuelve `queued` OK pero la entrega real
+    # falla silenciosamente si el destinatario no envió antes el join code).
+    # El número well-known del sandbox es +14155238886.
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM", "") or ""
+    is_sandbox = "14155238886" in from_number
+    join_code = os.getenv("TWILIO_JOIN_CODE", "").strip() or None
 
     return {
         "ok": True,
-        "enviado_por_sms": twilio_listo,
-        "mensaje": (
-            "Te enviamos un código por WhatsApp."
-            if twilio_listo
-            else "OTP generado. En modo DEV puedes verlo en los logs del backend."
+        "enviado_por_sms": True,
+        "sandbox_mode": is_sandbox,
+        "sandbox_join_code": join_code if is_sandbox else None,
+        "sandbox_number": (
+            from_number.replace("whatsapp:", "") if is_sandbox else None
         ),
+        "mensaje": "Te enviamos un código por WhatsApp.",
     }
 
 
