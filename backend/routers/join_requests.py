@@ -96,8 +96,16 @@ async def _resolve_organizer_token(reta: dict) -> str:
             "El organizador no tiene Mercado Pago conectado. Contacta al organizador.",
         )
     token = decrypt_token(admin["access_token_pasarela"])
-    if not token:
-        raise HTTPException(500, "No se pudo desencriptar el token MP.")
+    # Iter59 — hardening: `decrypt_token` puede devolver "" (string vacío)
+    # cuando la key rotó o la cifra es de otra versión de Fernet. Antes
+    # dejábamos pasar y MP devolvía 401 → bubbleábamos como 502, que el
+    # ingress reemplaza por HTML ocultando la causa. Ahora cortamos con 424.
+    if not token or not token.strip():
+        raise HTTPException(
+            424,
+            "El token de Mercado Pago del organizador no es válido "
+            "(reconectar). Contacta al organizador.",
+        )
     return token
 
 
