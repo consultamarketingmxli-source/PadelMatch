@@ -94,6 +94,7 @@ from routers.clubes import router as clubes_public_router
 from routers.soporte import router_admin as soporte_admin_router
 from routers.soporte import router_public as soporte_public_router
 from routers.legal_router import router as legal_router
+from routers.legal_pages import router as legal_pages_router
 from routers.push_router import router as push_router
 from routers.wellknown import router as wellknown_router
 from routers.join_requests import router as join_requests_router
@@ -142,6 +143,12 @@ api.include_router(push_router)
 api.include_router(join_requests_router)
 # Módulo de cumplimiento legal — montado bajo /api/v1/...
 app.include_router(legal_router, prefix="/api")
+
+# Páginas legales HTML públicas (/privacy, /terms) — SIN prefijo /api.
+# DEBE registrarse ANTES que wellknown_router para que la ruta específica
+# `/privacy` matchee primero (wellknown tiene un catch-all `/{filename}`
+# limitado a `google*.html`, pero mantenemos ordering seguro por si acaso).
+app.include_router(legal_pages_router)
 
 # Universal/App Links — `.well-known/*` se sirve SIN prefijo /api
 # (Apple y Google requieren la ruta literal en el dominio raíz).

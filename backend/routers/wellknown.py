@@ -75,14 +75,23 @@ async def google_site_verification_file(filename: str) -> PlainTextResponse:
     """Sirve el archivo HTML de verificación de Google Search Console.
 
     Match SÓLO para el filename exacto configurado en `GOOGLE_VERIFICATION_FILE_NAME`.
-    Cualquier otro path retorna 404 para no exponer un catch-all en la raíz.
+    Cualquier otro path lanza HTTPException 404 explícitamente **RESTRINGIENDO
+    la coincidencia** a nombres de archivo `google*.html`, para que este
+    catch-all no interfiera con rutas del frontend estático (ej. `/privacy`,
+    `/legal/privacy`, `/retas/<slug>`). Cuando el filename no matchea el
+    patrón Google, devolvemos 404 lo cual **permite** que el ingress/proxy
+    delegue la petición al servicio del frontend (Expo static export) para
+    servir el HTML correspondiente.
 
     IMPORTANTE — ordering: este route va DESPUÉS de los routers /api/* y
     /.well-known/* porque FastAPI matchea en orden de registro. Está registrado
-    dentro de `wellknown_router` que se incluye antes que `api` en server.py,
-    pero como sólo matchea filenames con patrón `google*.html`, no colisiona
-    con las rutas del frontend.
+    dentro de `wellknown_router` que se incluye antes que `api` en server.py.
     """
+    # Restricción defensiva: sólo matcheamos filenames tipo `google*.html`.
+    # Cualquier otro path (privacy, retas/xyz, terminos, ...) → 404 aquí,
+    # que hace fallback al frontend en producción vía ingress.
+    if not (filename.startswith("google") and filename.endswith(".html")):
+        raise HTTPException(status_code=404, detail="Not Found")
     if filename != GOOGLE_VERIFICATION_FILE_NAME:
         raise HTTPException(status_code=404, detail="Not Found")
     return PlainTextResponse(
