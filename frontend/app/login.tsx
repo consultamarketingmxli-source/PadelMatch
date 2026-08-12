@@ -164,7 +164,7 @@ export default function PlayerLogin() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.headline}>Pádel. Conecta. Juega.</Text>
+            <Text style={styles.headline}>Organiza · Encuentra · Mejora</Text>
             <Text style={styles.subtitle}>
               La comunidad de pádel más grande de México
             </Text>
@@ -279,41 +279,61 @@ const styles = StyleSheet.create({
   },
   heroContent: {
     flex: 1,
-    justifyContent: "flex-end",
+    justifyContent: "flex-start", // ← antes: "flex-end". Sube el brand block.
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl * 1.5, // separación desde safe-area top
     paddingBottom: spacing.xl,
     zIndex: 2,
   },
   brandBlock: {
     alignItems: "center",
     gap: spacing.sm,
+    marginTop: spacing.md, // sutil offset arriba (aire respiración)
     marginBottom: spacing.md,
   },
   logoWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 22,
+    width: 96,
+    height: 96,
+    borderRadius: 24, // squircle moderno
+    backgroundColor: "#FFFFFF", // masking para trimear bordes del asset
     overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 6, // "safe margin" para que el ícono respire dentro del squircle
     ...Platform.select({
       ios: {
-        boxShadow: "0px 8px 24px rgba(0,0,0,0.35)",
+        // Halo blanco: sombra soft radial que se funde con el fondo dark.
+        shadowColor: "#FFFFFF",
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 18,
       },
-      android: { elevation: 8 },
-      web: { boxShadow: "0 8px 24px rgba(0,0,0,0.35)" } as any,
+      android: { elevation: 6 },
+      web: {
+        // Fallback en web: dual box-shadow (halo blanco suave + drop dark).
+        boxShadow:
+          "0 0 24px rgba(255,255,255,0.28), 0 8px 24px rgba(0,0,0,0.35)",
+      } as any,
     }),
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   logo: {
     width: "100%",
     height: "100%",
   },
   headline: {
-    fontSize: 30,
-    fontWeight: "800",
+    // Tipografía editorial refinada: system sans-serif, semibold, tracking amplio.
+    fontFamily: Platform.select({
+      ios: "System",
+      android: "sans-serif",
+      default: "System",
+    }),
+    fontSize: 26,
+    fontWeight: "700",
     color: "#FFFFFF",
     textAlign: "center",
-    letterSpacing: -0.5,
-    lineHeight: 36,
+    letterSpacing: 0.8, // upscale editorial
+    lineHeight: 32,
     ...Platform.select({
       ios: { textShadow: "0px 2px 8px rgba(0,0,0,0.4)" },
       web: { textShadow: "0 2px 8px rgba(0,0,0,0.4)" } as any,
@@ -321,10 +341,12 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
-    color: "rgba(255,255,255,0.88)",
+    color: "rgba(255,255,255,0.85)",
     textAlign: "center",
     lineHeight: 20,
     maxWidth: 320,
+    letterSpacing: 0.2,
+    marginTop: 4,
     ...Platform.select({
       ios: { textShadow: "0px 1px 4px rgba(0,0,0,0.4)" },
       web: { textShadow: "0 1px 4px rgba(0,0,0,0.4)" } as any,
