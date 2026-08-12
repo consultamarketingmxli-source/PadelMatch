@@ -2,7 +2,7 @@
   "expo": {
     "name": "PadelAppRetas",
     "slug": "padelappretas",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "padelappretas",
@@ -33,6 +33,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.padelappretas.app",
+      "versionCode": 106,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
