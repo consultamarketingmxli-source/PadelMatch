@@ -1143,19 +1143,10 @@ export const api = {
       { method: "POST", auth: true },
     ),
 
-  // ===== player auth (OTP) =====
-  playerRequestOtp: (body: { nombre: string; telefono: string }) =>
-    request<{
-      ok: boolean;
-      enviado_por_sms: boolean;
-      mensaje: string;
-      sandbox_mode?: boolean;
-      sandbox_join_code?: string | null;
-      sandbox_number?: string | null;
-    }>(
-      `/players/auth/otp/request`,
-      { method: "POST", body },
-    ),
+  // ===== player auth (OTP legacy) =====
+  // REMOVED en Iter57 · Fase 3: los endpoints /players/auth/otp/* devuelven
+  // 410 Gone. Migrado a Google Sign-In + Email Magic Link (ver
+  // `emergentExchangeSession`, `emergentEmailRequest`, `emergentEmailVerify`).
 
   // ===== Emergent Auth (Google Sign-In, Iter56) =====
   emergentExchangeSession: (session_id: string) =>
@@ -1175,6 +1166,33 @@ export const api = {
         profile_completed: boolean;
       };
     }>(`/auth/emergent/session`, { method: "POST", body: { session_id } }),
+
+  // ===== Email Magic Link OTP (Iter57 · Fase 2) =====
+  emergentEmailRequest: (body: { email: string; nombre?: string }) =>
+    request<{
+      ok: boolean;
+      message: string;
+      expires_in_minutes?: number;
+      throttled?: boolean;
+    }>(`/auth/emergent/email/request`, { method: "POST", body }),
+
+  emergentEmailVerify: (body: { email: string; codigo: string }) =>
+    request<{
+      access_token: string;
+      token_type: string;
+      refresh_token?: string | null;
+      expires_in: number;
+      user: {
+        user_id: string;
+        email: string | null;
+        nombre: string;
+        telefono: string | null;
+        picture: string | null;
+        preferred_side: "Drive" | "Revés" | "Ambos" | null;
+        skill_level: "Principiante" | "Intermedio" | "Avanzado" | "Pro" | null;
+        profile_completed: boolean;
+      };
+    }>(`/auth/emergent/email/verify`, { method: "POST", body }),
 
   emergentMe: (token: string) =>
     request<{
@@ -1210,16 +1228,10 @@ export const api = {
       body,
       headers: { Authorization: `Bearer ${token}` },
     }),
-  playerVerifyOtp: async (body: { telefono: string; codigo: string }) => {
-    const r = await request<PlayerAuthResponse>(`/players/auth/otp/verify`, {
-      method: "POST",
-      body,
-    });
-    // Ola E — guarda refresh token devuelto (sólo native; web usa cookie).
-    const anyR = r as PlayerAuthResponse & { refresh_token?: string | null };
-    if (anyR.refresh_token) await setRefreshToken(anyR.refresh_token);
-    return r;
-  },
+  // playerVerifyOtp — REMOVED en Iter57 · Fase 3.
+  // Endpoint /players/auth/otp/verify devuelve 410 Gone. Migrado a
+  // `emergentEmailVerify` (Email Magic Link) y `emergentExchangeSession`
+  // (Google Sign-In), ambos arriba en este mismo objeto `api`.
   playerMe: (token: string) =>
     request<{ jugador_id: string; telefono: string; nombre: string; role: string }>(
       `/players/me`,

@@ -1,19 +1,23 @@
 /**
- * Login de jugador por OTP (WhatsApp) — Rediseño Director de Arte v3.
+ * Login de Jugador — Iter57 · Fase 3.
  *
- * Composición:
- *   • TOP (50%): formulario sobre fondo slate-50 limpio
- *       - BrandLockup (isotipo azul + wordmark elegante)
- *       - Inputs con border-blue-100 hairline
- *       - CTA blue-600 gradient
- *   • BOTTOM (50%): Imagen fotográfica de cancha de pádel azul
- *       (grip blanco, 3 pelotas amarillo flúor, red negra, césped azul vibrante)
- *     Difuminado superior con máscara `to top from-transparent via-slate-50/90 to-slate-50`.
+ * Post-purga de Twilio: sólo dos opciones de autenticación, ambas costo $0:
+ *   1. Google Sign-In (Emergent-managed OAuth)
+ *   2. Email Magic Link OTP (Resend vía Emergent)
+ *
+ * El flujo OTP-por-WhatsApp fue removido completamente (endpoints en backend
+ * responden 410 Gone). Los usuarios que tenían JWTs viejos (`sub=telefono`)
+ * pueden seguir usando la app hasta que expire su sesión — el backend
+ * tolera ambos formatos de token vía `identity_kind` en `get_current_player`.
+ *
+ * UX:
+ *   • Composición vertical simple, mobile-first, thumb-friendly.
+ *   • Cada botón es CTA de tamaño 48pt.
+ *   • Legal consent visible antes del primer tap (compliance).
+ *   • Toast global para feedback de errores no-bloqueantes.
  */
 import React, { useState } from "react";
 import {
-  Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,49 +27,25 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Phone, ShieldCheck } from "lucide-react-native";
+import { Mail } from "lucide-react-native";
 
-import { Button } from "@/src/components/Button";
-import { Input } from "@/src/components/Input";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { BrandWordmark } from "@/src/components/BrandWordmark";
 import { Toast } from "@/src/components/Toast";
 import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { colors, radii, spacing, typography } from "@/src/theme";
-import { playerTokenStore } from "@/src/utils/playerTokenStore";
 import { deepLinkStore } from "@/src/utils/deepLinkStore";
 import { LegalConsent } from "@/src/components/LegalConsent";
 import { acceptLegal } from "@/src/utils/legalConsent";
-import {
-  formatPhoneWhileTyping,
-  normalizePhoneToE164,
-  parseApiErrorMessage,
-} from "@/src/utils/phoneFormat";
+import { parseApiErrorMessage } from "@/src/utils/phoneFormat";
 import { signInWithGoogle } from "@/src/utils/emergentAuth";
-
-const PLAYER_INFO_KEY = "padelappretas.player.info";
-
-// Fotografía cancha limpia (alto-ángulo, blue turf + líneas blancas).
-// Asset oficial del usuario — local, sin dependencia de CDN externo.
-const COURT_IMG = require("@/assets/brand/court-clean.jpg");
 
 export default function PlayerLogin() {
   const router = useRouter();
-  const [step, setStep] = useState<"request" | "verify">("request");
-  const [nombre, setNombre] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [telefonoE164, setTelefonoE164] = useState(""); // normalizado para verify
-  const [codigo, setCodigo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
-  const [sandboxInfo, setSandboxInfo] = useState<{
-    joinCode: string;
-    number: string;
-  } | null>(null);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -77,96 +57,24 @@ export default function PlayerLogin() {
     tone: "info" | "warn" | "error" = "info",
   ) => setToast({ visible: true, message, tone });
 
-  const requestOtp = async () => {
-    if (nombre.trim().length < 2) {
-      showToast("Ingresá tu nombre para continuar.", "warn");
-      return;
-    }
-    // Normalizamos el teléfono en cliente ANTES de llamar al backend.
-    const e164 = normalizePhoneToE164(telefono);
-    if (!e164) {
-      showToast(
-        "Teléfono inválido. Ingresá 10 dígitos (ej. 55 1234 5678).",
-        "error",
-      );
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const r = await api.playerRequestOtp({
-        nombre: nombre.trim(),
-        telefono: e164,
-      });
-      setTelefonoE164(e164);
-      setHint(r.mensaje);
-      // Guardar info de sandbox si backend indica que estamos en Sandbox mode.
-      if (r.sandbox_mode && r.sandbox_join_code && r.sandbox_number) {
-        setSandboxInfo({
-          joinCode: r.sandbox_join_code,
-          number: r.sandbox_number,
-        });
-      } else {
-        setSandboxInfo(null);
-      }
-      setStep("verify");
-      showToast(
-        "Código enviado a tu WhatsApp. Si no llega en 60s, pedí otro.",
-        "info",
-      );
-    } catch (e: unknown) {
-      const parsed = parseApiErrorMessage(
-        e,
-        "No se pudo enviar el código. Intentá de nuevo.",
-      );
-      // Errores específicos con instrucciones accionables.
-      if (parsed.code === "sandbox_not_joined" || parsed.twilioCode === 63015) {
-        Alert.alert(
-          "Activá WhatsApp Sandbox",
-          parsed.message,
-          [{ text: "Entendido" }],
-        );
-      } else if (parsed.code === "opted_out") {
-        Alert.alert("Recepción bloqueada", parsed.message);
-      } else if (parsed.code === "invalid_phone") {
-        showToast(parsed.message, "error");
-      } else {
-        showToast(parsed.message, "error");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // Iter56 — Google Sign-In (Emergent-managed OAuth, costo $0).
-  //
-  // Compat: al terminar, guardamos el JWT en el mismo store que usa el flujo
-  // OTP legacy, así el resto de la app (router, endpoints, etc.) funciona
-  // sin conocer si el usuario entró por Google o por OTP.
-  // ─────────────────────────────────────────────────────────────
   const signInGoogle = async () => {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-      if (result.status === "cancelled") {
-        // En web nunca llegamos aquí (window.location.href redirige la página).
-        // En mobile: usuario cerró el WebBrowser sin completar → sin toast.
-        return;
-      }
+      if (result.status === "cancelled") return;
       if (result.status === "error") {
-        showToast(result.message || "No pudimos iniciar sesión con Google.", "error");
+        showToast(
+          result.message || "No pudimos iniciar sesión con Google.",
+          "error",
+        );
         return;
       }
-      // OK — access_token ya guardado por el helper. Registrar consent y ruta.
+      // Success — el helper ya persistió el JWT.
       void acceptLegal(result.user.email ?? result.user.user_id);
-
-      // Si es primer login (falta preferred_side o skill_level) → onboarding.
       if (!result.user.profile_completed) {
         router.replace("/onboarding" as any);
         return;
       }
-
       try {
         const roles = await api.playerMyRoles(result.access_token);
         const lastRole = await getLastRole();
@@ -195,212 +103,79 @@ export default function PlayerLogin() {
     }
   };
 
-  const verifyOtp = async () => {    if (codigo.trim().length < 4) {
-      showToast("Ingresá el código de 6 dígitos.", "warn");
-      return;
-    }
-    setLoading(true);
-    try {
-      const r = await api.playerVerifyOtp({
-        telefono: telefonoE164 || normalizePhoneToE164(telefono) || telefono.trim(),
-        codigo: codigo.trim(),
-      });
-      await playerTokenStore.set(r.access_token);
-      await AsyncStorage.setItem(
-        PLAYER_INFO_KEY,
-        JSON.stringify({ jugador_id: r.jugador_id, nombre: r.nombre, telefono: r.telefono }),
-      );
-      // Registra consentimiento legal (implícito al crear cuenta / iniciar sesión)
-      // — Location A del flujo de cumplimiento. Best-effort, no bloquea login.
-      void acceptLegal(r.telefono);
-      try {
-        const roles = await api.playerMyRoles(r.access_token);
-        const lastRole = await getLastRole();
-        const next = decideNextRoute(roles, lastRole);
-        // ===== Pending Deep Link (Universal/App Link previo al login) =====
-        // Si el usuario llegó tocando un link de WhatsApp y aún no estaba
-        // autenticado, el _layout guardó la ruta destino. La consumimos AHORA
-        // (post-OTP) — toma prioridad sobre la ruta del rol.
-        try {
-          const pending = await deepLinkStore.consume();
-          if (pending) {
-            router.replace(pending as any);
-            return;
-          }
-        } catch {
-          /* swallow — caemos al flujo normal */
-        }
-        router.replace(next as any);
-      } catch {
-        router.replace("/mi-cuenta" as any);
-      }
-    } catch (e: unknown) {
-      const parsed = parseApiErrorMessage(
-        e,
-        "Código incorrecto o expirado.",
-      );
-      showToast(parsed.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        {/* TOP BAR — Botón "atrás" sólo si hay historial (no es la pantalla raíz) */}
-        <View style={styles.topBar}>
-          {router.canGoBack() ? (
-            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="login-back">
-              <ArrowLeft size={18} color={colors.text.primary} />
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Hero — brand lockup */}
+          <View style={styles.hero}>
+            <BrandLogo size={64} />
+            <BrandWordmark size="lg" />
+            <Text style={styles.tagline}>Retas de pádel, sin complicaciones.</Text>
+          </View>
+
+          {/* Card con los dos CTAs de auth */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Iniciá sesión</Text>
+            <Text style={styles.cardSub}>
+              Elegí cómo querés entrar. Vas a poder acceder desde cualquier
+              dispositivo.
+            </Text>
+
+            <TouchableOpacity
+              onPress={signInGoogle}
+              disabled={loading}
+              activeOpacity={0.85}
+              style={[styles.googleBtn, loading && { opacity: 0.6 }]}
+              testID="google-signin-btn"
+            >
+              <Text style={styles.googleG}>G</Text>
+              <Text style={styles.googleLabel}>Continuar con Google</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={{ width: 40 }} />
-          )}
-          <BrandWordmark size="md" />
-          <View style={{ width: 40 }} />
-        </View>
 
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {/* HERO IDENTIDAD */}
-          <View style={styles.identityHero}>
-            <BrandLogo size={64} variant="light" />
-            <Text style={styles.heroSubBadge}>JUEGA · COMPITE · GANA</Text>
-          </View>
+            <TouchableOpacity
+              onPress={() => router.push("/login-email" as any)}
+              disabled={loading}
+              activeOpacity={0.85}
+              style={[styles.emailBtn, loading && { opacity: 0.6 }]}
+              testID="email-signin-btn"
+            >
+              <Mail size={18} color={colors.text.primary} />
+              <Text style={styles.emailLabel}>Continuar con Correo</Text>
+            </TouchableOpacity>
 
-          {/* FORM PANEL */}
-          <View style={styles.formPanel}>
-            {step === "request" ? (
-              <>
-                <View style={styles.formIconWrap}>
-                  <Phone size={22} color={colors.brand.primary} />
-                </View>
-                <Text style={styles.heroTitle}>Identifícate con tu teléfono</Text>
-                <Text style={styles.heroSub}>
-                  Te enviaremos un código de 6 dígitos por WhatsApp para confirmar que eres tú.
-                </Text>
-                <Input label="Tu nombre" value={nombre} onChangeText={setNombre} placeholder="Carlos Padel" />
-                <Input
-                  label="Teléfono"
-                  value={telefono}
-                  onChangeText={(v) => setTelefono(formatPhoneWhileTyping(v))}
-                  placeholder="(55) 1234 5678"
-                  keyboardType="phone-pad"
-                  maxLength={20}
-                  testID="phone-input"
-                />
-                <Text style={styles.phoneHint}>
-                  Ingresá tu número de 10 dígitos. Añadimos +52 automáticamente.
-                </Text>
-                <Button
-                  title="Enviarme código"
-                  onPress={requestOtp}
-                  loading={loading}
-                  testID="otp-request-btn"
-                  size="lg"
-                />
+            <View style={styles.legalWrap}>
+              <LegalConsent />
+            </View>
 
-                {/* Divisor "o" — separa OTP legacy (arriba) de Google Auth (abajo) */}
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>o</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <TouchableOpacity
-                  onPress={signInGoogle}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                  style={[styles.googleBtn, loading && { opacity: 0.6 }]}
-                  testID="google-signin-btn"
-                >
-                  <Text style={styles.googleG}>G</Text>
-                  <Text style={styles.googleLabel}>Continuar con Google</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={styles.formIconWrap}>
-                  <ShieldCheck size={22} color={colors.brand.primary} />
-                </View>
-                <Text style={styles.heroTitle}>Ingresa el código</Text>
-                <Text style={styles.heroSub}>
-                  Enviado a {telefono}
-                  {hint ? `\n\n${hint}` : ""}
-                </Text>
-                {sandboxInfo ? (
-                  <View style={styles.sandboxBanner}>
-                    <Text style={styles.sandboxTitle}>
-                      ⚠️ Modo Sandbox de pruebas
-                    </Text>
-                    <Text style={styles.sandboxBody}>
-                      Si no te llega el código: primero envía por WhatsApp el
-                      mensaje{" "}
-                      <Text style={styles.sandboxCode}>
-                        {sandboxInfo.joinCode}
-                      </Text>{" "}
-                      al número{" "}
-                      <Text style={styles.sandboxCode}>
-                        {sandboxInfo.number}
-                      </Text>{" "}
-                      y volvé a solicitar el código.
-                    </Text>
-                  </View>
-                ) : null}
-                <Input
-                  label="Código de 6 dígitos"
-                  value={codigo}
-                  onChangeText={(v) => setCodigo(v.replace(/[^0-9]/g, "").slice(0, 6))}
-                  keyboardType="number-pad"
-                  placeholder="123456"
-                />
-                <Button
-                  title="Verificar"
-                  onPress={verifyOtp}
-                  loading={loading}
-                  testID="otp-verify-btn"
-                  size="lg"
-                />
-                <TouchableOpacity
-                  onPress={() => {
-                    setStep("request");
-                    setCodigo("");
-                  }}
-                  style={{ alignItems: "center", padding: spacing.md }}
-                >
-                  <Text style={styles.linkAlt}>Cambiar teléfono / pedir otro código</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            {/* Legal consent — Location A (Onboarding) */}
-            <LegalConsent />
-          </View>
-
-          {/* FOTO INMERSIVA — cancha azul (pie del scroll) */}
-          <View style={[styles.courtImageWrap, { pointerEvents: "none" }]}>
-            <Image
-              source={COURT_IMG}
-              style={styles.courtImage}
-              resizeMode="cover"
-            />
-            {/* Máscara de degradado inverso: transparente abajo → slate-50 arriba.
-                Fusiona la foto con el formulario sin cortes toscos. */}
-            <LinearGradient
-              colors={[
-                colors.bg.app,                       // 100% slate-50 arriba (oculta borde superior)
-                "rgba(248, 250, 252, 0.85)",         // slate-50/85 — transición fluida
-                "rgba(248, 250, 252, 0.0)",          // transparente al fondo
-              ]}
-              locations={[0, 0.35, 1]}
-              style={styles.courtGradient}
-            />
+            <TouchableOpacity
+              onPress={() => router.push("/admin/login" as any)}
+              activeOpacity={0.7}
+              style={styles.adminLink}
+              testID="admin-login-link"
+            >
+              <Text style={styles.adminTxt}>¿Eres organizador? Ingresa acá</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* Fondo decorativo — cancha de pádel */}
+        <View pointerEvents="none" style={styles.decorativeCourt}>
+          <LinearGradient
+            colors={["transparent", colors.bg.app]}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 0.6 }}
+          />
+        </View>
       </KeyboardAvoidingView>
-      {/* Toast global — confirmaciones y errores no-bloqueantes */}
+
       <Toast
         visible={toast.visible}
         message={toast.message}
@@ -413,129 +188,43 @@ export default function PlayerLogin() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg.app },
-  topBar: {
-    flexDirection: "row",
+  scroll: { padding: spacing.lg, gap: spacing.md, paddingBottom: 160 },
+  hero: {
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.md,
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border.blueHairline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scroll: { padding: spacing.lg, gap: spacing.md, paddingBottom: 320 },
-  identityHero: {
-    alignItems: "center",
-    marginTop: spacing.sm,
+    marginTop: spacing.xl,
     marginBottom: spacing.lg,
-    gap: 10,
+    gap: 12,
   },
-  heroSubBadge: {
-    ...typography.label,
-    color: colors.brand.primary,
-    fontSize: 10,
-    letterSpacing: 2.2,
+  tagline: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: "center",
+    fontSize: 14,
+    marginTop: 4,
   },
-  formPanel: {
+  card: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border.blueHairline,
     borderRadius: radii.lg,
     padding: spacing.lg,
     gap: spacing.sm,
-    // Premium shadow V2 (Director de Arte): "shadow-[0_12px_40px_-6px_rgba(30,41,59,0.04)]"
     ...Platform.select({
-      ios: {
-        boxShadow: "0px 12px 40px rgba(30,41,59,0.04)",
-      },
+      ios: { boxShadow: "0px 4px 12px rgba(15,23,42,0.06)" },
       android: { elevation: 2 },
-      web: { boxShadow: "0 12px 40px -6px rgba(30,41,59,0.04)" } as any,
+      web: { boxShadow: "0 4px 12px rgba(15,23,42,0.06)" } as any,
     }),
   },
-  formIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignSelf: "center",
-    backgroundColor: colors.brand.primarySoft,
-    borderWidth: 1,
-    borderColor: colors.brand.primaryBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  heroTitle: {
+  cardTitle: {
     ...typography.h2,
     color: colors.text.primary,
     fontSize: 20,
-    textAlign: "center",
   },
-  heroSub: {
+  cardSub: {
     color: colors.text.secondary,
-    textAlign: "center",
-    marginBottom: spacing.md,
     fontSize: 13,
     lineHeight: 19,
-  },
-  phoneHint: {
-    color: colors.text.secondary,
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: -spacing.xs,
     marginBottom: spacing.sm,
-    paddingHorizontal: 2,
-  },
-  sandboxBanner: {
-    backgroundColor: "#FEF3C7", // amber-100
-    borderWidth: 1,
-    borderColor: "#F59E0B", // amber-500
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: 6,
-  },
-  sandboxTitle: {
-    color: "#78350F", // amber-900
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  sandboxBody: {
-    color: "#78350F",
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  sandboxCode: {
-    fontWeight: "700",
-    color: "#111827",
-    backgroundColor: "rgba(0,0,0,0.06)",
-    paddingHorizontal: 3,
-  },
-  linkAlt: { color: colors.brand.primary, fontSize: 12, textDecorationLine: "underline" },
-
-  // ─── Google Sign-In (Iter56) ───
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: spacing.md,
-    gap: spacing.sm,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border.blueHairline,
-  },
-  dividerText: {
-    color: colors.text.secondary,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   googleBtn: {
     flexDirection: "row",
@@ -558,7 +247,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#4285F4",
-    fontFamily: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    fontFamily: Platform.select({
+      ios: "Georgia",
+      android: "serif",
+      default: "serif",
+    }),
     lineHeight: 22,
   },
   googleLabel: {
@@ -567,25 +260,42 @@ const styles = StyleSheet.create({
     color: "#1F1F1F",
     letterSpacing: 0.15,
   },
-
-  // ── Foto cancha azul (pie de pantalla) ─────────────────────────
-  courtImageWrap: {
+  emailBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    minHeight: 48,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border.blueHairline,
+    backgroundColor: colors.bg.app,
+    paddingHorizontal: spacing.md,
+  },
+  emailLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text.primary,
+    letterSpacing: 0.15,
+  },
+  legalWrap: { marginTop: spacing.md },
+  adminLink: {
+    marginTop: spacing.md,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  adminTxt: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
+  decorativeCourt: {
     position: "absolute",
+    left: 0,
+    right: 0,
     bottom: 0,
-    left: 0,
-    right: 0,
-    height: 320,
-    overflow: "hidden",
-  },
-  courtImage: {
-    width: "100%",
-    height: "100%",
-  },
-  courtGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
     height: 180,
   },
 });

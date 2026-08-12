@@ -1,0 +1,41 @@
+{
+  "summary": "Iter57 · Fases 2+3 BACKEND-ONLY test-comprehensive-final. Created test_iter57_phase2_phase3.py with 25 tests covering: (a) Email Magic Link OTP request (200 happy, 422 invalid, throttle-by-email/IP, privacy no-leak); (b) Email Magic Link verify (401 wrong/expired/no-otp, 5-attempt lockout marks OTP used, full E2E inject→verify→JWT→/me→/roles→/profile-setup with fresh JWT); (c) Twilio purge — /api/players/auth/otp/{request,verify} return 410 with detail.code=otp_deprecated, notifications.py importable + is_twilio_configured False + send_whatsapp returns {status:mocked}, TWILIO_ vars commented in .env; (d) Regressions — Fase1 fake session_id→401, admin login+admin /api/auth/me OK, usuarios.email partial-filter index present, email_otps TTL on expires_at, 2 users with telefono=None sin colisión. Result: 25/25 PASS. Also cleaned up test_iter56_emergent_auth.py: replaced obsolete TestOtpVerifyWrongCode with TestOtpLegacy410 (2 tests) and marked OTP fixture-dependent tests to skip gracefully (they no longer function since OTP endpoints are 410). Combined iter56+iter57 run: 42 passed, 7 skipped (OTP-dependent). Removed test_iter55_player_otp_sandbox.py entirely (all 6 tests failing on 410 — feature purged per Iter57 spec).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/emergent/email/verify", "issue": "Endpoint lowercases email before Mongo lookup (body.email.lower().strip()), but this is not documented publicly. Anyone integrating via direct API must know to normalize. Not a bug, but a doc note for the SDK."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter57_phase2_phase3.py",
+    "/app/backend/tests/test_iter56_emergent_auth.py",
+    "/app/test_reports/pytest/iter57_phase2_phase3.xml",
+    "/app/test_reports/pytest/iter57_full.xml"
+  ],
+  "action_items": [
+    "Other legacy tests still reference OTP endpoints and will now fail: tests/test_iter26_regression.py, test_iter31_jwt_jti_regression.py, test_iter33_cookie_path.py, test_iter37_security_iter37.py. Recommend main-agent quick-audit and either delete or convert to 410 assertions in a follow-up chore (out of scope this iteration).",
+    "Consider adding OpenAPI note that /api/auth/emergent/email/{request,verify} lowercases email server-side."
+  ],
+  "critical_code_review_comments": [
+    "routers/emergent_auth.py:596-606 — on wrong code the endpoint returns generic 'Código incorrecto o expirado' AND increments attempts. Good UX, but the 5th wrong attempt itself returns the same generic message (only on the 6th attempt does it say 'Demasiados intentos'). This is because the max-attempts guard fires BEFORE the codigo_hash comparison next time. Acceptable — the user just tries again and sees the lockout message — but consider surfacing 'Último intento antes de bloqueo' at attempts==4 for better UX.",
+    "routers/emergent_auth.py:511-521 — the per-email throttle check runs BEFORE the SlowAPI decorator effectively (SlowAPI runs first as middleware). Order: SlowAPI (per-IP 3/15min) → per-email count. In practice IP limit trips first when running from the same origin. Fine for prod (behind CDN with distinct IPs) but tests need to know both paths.",
+    "notifications.py send_whatsapp is properly no-op and safe, but the ~10 call-sites still invoke it — should be scheduled for physical removal once callers migrate to push/email (as noted in module docstring)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter57_phase2_phase3.py — NEW: 25 tests covering Fases 2+3 + regressions",
+    "/app/backend/tests/test_iter56_emergent_auth.py — updated TestOtpVerifyWrongCode → TestOtpLegacy410 (2 tests asserting 410 detail.code=otp_deprecated), added Iter57 header note",
+    "/app/backend/tests/test_iter55_player_otp_sandbox.py — DELETED (whole file tested OTP endpoints, all removed per Iter57 spec)"
+  ],
+  "success_rate": {"backend": "100% (42/42 on the two auth suites, 7 skipped are legacy OTP-dependent by design)", "frontend": "N/A (not requested)"},
+  "seed_data_creation": "Synthetic email OTPs inserted into email_otps collection with unique test_<uuid>@example.com identifiers. All docs auto-cleaned by test finally-blocks or the 10-minute TTL. Ephemeral usuario docs created by end-to-end verify test are deleted in module-scoped fixture teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter57 · Fases 2 + 3 are fully verified. Any future re-run: pytest /app/backend/tests/test_iter57_phase2_phase3.py -v. Key caveat that cost debug time: /api/auth/emergent/email/{request,verify} does email.lower().strip() server-side, so any Mongo-side seed for testing MUST insert the email already-lowercased or the endpoint won't find the doc. There are ~4 other legacy test files (iter26/31/33/37 regression) still calling /api/players/auth/otp/{request,verify} that will now fail with 410 — they were left as-is per scope guardrails; recommend quick chore PR to migrate/delete them.",
+  "rca_of_issue": "N/A — no functional bugs found. All Iter57 · Fase 2 + Fase 3 endpoints behave per spec. Twilio purge is complete (module no-op, env vars commented, endpoints 410 with structured detail.code). New Email Magic Link flow is end-to-end functional including JWT issuance, /me hydration, /profile-setup, and /players/me/roles hybrid query resolution using identity_kind=user_id."
+}

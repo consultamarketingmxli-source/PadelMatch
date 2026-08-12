@@ -449,3 +449,207 @@ async def logout(
         extra={"refresh_tokens_revoked": revoked},
     )
     return {"ok": True}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# EMAIL MAGIC LINK OTP (Iter57 · Fase 2)
+#
+# Provee un flujo de login sin contraseña usando código OTP de 6 dígitos
+# enviado por email vía Resend. Diseño mobile-first:
+#   - El usuario ingresa email → recibe código → lo escribe en la app.
+#   - Elegimos código sobre "link mágico" porque el link tiene fricción en
+#     mobile (abrir mail app, tapear link, volver a la app, deep link
+#     handling). El código es 1-tap.
+#
+# Rate limiting agresivo:
+#   - Máx 3 requests por email cada 15 min (evita email bomb).
+#   - Máx 10 requests por IP por hora (defensa DDoS).
+#   - Máx 5 verificaciones incorrectas por email antes de invalidar.
+# ═════════════════════════════════════════════════════════════════════════
+class EmailOtpRequestBody(BaseModel):
+    email: EmailStr
+    nombre: Optional[str] = Field(default=None, max_length=80)
+
+
+class EmailOtpVerifyBody(BaseModel):
+    email: EmailStr
+    codigo: str = Field(min_length=4, max_length=8)
+
+
+EMAIL_OTP_TTL_MINUTES = 10
+EMAIL_OTP_MAX_ATTEMPTS = 5
+
+
+def _generate_email_otp() -> str:
+    import secrets
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+@router.post("/email/request")
+@limiter.limit("3/15minutes")
+async def request_email_otp(
+    request: Request,
+    body: EmailOtpRequestBody = Body(...),
+):
+    """Genera un OTP de 6 dígitos y lo envía por email vía Resend.
+
+    Rate limit: 3 requests / 15 min por IP (SlowAPI usa remote_address).
+    Diseño intencional: rate limit por IP + email en Mongo garantiza defensa
+    en 2 capas contra email-bombing.
+
+    Nunca revela si el email existe o no en la DB (privacy) — siempre
+    devuelve 200 con mensaje genérico "Si el email es válido, recibirás un
+    código". La única forma de saber si el envío falló es intentar verificar.
+    """
+    from core.email_service import email_service
+
+    email = body.email.lower().strip()
+
+    # Segundo rate limit por email (defensa contra 1 IP → muchos emails):
+    # Máx 3 OTPs pendientes o generados en los últimos 15 min por email.
+    fifteen_min_ago = _now() - timedelta(minutes=15)
+    recent_count = await db.email_otps.count_documents(
+        {"email": email, "created_at": {"$gte": fifteen_min_ago}}
+    )
+    if recent_count >= 3:
+        # Devolvemos 200 igualmente para no filtrar existencia (privacy).
+        logger.warning("[email-otp] Rate limit por email exhausted: %s", email)
+        return {
+            "ok": True,
+            "message": "Si el email es válido, recibirás un código en unos minutos.",
+            "throttled": True,
+        }
+
+    codigo = _generate_email_otp()
+    now = _now()
+    await db.email_otps.insert_one({
+        "email": email,
+        "codigo_hash": _hash_token(codigo),  # NUNCA guardamos el código plano
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=EMAIL_OTP_TTL_MINUTES),
+        "attempts": 0,
+        "used": False,
+        "nombre_hint": (body.nombre or "").strip()[:80] or None,
+        "ip": (request.client.host if request.client else None),
+    })
+
+    # Envío best-effort. Si Resend falla, el código queda huérfano y expira
+    # solo. No lo revelamos al cliente.
+    sent = await email_service.send_otp_code(to=email, codigo=codigo)
+    logger.info("[email-otp] enviado=%s to=%s", sent, email)
+
+    return {
+        "ok": True,
+        "message": "Si el email es válido, recibirás un código en unos minutos.",
+        "expires_in_minutes": EMAIL_OTP_TTL_MINUTES,
+    }
+
+
+@router.post("/email/verify", response_model=SessionResponse)
+@limiter.limit("10/minute")
+async def verify_email_otp(
+    request: Request,
+    response: Response,
+    body: EmailOtpVerifyBody = Body(...),
+):
+    """Valida el OTP, upserta usuario y devuelve JWT (paridad con Google Auth)."""
+    from core.refresh_tokens import (
+        REFRESH_COOKIE_NAME,
+        REFRESH_TOKEN_LIFETIME_DAYS,
+        create_refresh_token_document,
+        detect_client_platform,
+        generate_refresh_token,
+    )
+
+    email = body.email.lower().strip()
+    codigo = body.codigo.strip()
+    codigo_hash = _hash_token(codigo)
+    now = _now()
+
+    # Buscar el OTP más reciente NO usado y NO expirado para este email.
+    otp_doc = await db.email_otps.find_one(
+        {"email": email, "used": False, "expires_at": {"$gt": now}},
+        sort=[("created_at", -1)],
+    )
+
+    if not otp_doc:
+        await write_security_log(
+            accion="email_otp_verify",
+            request=request,
+            id_usuario=email,
+            result="fail_no_otp",
+        )
+        raise HTTPException(401, "Código incorrecto o expirado.")
+
+    # Guard de brute-force: máx N intentos antes de invalidar el OTP.
+    attempts = int(otp_doc.get("attempts", 0))
+    if attempts >= EMAIL_OTP_MAX_ATTEMPTS:
+        await db.email_otps.update_one({"_id": otp_doc["_id"]}, {"$set": {"used": True}})
+        await write_security_log(
+            accion="email_otp_verify",
+            request=request,
+            id_usuario=email,
+            result="fail_max_attempts",
+        )
+        raise HTTPException(401, "Demasiados intentos. Solicitá un código nuevo.")
+
+    if otp_doc["codigo_hash"] != codigo_hash:
+        await db.email_otps.update_one(
+            {"_id": otp_doc["_id"]}, {"$inc": {"attempts": 1}}
+        )
+        await write_security_log(
+            accion="email_otp_verify",
+            request=request,
+            id_usuario=email,
+            result="fail_wrong_code",
+        )
+        raise HTTPException(401, "Código incorrecto o expirado.")
+
+    # ── Success: marcar OTP como usado y crear/actualizar usuario ──
+    await db.email_otps.update_one(
+        {"_id": otp_doc["_id"]}, {"$set": {"used": True, "used_at": now}}
+    )
+    nombre_hint = otp_doc.get("nombre_hint") or email.split("@")[0]
+    user = await _upsert_user_by_email(email=email, name=nombre_hint, picture=None)
+    user_id: str = user["user_id"]
+
+    # JWT + refresh (idéntico patrón que Google Sign-In).
+    access_token = _create_player_jwt(
+        user_id=user_id, email=email, nombre=user["nombre"]
+    )
+    raw_refresh = generate_refresh_token()
+    await create_refresh_token_document(
+        db=db,
+        raw_token=raw_refresh,
+        user_id=user_id,
+        role="player",
+        request=request,
+    )
+    platform = detect_client_platform(request)
+
+    await write_security_log(
+        accion="login_email_otp",
+        request=request,
+        id_usuario=user_id,
+        result="success",
+        extra={"email": email, "new_user": user.get("auth_provider") is None},
+    )
+
+    result = SessionResponse(
+        access_token=access_token,
+        expires_in=ACCESS_TOKEN_EXP_MIN * 60,
+        user=_to_public(user),
+    )
+    if platform == "web":
+        response.set_cookie(
+            key=REFRESH_COOKIE_NAME,
+            value=raw_refresh,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
+            path="/api",
+        )
+    else:
+        result.refresh_token = raw_refresh
+    return result

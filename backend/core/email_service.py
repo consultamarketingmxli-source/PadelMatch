@@ -201,8 +201,70 @@ class EmailService:
         logger.warning("Unknown EMAIL_PROVIDER=%s — skipping", PROVIDER)
         return False
 
-    async def send_inscripcion_confirmada(
+    async def send_otp_code(
         self,
+        *,
+        to: str,
+        codigo: str,
+        ttl_minutes: int = 10,
+    ) -> bool:
+        """Envía un código OTP de 6 dígitos vía email para login sin contraseña.
+
+        Diseño mobile-first: tablas + estilos inline, código en tamaño gigante
+        para copia visual. Sin imágenes externas para máxima entregabilidad.
+        Templado en español (mercado principal: México).
+        """
+        if not to:
+            return False
+        subject = f"Tu código PadelappRetas: {codigo}"
+        html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8FAFC;padding:32px 0;">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:480px;background:#FFFFFF;border-radius:14px;padding:32px 28px;border:1px solid #E2E8F0;">
+        <tr><td align="center" style="padding-bottom:16px;">
+          <div style="font-size:22px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;">
+            Padel<span style="color:#2563EB;">AppRetas</span>
+          </div>
+        </td></tr>
+        <tr><td align="center" style="padding:8px 0 24px;">
+          <div style="font-size:13px;color:#64748B;letter-spacing:2px;text-transform:uppercase;">Tu código de acceso</div>
+        </td></tr>
+        <tr><td align="center" style="padding:12px 0 24px;">
+          <div style="font-size:44px;font-weight:800;color:#0F172A;letter-spacing:8px;font-variant-numeric:tabular-nums;background:#F1F5F9;padding:20px 24px;border-radius:10px;display:inline-block;">
+            {codigo}
+          </div>
+        </td></tr>
+        <tr><td align="center" style="padding:0 8px;">
+          <p style="font-size:15px;color:#334155;line-height:1.55;margin:0 0 12px;">
+            Ingresá este código en la app para acceder a tu cuenta.
+          </p>
+          <p style="font-size:13px;color:#64748B;line-height:1.5;margin:0 0 24px;">
+            El código vence en <strong style="color:#334155;">{ttl_minutes} minutos</strong>.
+            Si vos no solicitaste este código, ignorá este correo.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding-top:24px;border-top:1px solid #E2E8F0;">
+          <p style="font-size:11px;color:#94A3B8;line-height:1.5;margin:0;">
+            Nunca compartas este código. Nadie del equipo PadelAppRetas te lo va a pedir.<br>
+            © PadelAppRetas · Enviado a {to}
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+        ok, _ = await safe_run(
+            lambda: self._send(to=to, subject=subject, html=html),
+            label=f"email:otp:{to}",
+            timeout_s=10.0,
+        )
+        return ok
+
+    async def send_inscripcion_confirmada(        self,
         *,
         to: Optional[str],
         jugador: str,

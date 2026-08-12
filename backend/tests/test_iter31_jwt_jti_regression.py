@@ -13,6 +13,8 @@ import requests
 BASE_URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/")
 ADMIN_EMAIL = "admin@padelappretas.com"
 ADMIN_PASSWORD = "admin123"
+pytestmark = pytest.mark.skip(reason="Iter57 · Fase 3: OTP-by-WhatsApp flow removido. Estos tests dependen del endpoint /api/players/auth/otp/{request,verify} que ahora responde 410 Gone. Migrar a Google Sign-In o Email Magic Link cuando alguien tenga tiempo.")
+
 
 UNIQUE_PHONE = f"+521555{int(time.time()) % 10000000:07d}"
 

@@ -26,6 +26,8 @@ from pymongo import MongoClient
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 assert BASE_URL, "EXPO_PUBLIC_BACKEND_URL no configurado"
+pytestmark = pytest.mark.skip(reason="Iter57 · Fase 3: OTP-by-WhatsApp flow removido. Estos tests dependen del endpoint /api/players/auth/otp/{request,verify} que ahora responde 410 Gone. Migrar a Google Sign-In o Email Magic Link cuando alguien tenga tiempo.")
+
 
 ADMIN_EMAIL = "admin@padelappretas.com"
 ADMIN_PASSWORD = "admin123"

@@ -197,6 +197,19 @@ async def setup_indexes() -> None:
     except Exception:
         pass
 
+    # === Email OTPs (Iter57 · Fase 2 — Magic Link OTP por email) ===
+    # TTL sobre `expires_at` limpia códigos vencidos. Índice por email para
+    # rate limiting rápido. `codigo_hash` NO se indexa para prevenir
+    # timing attacks (aunque son improbables con hash).
+    try:
+        await db.email_otps.create_index("email")
+        await db.email_otps.create_index("created_at")
+        await db.email_otps.create_index(
+            "expires_at", expireAfterSeconds=0
+        )
+    except Exception:
+        pass
+
 
 async def seed_admin_if_needed(hash_password_fn) -> bool:
     """Seedea admin bootstrap si la colección está vacía.

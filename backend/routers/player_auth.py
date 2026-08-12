@@ -1,26 +1,28 @@
-"""Login de Jugador con OTP de 6 dígitos (mock-friendly).
+"""Player Auth utilities + /me/* endpoints (Iter57 · Fase 3).
 
-Si Twilio está configurado, envía SMS. Si no, el código se loguea para que
-durante desarrollo se pueda obtener del log del backend.
+Post-Iter57: el login OTP-por-WhatsApp fue reemplazado por Google Sign-In +
+Email Magic Link (ver `routers/emergent_auth.py`). Este módulo conserva:
+  • `get_current_player` — validación de JWT tipo `player` (tolerante a
+    JWT viejos con `sub=telefono` y nuevos con `sub=user_id UUID`).
+  • Todos los endpoints `/players/me/*` (perfil, inscripciones, sessions,
+    security activity, roles, eliminar cuenta, etc.) — sin cambios.
+  • Endpoints `/auth/otp/*` como stubs 410 Gone para clientes legacy.
 
-JWT separado del admin: tipo `player`, scope a `jugador_id`.
+JWT tipo `player` (no admin), scope a `jugador_id`. Compat híbrida con
+identidad por `user_id` o `telefono` según origen del token.
 """
 import logging
 import os
-import random
-import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 
 from auth import JWT_ALG, JWT_SECRET, create_access_token
 from core.db import db
-from core.helpers import upsert_jugador
 from core.security import limiter, write_security_log
-from models import Inscripcion, PlayerStats, Usuario
-from notifications import is_twilio_configured, send_whatsapp
+from models import PlayerStats
 
 try:
     import jwt
@@ -30,30 +32,14 @@ except Exception:
 logger = logging.getLogger("padelappretas-os")
 router = APIRouter(prefix="/players", tags=["players"])
 
-OTP_TTL_SECONDS = 5 * 60
-OTP_LENGTH = 6
-
-
-from core.validators import NombreStr, PhoneStr  # noqa: F401 — usados via Annotated abajo
-
-# ============== Schemas ==============
-class OtpRequest(BaseModel):
-    nombre: NombreStr
-    telefono: PhoneStr
-
-
-class OtpVerify(BaseModel):
-    telefono: PhoneStr
-    codigo: str = Field(min_length=4, max_length=8)
-
 
 class PlayerTokenResponse(BaseModel):
+    """Compat schema — usado por routers/refresh, no eliminar."""
     access_token: str
     token_type: str = "bearer"
     jugador_id: str
     nombre: str
     telefono: str
-    # Ola E — refresh token (native only). En web va por cookie HttpOnly.
     refresh_token: Optional[str] = None
     expires_in: Optional[int] = None
 
@@ -70,49 +56,6 @@ class PlayerInscripcion(BaseModel):
 
 
 # ============== Helpers ==============
-def _generar_codigo() -> str:
-    # secrets para entropía criptográfica (mejor que random)
-    return "".join(str(secrets.randbelow(10)) for _ in range(OTP_LENGTH))
-
-
-async def _store_otp(telefono: str, codigo: str) -> None:
-    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)
-    await db.player_otps.update_one(
-        {"telefono": telefono},
-        {"$set": {
-            "telefono": telefono,
-            "codigo": codigo,
-            "expires_at": expires_dt.isoformat(),
-            "expires_at_dt": expires_dt,  # datetime nativo para el TTL index Mongo
-            "intentos": 0,
-        }},
-        upsert=True,
-    )
-
-
-def _create_player_token(jugador_id: str, telefono: str, nombre: str) -> str:
-    """Crea JWT con tipo `player`. Reusa la SECRET_KEY del módulo auth.
-    Ola E — Access tokens ahora son 15 min; persistencia vía refresh tokens."""
-    if jwt is None:
-        # Fallback (no debería pasar — pyjwt está instalado por auth.py)
-        return create_access_token(subject=telefono, role="player")
-    import uuid as _uuid
-
-    from auth import ACCESS_TOKEN_EXP_MIN  # 15 min
-
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": telefono,
-        "role": "player",
-        "jugador_id": jugador_id,
-        "nombre": nombre,
-        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXP_MIN),
-        "iat": now,
-        "jti": _uuid.uuid4().hex,  # unique per emission — paridad con admin tokens
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
-
-
 async def get_current_player(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "No autenticado")
@@ -125,14 +68,10 @@ async def get_current_player(authorization: Optional[str] = Header(None)) -> dic
         raise HTTPException(401, f"Token inválido: {e}") from e
     if payload.get("role") != "player":
         raise HTTPException(403, "Se requiere sesión de jugador")
-    # Iter56 — Compat híbrido: JWTs nuevos (Google Auth) tienen `sub=user_id`
-    # (UUID) mientras que los legacy (OTP) tienen `sub=telefono`. Muchos
-    # endpoints downstream siguen usando `current["sub"]` como identidad-string
-    # para queries en Mongo (security_logs, refresh_tokens, ownership checks).
-    # Para MINIMIZAR RIESGO DE REGRESIÓN, garantizamos que `sub` sea SIEMPRE una
-    # identidad estable-válida y agregamos `identity_kind` para código que
-    # necesita saber si es "user_id" o "phone".
-    sub_raw = payload.get("sub", "")
+    # Iter56 — Compat híbrido: JWTs nuevos (Google/Email Magic Link) tienen
+    # `sub=user_id` (UUID); los legacy (OTP pre-Iter57) tenían `sub=telefono`.
+    # Emitimos `identity_kind` para código downstream que necesita distinguir
+    # (my_roles, ownership checks). El campo `sub` sigue siendo string estable.
     payload["identity_kind"] = (
         "user_id" if payload.get("auth_method", "").startswith("emergent") else "phone"
     )
@@ -140,254 +79,41 @@ async def get_current_player(authorization: Optional[str] = Header(None)) -> dic
 
 
 # ============== Endpoints ==============
-@router.post("/auth/otp/request")
-@limiter.limit("5/minute")
-async def request_otp(request: Request, body: OtpRequest):
-    """Genera OTP de 6 dígitos y lo envía por WhatsApp vía Twilio.
-
-    Contract (Iter52 hardening):
-      • Si Twilio NO está configurado (dev/mock) → 200 con `enviado_por_sms=false`
-        y el código queda en logs del backend.
-      • Si Twilio SÍ está configurado y el envío falla (sandbox no unido,
-        opted-out, timeout, credenciales inválidas, etc.), NO avanzamos al
-        usuario a la pantalla de código. Devolvemos error específico con
-        `twilio_code` para que el frontend muestre instrucciones accionables.
-      • En caso de fallo, borramos el OTP recién generado para evitar dejar
-        huellas de códigos no enviados.
-    """
-    codigo = _generar_codigo()
-    await _store_otp(body.telefono, codigo)
-
-    twilio_listo = is_twilio_configured()
-    msg = (
-        f"Hola {body.nombre} 👋 Tu código PadelappRetas es: {codigo}\n"
-        f"Vence en 5 minutos. No lo compartas con nadie."
-    )
-    result = await send_whatsapp(body.telefono, msg)
-
-    if not twilio_listo:
-        # Modo DEV: sólo log, no exigimos entrega real.
-        logger.warning("[OTP DEV] Código para %s = %s", body.telefono, codigo)
-        await upsert_jugador(body.nombre, body.telefono)
-        return {
-            "ok": True,
-            "enviado_por_sms": False,
-            "mensaje": (
-                "OTP generado. En modo DEV puedes verlo en los logs del backend."
+# ─────────────────────────────────────────────────────────────────────────
+# OTP por WhatsApp/SMS eliminado en Iter57 · Fase 3.
+#
+# Migrado a Google Sign-In + Email Magic Link (ver `routers/emergent_auth.py`).
+# Los endpoints legacy responden 410 Gone para clientes viejos que aún los
+# consulten. La lógica interna (get_current_player, _create_player_token,
+# /me/*, /me/sessions, etc.) se mantiene porque emergent_auth reusa el mismo
+# JWT + refresh token infrastructure.
+# ─────────────────────────────────────────────────────────────────────────
+@router.post("/auth/otp/request", deprecated=True, include_in_schema=False)
+async def request_otp_deprecated():
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "otp_deprecated",
+            "message": (
+                "El login por SMS/WhatsApp fue removido. Usá 'Continuar con "
+                "Google' o 'Continuar con Correo' en la pantalla de login."
             ),
-        }
-
-    # Twilio configurado — el resultado del envío es fuente de verdad.
-    status = (result or {}).get("status")
-    if status != "sent":
-        # Rollback: eliminamos el OTP para no dejar códigos huérfanos.
-        await db.player_otps.delete_one({"telefono": body.telefono})
-
-        twilio_code = result.get("twilio_code")
-        detail_msg = result.get("detail", "error desconocido")
-
-        # 63015 = El destinatario no se ha unido al sandbox de Twilio.
-        if twilio_code == 63015:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "sandbox_not_joined",
-                    "twilio_code": 63015,
-                    "message": (
-                        "Tu número no está habilitado en el sandbox de "
-                        "WhatsApp. Envía por WhatsApp \"" +
-                        (os.getenv('TWILIO_JOIN_CODE') or 'join code') +
-                        "\" al " +
-                        (os.getenv('TWILIO_WHATSAPP_FROM', 'whatsapp:+14155238886')
-                         .replace('whatsapp:', '')) +
-                        " y volvé a intentar."
-                    ),
-                    "join_instructions": result.get("join_instructions"),
-                },
-            )
-        # 63050 = Opted-out (el usuario bloqueó al remitente).
-        if twilio_code == 63050:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "opted_out",
-                    "twilio_code": 63050,
-                    "message": (
-                        "Tu número está bloqueado para recibir mensajes de "
-                        "este remitente. Contacta a soporte."
-                    ),
-                },
-            )
-        # 21211 = Número inválido / no existe.
-        if twilio_code == 21211:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "invalid_phone",
-                    "twilio_code": 21211,
-                    "message": (
-                        "El número ingresado no es válido para WhatsApp. "
-                        "Verificá lada y cantidad de dígitos."
-                    ),
-                },
-            )
-        # Timeout u otros errores de Twilio → 502 Bad Gateway.
-        logger.error(
-            "[OTP] Fallo enviando a %s. twilio_code=%s detail=%s",
-            body.telefono, twilio_code, detail_msg,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "whatsapp_delivery_failed",
-                "twilio_code": twilio_code,
-                "message": (
-                    "No pudimos enviar el código por WhatsApp en este momento. "
-                    "Intentalo de nuevo en unos segundos."
-                ),
-            },
-        )
-
-    # Envío OK — registrar jugador (upsert lazy) y devolver éxito.
-    await upsert_jugador(body.nombre, body.telefono)
-
-    # Detectar modo Sandbox (Twilio devuelve `queued` OK pero la entrega real
-    # falla silenciosamente si el destinatario no envió antes el join code).
-    # El número well-known del sandbox es +14155238886.
-    from_number = os.getenv("TWILIO_WHATSAPP_FROM", "") or ""
-    is_sandbox = "14155238886" in from_number
-    join_code = os.getenv("TWILIO_JOIN_CODE", "").strip() or None
-
-    return {
-        "ok": True,
-        "enviado_por_sms": True,
-        "sandbox_mode": is_sandbox,
-        "sandbox_join_code": join_code if is_sandbox else None,
-        "sandbox_number": (
-            from_number.replace("whatsapp:", "") if is_sandbox else None
-        ),
-        "mensaje": "Te enviamos un código por WhatsApp.",
-    }
-
-
-@router.post("/auth/otp/verify", response_model=PlayerTokenResponse)
-@limiter.limit("10/minute")
-async def verify_otp(request: Request, response: Response, body: OtpVerify):
-    rec = await db.player_otps.find_one({"telefono": body.telefono}, {"_id": 0})
-    if not rec:
-        raise HTTPException(400, "No hay código pendiente para ese teléfono.")
-
-    now = datetime.now(timezone.utc).isoformat()
-    if rec["expires_at"] < now:
-        await db.player_otps.delete_one({"telefono": body.telefono})
-        raise HTTPException(410, "El código expiró. Solicita uno nuevo.")
-
-    if rec.get("intentos", 0) >= 5:
-        await write_security_log(
-            accion="otp_verify_locked",
-            request=request,
-            id_usuario=body.telefono,
-            result="rate_limited",
-        )
-        raise HTTPException(429, "Demasiados intentos. Solicita un código nuevo.")
-
-    if rec["codigo"] != body.codigo.strip():
-        await db.player_otps.update_one(
-            {"telefono": body.telefono}, {"$inc": {"intentos": 1}}
-        )
-        await write_security_log(
-            accion="otp_verify_failed",
-            request=request,
-            id_usuario=body.telefono,
-            result="denied",
-        )
-        raise HTTPException(401, "Código incorrecto.")
-
-    # OK: borrar OTP y devolver token
-    await db.player_otps.delete_one({"telefono": body.telefono})
-
-    # Reset lockout / known device fingerprint y notificar si es device nuevo.
-    # Best-effort: no rompe el flujo si falla.
-    try:
-        from core.new_device_alert import (
-            check_and_register_device,
-            notify_new_device,
-        )
-
-        ua = (request.headers.get("user-agent") or "")[:200]
-        ip_hdr = request.headers.get("x-forwarded-for")
-        ip_addr = (ip_hdr.split(",")[0].strip() if ip_hdr else (request.client.host if request.client else None))
-        is_new, fp = await check_and_register_device(
-            user_id=body.telefono, ip=ip_addr, user_agent=ua
-        )
-        if is_new:
-            await write_security_log(
-                accion="new_device_login",
-                request=request,
-                id_usuario=body.telefono,
-                result="success",
-                extra={"fingerprint": fp[:12], "role": "player"},
-            )
-            # Notif WhatsApp en background (no awaitamos, no debe bloquear).
-            import asyncio as _asyncio  # noqa: WPS433
-
-            _asyncio.create_task(
-                notify_new_device(body.telefono, ip_addr, ua, role="player")
-            )
-    except Exception:  # noqa: BLE001
-        pass
-
-    jugador = await db.usuarios.find_one({"telefono": body.telefono}, {"_id": 0})
-    if not jugador:
-        # Edge: usuario sin registro previo (no debería pasar)
-        nuevo = Usuario(nombre=f"Jugador {body.telefono[-4:]}", telefono=body.telefono)
-        doc = nuevo.model_dump()
-        doc["creado_en"] = doc["creado_en"].isoformat()
-        await db.usuarios.insert_one(doc)
-        jugador = doc
-
-    token = _create_player_token(jugador["id"], body.telefono, jugador["nombre"])
-
-    # Ola E — emitir refresh token (HTTP cookie web / JSON native).
-    from auth import ACCESS_TOKEN_EXP_MIN
-    from core.refresh_tokens import (
-        REFRESH_COOKIE_NAME,
-        REFRESH_TOKEN_LIFETIME_DAYS,
-        create_refresh_token_document,
-        detect_client_platform,
-        generate_refresh_token,
+        },
     )
 
-    raw_refresh = generate_refresh_token()
-    await create_refresh_token_document(
-        db=db,
-        raw_token=raw_refresh,
-        user_id=body.telefono,
-        role="player",
-        request=request,
-    )
-    platform = detect_client_platform(request)
 
-    payload = PlayerTokenResponse(
-        access_token=token,
-        jugador_id=jugador["id"],
-        nombre=jugador["nombre"],
-        telefono=body.telefono,
-        expires_in=ACCESS_TOKEN_EXP_MIN * 60,
+@router.post("/auth/otp/verify", deprecated=True, include_in_schema=False)
+async def verify_otp_deprecated():
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "otp_deprecated",
+            "message": (
+                "El login por SMS/WhatsApp fue removido. Usá 'Continuar con "
+                "Google' o 'Continuar con Correo' en la pantalla de login."
+            ),
+        },
     )
-    if platform == "web":
-        response.set_cookie(
-            key=REFRESH_COOKIE_NAME,
-            value=raw_refresh,
-            httponly=True,
-            secure=True,
-            samesite="strict",
-            max_age=REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
-            path="/api",
-        )
-    else:
-        payload.refresh_token = raw_refresh
-    return payload
 
 
 @router.get("/me")

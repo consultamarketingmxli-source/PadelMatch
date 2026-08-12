@@ -100,6 +100,7 @@ SplashScreen.preventAutoHideAsync();
 // ============================================================================
 const PUBLIC_ROUTES = new Set<string>([
   "login",         // Login de jugador (OTP por WhatsApp + Google Sign-In)
+  "login-email",   // Iter57 · Fase 2 — Email Magic Link OTP
   "admin/login",   // Login de organizador
   "privacy",       // Iter56 — Política de Privacidad (público, Play/App Store)
   "+not-found",    // Pantalla 404

@@ -143,7 +143,12 @@ class TestProfileSetupUnauth:
 
 
 # ─────────────────────────────────────────────────────────
-# Section 4 — Full OTP flow → hybrid /auth/me + profile-setup + /me/roles
+# Iter57 note — Full OTP flow removed (OTP endpoints return 410 Gone).
+# The tests that used to obtain a JWT via OTP → /auth/emergent/me were
+# migrated to `test_iter57_phase2_phase3.py` where the JWT is obtained
+# via Email Magic Link verify. See `email_verified_token` fixture there.
+# The `otp_player_token` fixture below is kept for historical structure
+# but it always skips (POST OTP endpoints return 410 → pytest.skip).
 # ─────────────────────────────────────────────────────────
 def _fetch_otp_from_mongo(phone: str):
     from core.db import db  # noqa: PLC0415
@@ -196,22 +201,30 @@ def otp_player_token():
     }
 
 
-class TestOtpVerifyWrongCode:
-    def test_wrong_code_returns_401(self, api):
-        phone = "+525599990057"
+class TestOtpLegacy410:
+    """Iter57 · Fase 3 — OTP endpoints replaced with 410 stubs.
+
+    (Was `TestOtpVerifyWrongCode` — reworked because OTP flow no longer
+    exists; endpoints return 410 Gone.)
+    """
+
+    def test_otp_request_returns_410(self, api):
         r = api.post(
             OTP_REQ,
-            json={"nombre": "TEST_WrongCode", "telefono": phone},
+            json={"telefono": "+525599990057", "nombre": "TEST_WrongCode"},
             timeout=20,
         )
-        assert r.status_code == 200, r.text
-        _sleep()
-        wr = api.post(
+        assert r.status_code == 410, r.text
+        assert r.json().get("detail", {}).get("code") == "otp_deprecated"
+
+    def test_otp_verify_returns_410(self, api):
+        r = api.post(
             OTP_VER,
-            json={"telefono": phone, "codigo": "000000"},
+            json={"telefono": "+525599990057", "codigo": "000000"},
             timeout=15,
         )
-        assert wr.status_code == 401, wr.text
+        assert r.status_code == 410, r.text
+        assert r.json().get("detail", {}).get("code") == "otp_deprecated"
 
 
 class TestAuthMeHybridWithOtpToken:
