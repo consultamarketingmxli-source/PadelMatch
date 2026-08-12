@@ -1,34 +1,19 @@
 /**
- * login.tsx — Player Login (Iter64 · Light card-based layout).
+ * login.tsx — Player Login (Iter65 · Dark immersive full-screen).
  *
  * Post-Fase-3: sólo Google Sign-In + Email Magic Link (auth costo $0).
  *
- * ═══════════════ Composición (light, card-based) ═══════════════
- *
- *  ┌──────────────────────────────────────────┐
- *  │            (light bg #F4F6F8)            │
- *  │                                          │
- *  │            PadelAppRetas                 │  ← top title
- *  │              [LOGO 88pt]                 │  ← logo squircle
- *  │       JUEGA · COMPITE · MEJORA           │  ← tagline blue uppercase
- *  │                                          │
- *  │   ╭──────────── CARD ───────────────╮    │
- *  │   │  Inicia sesión                  │    │
- *  │   │  Tu próxima reta te espera      │    │
- *  │   │  Elige cómo quieres entrar...   │    │
- *  │   │  ┌─[G] Continuar con Google─┐   │    │  ← primary
- *  │   │  ┌─ ✉ Continuar con Correo─┐   │    │  ← secondary
- *  │   │  ┌────── legal box ────────┐   │    │
- *  │   ╰─────────────────────────────╯    │
- *  │                                          │
- *  │   ¿Eres organizador? Ingresa acá         │
- *  │                                          │
- *  │  ░░░ soft blue court gradient bottom ░░░ │  ← 20% bottom
- *  └──────────────────────────────────────────┘
+ * Composición:
+ *   - Fondo full-screen: foto de cancha (ImageBackground flex:1).
+ *   - Dark gradient overlay: transparent top → dark surface bottom.
+ *   - Hero flotante: logo en círculo/squircle SIN caja blanca (transparent
+ *     bg + drop shadow), headline light thin blanco, subtitle gris.
+ *   - Auth sheet semi-transparente al fondo con Google + Email buttons.
  */
 import React, { useState } from "react";
 import {
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -52,6 +37,7 @@ import { acceptLegal } from "@/src/utils/legalConsent";
 import { parseApiErrorMessage } from "@/src/utils/phoneFormat";
 import { signInWithGoogle } from "@/src/utils/emergentAuth";
 
+const COURT_BG = require("../assets/brand/court-hero.jpg");
 const BRAND_ICON = require("../assets/images/icon.png");
 
 export default function PlayerLogin() {
@@ -114,113 +100,109 @@ export default function PlayerLogin() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ═══ Hero — Title + Logo + Tagline ═══ */}
-          <View style={styles.hero}>
-            <Text style={styles.brandTitle}>
-              Padel<Text style={styles.brandTitleAccent}>AppRetas</Text>
-            </Text>
+    <ImageBackground
+      source={COURT_BG}
+      resizeMode="cover"
+      style={styles.bg}
+      imageStyle={styles.bgImg}
+    >
+      {/* Dark gradient overlay: transparent top → dark bottom (contraste) */}
+      <LinearGradient
+        colors={[
+          "rgba(0,0,0,0.25)",
+          "rgba(15,23,42,0.55)",
+          "rgba(15,23,42,0.92)",
+        ]}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-            <View style={styles.logoWrap}>
-              <Image
-                source={BRAND_ICON}
-                style={styles.logo}
-                resizeMode="contain"
-              />
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* ═══ Hero: logo flotante + headline + subtitle ═══ */}
+            <View style={styles.hero}>
+              <View style={styles.logoWrap}>
+                <Image
+                  source={BRAND_ICON}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Text style={styles.headline}>Organiza · Juega · Mejora</Text>
+              <Text style={styles.subtitle}>
+                La comunidad de pádel más grande de México
+              </Text>
             </View>
 
-            <Text style={styles.tagline}>JUEGA · COMPITE · MEJORA</Text>
-          </View>
+            {/* ═══ Auth sheet (semi-transparent dark) ═══ */}
+            <View style={styles.authSheet}>
+              <Text style={styles.sheetTitle}>Tu próxima reta te espera</Text>
 
-          {/* ═══ Floating card ═══ */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Inicia sesión</Text>
-            <Text style={styles.cardTagline}>Tu próxima reta te espera</Text>
-            <Text style={styles.cardSub}>
-              Elige cómo quieres entrar. Vas a poder acceder desde cualquier
-              dispositivo.
-            </Text>
+              <TouchableOpacity
+                onPress={signInGoogle}
+                disabled={loading}
+                activeOpacity={0.88}
+                style={[styles.googleBtn, loading && styles.btnDisabled]}
+                testID="google-signin-btn"
+              >
+                <View style={styles.googleIconWrap}>
+                  <GoogleGIcon size={20} />
+                </View>
+                <Text style={styles.googleLabel}>Continuar con Google</Text>
+              </TouchableOpacity>
 
-            {/* Primary CTA — Google */}
-            <TouchableOpacity
-              onPress={signInGoogle}
-              disabled={loading}
-              activeOpacity={0.88}
-              style={[styles.googleBtn, loading && styles.btnDisabled]}
-              testID="google-signin-btn"
-            >
-              <View style={styles.googleIconWrap}>
-                <GoogleGIcon size={20} />
-              </View>
-              <Text style={styles.googleLabel}>Continuar con Google</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push("/login-email" as any)}
+                disabled={loading}
+                activeOpacity={0.85}
+                style={[styles.emailBtn, loading && styles.btnDisabled]}
+                testID="email-signin-btn"
+              >
+                <Mail size={18} color="#F1F5F9" strokeWidth={2} />
+                <Text style={styles.emailLabel}>Continuar con Correo</Text>
+              </TouchableOpacity>
 
-            {/* Secondary CTA — Email */}
-            <TouchableOpacity
-              onPress={() => router.push("/login-email" as any)}
-              disabled={loading}
-              activeOpacity={0.85}
-              style={[styles.emailBtn, loading && styles.btnDisabled]}
-              testID="email-signin-btn"
-            >
-              <Mail size={18} color="#0F172A" strokeWidth={2} />
-              <Text style={styles.emailLabel}>Continuar con Correo</Text>
-            </TouchableOpacity>
-
-            {/* Legal box */}
-            <View style={styles.legalBox}>
               <Text style={styles.legalTxt}>
                 Al crear una cuenta, aceptas nuestros{" "}
                 <Text
                   style={styles.legalLink}
                   onPress={() => router.push("/legal/terms" as any)}
                 >
-                  Términos de Servicio
+                  Términos
                 </Text>{" "}
                 y{" "}
                 <Text
                   style={styles.legalLink}
                   onPress={() => router.push("/privacy" as any)}
                 >
-                  Política de Privacidad
+                  Privacidad
                 </Text>
-                .
               </Text>
+
+              <TouchableOpacity
+                onPress={() => router.push("/admin/login" as any)}
+                activeOpacity={0.7}
+                style={styles.orgLink}
+                testID="admin-login-link"
+              >
+                <Text style={styles.orgTxt}>
+                  ¿Eres organizador? Ingresa acá
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Organizer link (fuera de la card) */}
-          <TouchableOpacity
-            onPress={() => router.push("/admin/login" as any)}
-            activeOpacity={0.7}
-            style={styles.orgLink}
-            testID="admin-login-link"
-          >
-            <Text style={styles.orgTxt}>¿Eres organizador? Ingresa acá</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Soft blue court gradient at bottom (behind content) */}
-        <LinearGradient
-          colors={[
-            "rgba(219, 234, 254, 0)",   // transparent
-            "rgba(191, 219, 254, 0.55)", // blue-200 soft
-            "rgba(147, 197, 253, 0.75)", // blue-300 más fuerte al fondo
-          ]}
-          locations={[0, 0.55, 1]}
-          style={styles.bottomBlueGradient}
-          pointerEvents="none"
-        />
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
 
       <Toast
         visible={toast.visible}
@@ -228,194 +210,164 @@ export default function PlayerLogin() {
         tone={toast.tone}
         onHide={() => setToast((t) => ({ ...t, visible: false }))}
       />
-    </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// Styles
-// ═════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F4F6F8", // off-white light
-  },
+  bg: { flex: 1, backgroundColor: "#0F172A" },
+  bgImg: { opacity: 0.85 },
+  safe: { flex: 1 },
   scroll: {
+    flexGrow: 1,
     padding: spacing.lg,
-    paddingBottom: spacing.xl * 2,
-    gap: spacing.md,
+    paddingBottom: spacing.xl,
+    justifyContent: "space-between",
     minHeight: "100%",
   },
 
-  // ═══ Hero (title + logo + tagline) ═══
+  // ═══ Hero (top) ═══
   hero: {
     alignItems: "center",
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
+    marginTop: spacing.xl,
     gap: spacing.sm,
   },
-  brandTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.3,
-    textAlign: "center",
-  },
-  brandTitleAccent: {
-    color: "#2563EB", // brand blue
-    fontWeight: "700",
-  },
   logoWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
+    width: 80,
+    height: 80,
+    borderRadius: 20, // squircle
     overflow: "hidden",
+    backgroundColor: "transparent", // sin caja
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
-    marginTop: spacing.xs,
+    marginBottom: spacing.md,
     ...Platform.select({
       ios: {
-        shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.10,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.4,
         shadowRadius: 12,
       },
-      android: { elevation: 4 },
-      web: { boxShadow: "0 4px 14px rgba(15,23,42,0.12)" } as any,
+      android: { elevation: 8 },
+      web: {
+        boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
+      } as any,
     }),
   },
-  logo: {
-    width: "100%",
-    height: "100%",
-  },
-  tagline: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#2563EB",
+  logo: { width: "100%", height: "100%" },
+  headline: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "300",
+    letterSpacing: 1,
     textAlign: "center",
-    letterSpacing: 3,
-    marginTop: spacing.xs,
+    fontFamily: Platform.select({
+      ios: "System",
+      android: "sans-serif-light",
+      default: "System",
+    }),
+    ...Platform.select({
+      ios: { textShadow: "0px 1px 8px rgba(0,0,0,0.6)" },
+      web: { textShadow: "0 1px 8px rgba(0,0,0,0.6)" } as any,
+    }),
+  },
+  subtitle: {
+    color: "#A0AEC0",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    maxWidth: 320,
+    letterSpacing: 0.2,
+    marginTop: 4,
+    ...Platform.select({
+      ios: { textShadow: "0px 1px 4px rgba(0,0,0,0.5)" },
+      web: { textShadow: "0 1px 4px rgba(0,0,0,0.5)" } as any,
+    }),
   },
 
-  // ═══ Floating Card ═══
-  card: {
-    backgroundColor: "#FFFFFF",
+  // ═══ Auth sheet (bottom, semi-transparent dark) ═══
+  authSheet: {
+    backgroundColor: "rgba(15,23,42,0.55)",
     borderRadius: 20,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(255,255,255,0.08)",
     gap: spacing.sm,
-    marginTop: spacing.md,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.08,
-        shadowRadius: 20,
-      },
-      android: { elevation: 4 },
-      web: { boxShadow: "0 6px 24px rgba(15,23,42,0.08)" } as any,
-    }),
+    marginTop: spacing.lg,
   },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.2,
-  },
-  cardTagline: {
-    fontSize: 13,
+  sheetTitle: {
+    fontSize: 15,
     fontWeight: "600",
-    color: "#2563EB",
-    letterSpacing: 0.2,
-    marginTop: -spacing.xs,
-  },
-  cardSub: {
-    fontSize: 13,
-    fontWeight: "400",
-    color: "#64748B",
-    lineHeight: 19,
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "center",
+    letterSpacing: 0.3,
     marginBottom: spacing.sm,
   },
 
-  // ── Google button (primary, solid white with border) ──
   googleBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm,
-    minHeight: 52,
+    minHeight: 54,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
     paddingHorizontal: spacing.lg,
     ...Platform.select({
-      ios: { boxShadow: "0px 2px 6px rgba(15,23,42,0.06)" },
-      android: { elevation: 1 },
-      web: { boxShadow: "0 2px 6px rgba(15,23,42,0.06)" } as any,
+      ios: { boxShadow: "0px 4px 16px rgba(0,0,0,0.25)" },
+      android: { elevation: 3 },
+      web: { boxShadow: "0 4px 16px rgba(0,0,0,0.25)" } as any,
     }),
   },
   googleIconWrap: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
   },
   googleLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: "#1F1F1F",
     letterSpacing: 0.15,
   },
 
-  // ── Email button (secondary, subtle) ──
   emailBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm,
-    minHeight: 52,
+    minHeight: 54,
     borderRadius: 14,
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: spacing.lg,
   },
   emailLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
-    color: "#0F172A",
+    color: "#F1F5F9",
     letterSpacing: 0.15,
   },
 
-  btnDisabled: {
-    opacity: 0.55,
-  },
+  btnDisabled: { opacity: 0.55 },
 
-  // ── Legal box (light gray container) ──
-  legalBox: {
-    backgroundColor: "#F1F5F9",
-    borderRadius: 10,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
   legalTxt: {
     fontSize: 11,
-    color: "#64748B",
-    lineHeight: 16,
+    color: "rgba(255,255,255,0.55)",
     textAlign: "center",
+    lineHeight: 16,
+    marginTop: spacing.md,
   },
   legalLink: {
-    color: "#2563EB",
-    fontWeight: "600",
+    color: "rgba(255,255,255,0.85)",
+    textDecorationLine: "underline",
   },
 
-  // ── Organizer link (outside card) ──
   orgLink: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     alignSelf: "center",
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -425,18 +377,8 @@ const styles = StyleSheet.create({
   },
   orgTxt: {
     fontSize: 12,
-    color: "#64748B",
+    color: "rgba(255,255,255,0.6)",
     textDecorationLine: "underline",
     letterSpacing: 0.2,
-  },
-
-  // ── Bottom blue court gradient ──
-  bottomBlueGradient: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "22%",
-    zIndex: 0,
   },
 });
