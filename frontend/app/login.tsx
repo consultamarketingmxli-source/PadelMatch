@@ -37,7 +37,6 @@
  */
 import React, { useState } from "react";
 import {
-  Dimensions,
   Image,
   ImageBackground,
   KeyboardAvoidingView,
@@ -63,11 +62,6 @@ import { acceptLegal } from "@/src/utils/legalConsent";
 import { parseApiErrorMessage } from "@/src/utils/phoneFormat";
 import { signInWithGoogle } from "@/src/utils/emergentAuth";
 
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-// Asset background — court real photo. Ya existe en assets/brand/court-hero.jpg
-// (kept < 200KB para no impactar bundle). Si el asset falla, el gradient de
-// fallback (colores brand) mantiene la composición.
 const COURT_BG = require("../assets/brand/court-hero.jpg");
 const BRAND_ICON = require("../assets/images/icon.png");
 
@@ -132,47 +126,52 @@ export default function PlayerLogin() {
 
   return (
     <View style={styles.root}>
-      {/* ═════════════ Hero background (immersive) ═════════════ */}
+      {/* ═══ Top white header (logo + headline + subtitle sobre WHITE) ═══ */}
+      <SafeAreaView style={styles.topHeader} edges={["top"]}>
+        <View style={styles.brandBlock}>
+          <View style={styles.logoWrap}>
+            <Image
+              source={BRAND_ICON}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
+          <Text style={styles.headline}>Organiza · Juega · Mejora</Text>
+          <Text style={styles.subtitle}>
+            La comunidad de pádel más grande de México
+          </Text>
+        </View>
+      </SafeAreaView>
+
+      {/* ═══ Court background (starts BELOW top header) ═══ */}
       <ImageBackground
         source={COURT_BG}
         resizeMode="cover"
-        style={styles.hero}
-        imageStyle={styles.heroImg}
+        style={styles.courtBg}
+        imageStyle={styles.courtImg}
       >
-        {/* Darken layer para contraste tipográfico */}
-        <View style={styles.heroDim} pointerEvents="none" />
-
-        {/* Gradient bottom → app bg color para transición suave */}
+        {/* Top fade: white → transparent (seamless transition desde header) */}
         <LinearGradient
-          colors={[
-            "rgba(15,23,42,0.0)",
-            "rgba(15,23,42,0.35)",
-            "rgba(15,23,42,0.85)",
-            "rgba(15,23,42,1.0)",
-          ]}
-          locations={[0, 0.4, 0.75, 1]}
-          style={styles.heroGradient}
+          colors={["#FFFFFF", "rgba(255,255,255,0.6)", "rgba(255,255,255,0)"]}
+          locations={[0, 0.35, 1]}
+          style={styles.courtTopFade}
           pointerEvents="none"
         />
-
-        <SafeAreaView style={styles.heroContent} edges={["top"]}>
-          <View style={styles.brandBlock}>
-            <View style={styles.logoWrap}>
-              <Image
-                source={BRAND_ICON}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.headline}>Organiza · Encuentra · Mejora</Text>
-            <Text style={styles.subtitle}>
-              La comunidad de pádel más grande de México
-            </Text>
-          </View>
-        </SafeAreaView>
+        {/* Bottom fade: transparent → dark surface (transición al auth sheet) */}
+        <LinearGradient
+          colors={[
+            "rgba(15,23,42,0)",
+            "rgba(15,23,42,0.5)",
+            "rgba(15,23,42,0.95)",
+            "rgba(15,23,42,1)",
+          ]}
+          locations={[0, 0.4, 0.8, 1]}
+          style={styles.courtBottomFade}
+          pointerEvents="none"
+        />
       </ImageBackground>
 
-      {/* ═════════════ Auth sheet (dark surface) ═════════════ */}
+      {/* ═══ Auth sheet (surface dark) ═══ */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.authSheet}
@@ -256,108 +255,97 @@ export default function PlayerLogin() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#0F172A", // slate-900 fallback si el asset falla
+    backgroundColor: "#FFFFFF", // header blanco por default
   },
 
-  // ═══ Hero ═══
-  hero: {
-    height: Math.max(SCREEN_HEIGHT * 0.48, 360),
-    justifyContent: "flex-end",
-    width: "100%",
-  },
-  heroImg: {
-    // Ligero blur / brightness reduction (via CSS filter en web; sin efecto
-    // real en nativo pero mantiene la fuente crisp).
-    opacity: 0.85,
-  },
-  heroDim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15,23,42,0.35)",
-  },
-  heroGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  heroContent: {
-    flex: 1,
-    justifyContent: "flex-start", // ← antes: "flex-end". Sube el brand block.
+  // ═══ Top white header (SIN imagen detrás) ═══
+  topHeader: {
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl * 1.5, // separación desde safe-area top
-    paddingBottom: spacing.xl,
-    zIndex: 2,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    zIndex: 3,
   },
   brandBlock: {
     alignItems: "center",
     gap: spacing.sm,
-    marginTop: spacing.md, // sutil offset arriba (aire respiración)
-    marginBottom: spacing.md,
   },
   logoWrap: {
     width: 96,
     height: 96,
-    borderRadius: 24, // squircle moderno
-    backgroundColor: "#FFFFFF", // masking para trimear bordes del asset
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    padding: 6, // "safe margin" para que el ícono respire dentro del squircle
+    padding: 6,
+    marginBottom: spacing.sm,
     ...Platform.select({
       ios: {
-        // Halo blanco: sombra soft radial que se funde con el fondo dark.
-        shadowColor: "#FFFFFF",
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 18,
+        // Sombra muy suave (drop-shadow) — el header ya es blanco, no queremos halo.
+        shadowColor: "#0F172A",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
       },
-      android: { elevation: 6 },
+      android: { elevation: 3 },
       web: {
-        // Fallback en web: dual box-shadow (halo blanco suave + drop dark).
-        boxShadow:
-          "0 0 24px rgba(255,255,255,0.28), 0 8px 24px rgba(0,0,0,0.35)",
+        boxShadow: "0 4px 14px rgba(15,23,42,0.10)",
       } as any,
     }),
-    marginBottom: spacing.md,
   },
   logo: {
     width: "100%",
     height: "100%",
   },
   headline: {
-    // Tipografía editorial refinada: system sans-serif, semibold, tracking amplio.
+    // Editorial thin: system sans-serif, peso ligero, tracking amplio.
     fontFamily: Platform.select({
       ios: "System",
-      android: "sans-serif",
+      android: "sans-serif-light",
       default: "System",
     }),
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "300", // Light
+    color: "#0F172A", // slate-900 (contraste sobre header blanco)
     textAlign: "center",
-    letterSpacing: 0.8, // upscale editorial
-    lineHeight: 32,
-    ...Platform.select({
-      ios: { textShadow: "0px 2px 8px rgba(0,0,0,0.4)" },
-      web: { textShadow: "0 2px 8px rgba(0,0,0,0.4)" } as any,
-    }),
+    letterSpacing: 1.2,
+    lineHeight: 30,
   },
   subtitle: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.85)",
+    fontSize: 13,
+    fontWeight: "400",
+    color: "#64748B", // slate-500 (secondary sobre header blanco)
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 19,
     maxWidth: 320,
     letterSpacing: 0.2,
     marginTop: 4,
-    ...Platform.select({
-      ios: { textShadow: "0px 1px 4px rgba(0,0,0,0.4)" },
-      web: { textShadow: "0 1px 4px rgba(0,0,0,0.4)" } as any,
-    }),
+  },
+
+  // ═══ Court background (sits BELOW header) ═══
+  courtBg: {
+    flex: 1,
+    width: "100%",
+  },
+  courtImg: {
+    opacity: 0.95,
+  },
+  courtTopFade: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 90, // transición desde header blanco
+  },
+  courtBottomFade: {
+    ...StyleSheet.absoluteFillObject,
   },
 
   // ═══ Auth sheet ═══
   authSheet: {
-    flex: 1,
     backgroundColor: "#0F172A",
-    marginTop: -1, // evita hairline gap con el gradient
+    zIndex: 3,
   },
   authInner: {
     paddingHorizontal: spacing.lg,
@@ -395,7 +383,6 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: "center",
     justifyContent: "center",
-    // Padding interno mínimo 1/6 del tamaño según Google Brand Guidelines.
   },
   googleLabel: {
     fontSize: 16,
