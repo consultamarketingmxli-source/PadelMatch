@@ -99,8 +99,9 @@ SplashScreen.preventAutoHideAsync();
 // Los organizadores tienen su propio flujo en /admin/* (no afectado por este gate).
 // ============================================================================
 const PUBLIC_ROUTES = new Set<string>([
-  "login",         // Login de jugador (OTP por WhatsApp)
+  "login",         // Login de jugador (OTP por WhatsApp + Google Sign-In)
   "admin/login",   // Login de organizador
+  "privacy",       // Iter56 — Política de Privacidad (público, Play/App Store)
   "+not-found",    // Pantalla 404
 ]);
 
@@ -132,6 +133,29 @@ export default function RootLayout() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      // Iter56 — Chequear callback OAuth de Emergent (sólo web).
+      // En mobile el flujo se maneja dentro de signInWithGoogle() con
+      // WebBrowser + Linking listeners. En web el redirect deposita
+      // #session_id=... en el URL y lo procesamos AL MOUNT.
+      try {
+        const { handleWebCallbackOnMount } = await import(
+          "@/src/utils/emergentAuth"
+        );
+        const webResult = await handleWebCallbackOnMount();
+        if (webResult && webResult.status === "ok" && mounted) {
+          // Ya persistimos el JWT dentro del helper. Refrescamos estado.
+          setHasToken(true);
+          setAuthChecked(true);
+          // Si es primer login → onboarding; sino → home según rol.
+          if (!webResult.user.profile_completed) {
+            router.replace("/onboarding" as any);
+          }
+          return;
+        }
+      } catch {
+        /* no-op: si falla el callback, seguimos con el flujo normal */
+      }
+
       const t = await playerTokenStore.get();
       if (!mounted) return;
       setHasToken(!!t);
@@ -140,7 +164,7 @@ export default function RootLayout() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [router]);
 
   // Redirige a /login cuando: fonts cargadas, gate chequeado, sin token, ruta protegida.
   useEffect(() => {

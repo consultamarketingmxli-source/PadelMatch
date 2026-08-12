@@ -1,0 +1,61 @@
+{
+  "summary": "Iter56 backend regression for Phase-1 Emergent Auth (Google Sign-In alongside OTP). 15/19 pytest tests PASSED (79%). Two CRITICAL blockers found: (1) GET /api/auth/me is COMPLETELY SHADOWED by the pre-existing admin /auth/me handler in auth_router.py — the new emergent_auth /auth/me is never reached because auth_router is registered BEFORE emergent_auth_router in server.py:117-120, so any player JWT hits get_current_admin dep → 403 'Se requiere rol admin'. (2) db.usuarios has a pre-existing NON-SPARSE unique index on `telefono`, and setup_indexes swallows the recreate exception silently — so any Google user #2 whose upsert inserts telefono=None triggers E11000 duplicate key error, breaking the entire Google flow for the second+ user. New endpoints POST /api/auth/session and POST /api/auth/profile-setup work correctly (validation 422s, invalid session_id 401 with proper Spanish message + no URL leak, profile-setup 200/422/idempotent all pass with legacy OTP JWT). OTP flow regression clean (request/verify/wrong-code/my-roles all green). Admin login regression clean. user_sessions TTL index confirmed present.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/auth/me",
+        "issue": "Route collision: /app/backend/routers/auth_router.py:315 defines GET /auth/me with get_current_admin dep and is included BEFORE emergent_auth_router in server.py:117 vs 120. FastAPI resolves the FIRST match, so ANY call to /api/auth/me hits the admin handler → 403 for player tokens, 200 with {email,role} for admin tokens. The new UserPublic schema from emergent_auth.py:385 is unreachable. Manual repro: `curl /api/auth/me -H 'Authorization: Bearer <OTP-JWT>'` → 403 'Se requiere rol admin'. Fix: rename one of the two endpoints (e.g., admin → /auth/admin/me, or player → /auth/session/me) OR reorder includes and gate the admin handler on role via _current_user_flexible + role check.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "POST /api/auth/session (indirect via _upsert_user_by_email)",
+        "issue": "db.usuarios has legacy `telefono_1` index with unique=true, sparse=NOT_SET (verified via index_information). core/db.py:41-47 attempts create_index(sparse=True) but Mongo rejects modifying an existing index — the try/except swallows the error silently. Real impact: first Google user with telefono=None inserts fine; the SECOND Google user's upsert fails with BulkWriteError E11000 dup key {telefono: null}. The whole Google flow will break in prod after 1 signup. Fix required: one-time migration script or startup task that drops `telefono_1` and recreates as sparse. Verified experimentally in test_sparse_telefono_allows_multiple_null_emails — insert_many of 2 docs with telefono=None fails on the 2nd.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/session",
+        "issue": "Empty session_id ('') returns 422 (Pydantic min_length=8) instead of 401 as originally described in the spec. Both are safe rejections but the review request suggested 401. Not a bug per se — 422 is more accurate. Consider tightening or documenting."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Google Sign-In post-session-exchange /auth/me fetch",
+        "issue": "Frontend calling GET /api/auth/me after a successful POST /api/auth/session will receive 403 (or admin-shaped {email, role}) — NOT the expected UserPublic. This will break the profile hydration step of the Google login UX unless the frontend uses the /session response payload exclusively.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter56_emergent_auth.py",
+    "/app/test_reports/pytest/iter56_emergent_auth.xml"
+  ],
+  "action_items": [
+    "URGENT: Resolve /auth/me route collision. Options (pick one): (a) rename admin /auth/me → /auth/admin/me in routers/auth_router.py:315; (b) rename player endpoint to /auth/me/player in routers/emergent_auth.py:385; (c) unify into one /auth/me handler that dispatches based on role in the JWT (recommended — keeps public URL stable).",
+    "URGENT: Drop the legacy non-sparse `telefono_1` index on db.usuarios and recreate as sparse-unique. Add a one-shot migration in core/db.py setup_indexes: on IndexKeySpecsConflict / OperationFailure code 85/86, `await db.usuarios.drop_index('telefono_1')` then re-create with sparse=True. Also apply same treatment to `email_1` and `user_id_1` if they existed pre-Iter56 non-sparse. Verified needed via runtime index_information() output.",
+    "Consider tightening ProfileSetupRequest to reject unexpected fields (extra='forbid') to catch typos early.",
+    "Optional: return 401 (not 422) on empty session_id if spec adherence is important; move the check to a Pydantic validator that raises HTTPException(401) OR pre-strip and check before Pydantic."
+  ],
+  "critical_code_review_comments": [
+    "routers/emergent_auth.py:_upsert_user_by_email finds users only by email — a legacy user who signed in via OTP first (telefono set, email absent) will get a duplicate row when they later use Google with the same identity. Consider a secondary lookup by matching phone→email link during upsert.",
+    "routers/emergent_auth.py:212 `_used_session_ids` is per-process in-memory — with multiple uvicorn workers or a rolling deploy, the same session_id could be replayed once per worker. Playbook accepts this as best-effort, but a Mongo-backed dedup (unique on session_id hash) would be robust.",
+    "routers/emergent_auth.py:_current_user_flexible does role=='player' check but tolerates missing auth_method — an admin JWT with role=='admin' would 403, which is correct, but an OTP legacy JWT with role=='player' + sub=<phone> matches the telefono fallback. This is per-design.",
+    "routers/emergent_auth.py:264 `except Exception: raise HTTPException(502, ...)` on r.json() — if Emergent ever returns HTML on 200, this would masquerade as a 502. Consider also asserting Content-Type application/json.",
+    "core/db.py:41-58 uses bare `except Exception: pass` for all three usuarios indexes — this hides the exact conflict. Should log at least a warning with the errmsg so the migration issue surfaces in supervisor logs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter56_emergent_auth.py (new — 19 test functions)"
+  ],
+  "success_rate": {"backend": "79% (15/19)", "frontend": "N/A (not requested)"},
+  "seed_data_creation": "OTP records auto-cleaned after verify. Test synthetic phones +525599990056 / +525599990057 used. No persistent test users created (test_sparse_telefono failed the insert_many so nothing to clean; the one successful doc was deleted in the failing branch's finally).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent applies fixes: (1) re-run `pytest /app/backend/tests/test_iter56_emergent_auth.py -v` — expect 19/19. (2) Verify index migration by running the last test standalone. (3) Confirm /auth/me returns UserPublic (not {email,role}) for an OTP-issued JWT. (4) E2E Google flow still requires manual test with deployed URL + real Google account — cannot be automated.",
+  "rca_of_issue": "Root cause of /auth/me shadow: Both auth_router.py (admin, prefix='/auth', GET /me on line 315) and emergent_auth.py (player, prefix='/auth', GET /me on line 385) declare identical operation paths. server.py includes auth_router at line 117 BEFORE emergent_auth_router at line 120. FastAPI matches routes in include order; the admin handler wins. Repro: `curl https://<host>/api/auth/me -H 'Authorization: Bearer <player-jwt>'` → 403 'Se requiere rol admin'. Mitigation: rename one of the endpoints or unify into a role-dispatching handler. Root cause of telefono duplicate-key: The `telefono_1` index in the running database (created in earlier iterations) is unique but NOT sparse. Mongo cannot reconfigure an existing index in place, so the try/except at core/db.py:41-47 silently no-ops and the old constraint persists. Repro: `await db.usuarios.insert_many([{telefono:None,...},{telefono:None,...}])` → E11000 dup key error. Mitigation: drop_index('telefono_1') + create_index([('telefono',1)], unique=True, sparse=True) at startup, guarded by index_information() check."
+}

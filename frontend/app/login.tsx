@@ -45,6 +45,7 @@ import {
   normalizePhoneToE164,
   parseApiErrorMessage,
 } from "@/src/utils/phoneFormat";
+import { signInWithGoogle } from "@/src/utils/emergentAuth";
 
 const PLAYER_INFO_KEY = "padelappretas.player.info";
 
@@ -137,8 +138,64 @@ export default function PlayerLogin() {
     }
   };
 
-  const verifyOtp = async () => {
-    if (codigo.trim().length < 4) {
+  // ─────────────────────────────────────────────────────────────
+  // Iter56 — Google Sign-In (Emergent-managed OAuth, costo $0).
+  //
+  // Compat: al terminar, guardamos el JWT en el mismo store que usa el flujo
+  // OTP legacy, así el resto de la app (router, endpoints, etc.) funciona
+  // sin conocer si el usuario entró por Google o por OTP.
+  // ─────────────────────────────────────────────────────────────
+  const signInGoogle = async () => {
+    setLoading(true);
+    try {
+      const result = await signInWithGoogle();
+      if (result.status === "cancelled") {
+        // En web nunca llegamos aquí (window.location.href redirige la página).
+        // En mobile: usuario cerró el WebBrowser sin completar → sin toast.
+        return;
+      }
+      if (result.status === "error") {
+        showToast(result.message || "No pudimos iniciar sesión con Google.", "error");
+        return;
+      }
+      // OK — access_token ya guardado por el helper. Registrar consent y ruta.
+      void acceptLegal(result.user.email ?? result.user.user_id);
+
+      // Si es primer login (falta preferred_side o skill_level) → onboarding.
+      if (!result.user.profile_completed) {
+        router.replace("/onboarding" as any);
+        return;
+      }
+
+      try {
+        const roles = await api.playerMyRoles(result.access_token);
+        const lastRole = await getLastRole();
+        const next = decideNextRoute(roles, lastRole);
+        try {
+          const pending = await deepLinkStore.consume();
+          if (pending) {
+            router.replace(pending as any);
+            return;
+          }
+        } catch {
+          /* swallow */
+        }
+        router.replace(next as any);
+      } catch {
+        router.replace("/mi-cuenta" as any);
+      }
+    } catch (e: unknown) {
+      const parsed = parseApiErrorMessage(
+        e,
+        "Error inesperado en Google Sign-In.",
+      );
+      showToast(parsed.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {    if (codigo.trim().length < 4) {
       showToast("Ingresá el código de 6 dígitos.", "warn");
       return;
     }
@@ -245,6 +302,24 @@ export default function PlayerLogin() {
                   testID="otp-request-btn"
                   size="lg"
                 />
+
+                {/* Divisor "o" — separa OTP legacy (arriba) de Google Auth (abajo) */}
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>o</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <TouchableOpacity
+                  onPress={signInGoogle}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                  style={[styles.googleBtn, loading && { opacity: 0.6 }]}
+                  testID="google-signin-btn"
+                >
+                  <Text style={styles.googleG}>G</Text>
+                  <Text style={styles.googleLabel}>Continuar con Google</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <>
@@ -443,6 +518,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   linkAlt: { color: colors.brand.primary, fontSize: 12, textDecorationLine: "underline" },
+
+  // ─── Google Sign-In (Iter56) ───
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border.blueHairline,
+  },
+  dividerText: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  googleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    minHeight: 48,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.md,
+    ...Platform.select({
+      ios: { boxShadow: "0px 1px 2px rgba(0,0,0,0.06)" },
+      android: { elevation: 1 },
+      web: { boxShadow: "0 1px 2px rgba(0,0,0,0.06)" } as any,
+    }),
+  },
+  googleG: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#4285F4",
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    lineHeight: 22,
+  },
+  googleLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1F1F1F",
+    letterSpacing: 0.15,
+  },
 
   // ── Foto cancha azul (pie de pantalla) ─────────────────────────
   courtImageWrap: {

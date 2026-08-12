@@ -1,0 +1,32 @@
+{
+  "summary": "Iter57 RETEST after fixing the 2 CRITICAL blockers from iter56: (a) emergent_auth router prefix moved from /auth → /auth/emergent to end the collision with admin /auth/me; (b) usuarios indexes migrated to partialFilterExpression:{$type:'string'} with startup drop of legacy telefono_1/email_1/user_id_1. 23/23 pytest tests PASS (100%). Updated test file with new endpoint paths, index assertion (partialFilterExpression instead of sparse), added regression tests for admin /api/auth/me + new /api/auth/emergent/logout (4 new tests). Verified: new endpoints reachable (POST /api/auth/emergent/session, GET /api/auth/emergent/me, POST /api/auth/emergent/profile-setup, POST /api/auth/emergent/logout); admin /api/auth/me still returns {email, role} for admin token and 403s player JWT (regression clean); usuarios has telefono_partial_unique / email_partial_unique / user_id_partial_unique — insert_many of 2 docs with telefono=None succeeds (fix confirmed); user_sessions TTL index present; OTP end-to-end (request → verify with Mongo-fetched code → /auth/emergent/me → profile-setup → /me/roles) all green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter56_emergent_auth.py",
+    "/app/test_reports/pytest/iter56_retest.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/db.py:44-60 drop-and-recreate migration is one-shot but silent on failure (bare except: pass). Once verified stable in prod, consider logging index_information() diff at INFO level on first boot so ops can audit which legacy indexes were dropped.",
+    "routers/emergent_auth.py:212 _used_session_ids is still per-process in-memory — with multiple workers a duplicate could slip once per worker. Playbook-tolerable but a Mongo-backed dedup (unique on session_id hash + TTL) would be robust for prod.",
+    "routers/emergent_auth.py:_upsert_user_by_email finds by email only — an OTP legacy user (telefono set, email=None) who later Googles with the same real identity gets a second row. Consider secondary lookup by matched phone during upsert or a manual /admin/link endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter56_emergent_auth.py — endpoint paths retargeted to /api/auth/emergent/*, index assertion switched to partialFilterExpression, added TestAdminMeUnchanged (2 tests) + TestEmergentLogout (2 tests) = 4 new tests, total 23"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "N/A (not requested — frontend api.ts updated per main-agent note, not retested)"},
+  "seed_data_creation": "Synthetic phones +525599990056 / +525599990057. OTP docs auto-cleaned by verify; test users in test_sparse_telefono_allows_multiple_null_emails are deleted in finally. No persistent state left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter56 blockers are fully resolved. If a future iteration touches emergent_auth or the usuarios index, re-run `pytest /app/backend/tests/test_iter56_emergent_auth.py -v`. The Google OAuth E2E still requires manual test on the deployed URL (out of scope for automation). Twilio Sandbox delivery is real — the OTP tests pull the code from db.player_otps directly to avoid depending on WhatsApp delivery latency.",
+  "rca_of_issue": "Fixes verified: (1) Route collision — moving emergent router prefix to /auth/emergent means FastAPI no longer sees identical operation paths for admin vs player /me; both handlers coexist and route correctly by URL. Confirmed via TestAdminMeUnchanged.test_admin_me_returns_admin_data (admin JWT → {email,role} at /api/auth/me) and TestAuthMeHybridWithOtpToken.test_me_works_with_legacy_otp_jwt (player OTP JWT → UserPublic at /api/auth/emergent/me). (2) Index migration — startup drops legacy non-partial indexes and recreates as partialFilterExpression:{field:{$type:'string'}}, which is stricter than sparse (sparse still considers explicit null a value; partial filter with $type:string does not). Confirmed via TestDbSchemaIndexes.test_sparse_telefono_allows_multiple_null_emails (insert_many of 2 docs with telefono=None succeeds — this was the exact failure repro from iter56)."
+}

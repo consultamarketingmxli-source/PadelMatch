@@ -95,6 +95,7 @@ from routers.soporte import router_admin as soporte_admin_router
 from routers.soporte import router_public as soporte_public_router
 from routers.legal_router import router as legal_router
 from routers.legal_pages import router as legal_pages_router
+from routers.emergent_auth import router as emergent_auth_router
 from routers.push_router import router as push_router
 from routers.wellknown import router as wellknown_router
 from routers.join_requests import router as join_requests_router
@@ -115,6 +116,8 @@ api = APIRouter(prefix="/api")
 # Incluir todos los routers bajo /api
 api.include_router(auth_router)
 api.include_router(player_auth_router)
+# Iter56 — Emergent Auth (Google Sign-In sin OTP). Convive con OTP.
+api.include_router(emergent_auth_router)
 api.include_router(retas_router)
 api.include_router(admin_dashboard_router)
 api.include_router(cupones_admin_router)

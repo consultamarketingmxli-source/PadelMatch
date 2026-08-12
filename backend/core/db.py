@@ -34,8 +34,65 @@ ADMIN_PASSWORD_DEFAULT = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
 
 
 async def setup_indexes() -> None:
-    """Crea los índices únicos requeridos. Idempotente (Mongo lo permite)."""
-    await db.usuarios.create_index([("telefono", ASCENDING)], unique=True)
+    """Crea los índices únicos requeridos. Idempotente (Mongo lo permite).
+
+    Iter56 — Migración one-shot del índice `telefono_1` a sparse. Esto es
+    necesario porque el índice legacy fue creado como unique NON-sparse; al
+    autenticarse un segundo usuario vía Google (telefono=None) MongoDB
+    lanzaba `E11000 duplicate key on {telefono: null}`, tumbando el flujo.
+    """
+    # === Migración one-shot: telefono unique → partial ===
+    try:
+        info = await db.usuarios.index_information()
+        # Eliminar índices legacy que colisionan (unique=True sparse=False O sparse=True
+        # sin partialFilterExpression). Los recreamos abajo con partialFilterExpression.
+        for legacy_name in ("telefono_1", "email_1", "user_id_1"):
+            legacy_idx = info.get(legacy_name)
+            if legacy_idx is not None and not legacy_idx.get("partialFilterExpression"):
+                try:
+                    await db.usuarios.drop_index(legacy_name)
+                except Exception:
+                    pass
+    except Exception as exc:  # pragma: no cover — defensivo
+        import logging as _l
+        _l.getLogger("padelappretas-os").warning(
+            "[db] No se pudo migrar índices a partial: %s", exc
+        )
+
+    # === Usuarios ===
+    # Partial filter: sólo indexa docs donde `telefono` es un string (no null,
+    # no faltante). Más robusto que sparse porque Mongo trata `field:null`
+    # como VALOR presente (sparse NO lo omite).
+    try:
+        await db.usuarios.create_index(
+            [("telefono", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"telefono": {"$type": "string"}},
+            name="telefono_partial_unique",
+        )
+    except Exception:
+        pass
+    # user_id: partial filter idéntico.
+    try:
+        await db.usuarios.create_index(
+            [("user_id", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"user_id": {"$type": "string"}},
+            name="user_id_partial_unique",
+        )
+    except Exception:
+        pass
+    # email: partial filter idéntico. Necesario porque los usuarios legacy OTP
+    # tienen `email: null` explícito y sparse NO los omite.
+    try:
+        await db.usuarios.create_index(
+            [("email", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"email": {"$type": "string"}},
+            name="email_partial_unique",
+        )
+    except Exception:
+        pass
     await db.retas.create_index([("url_slug", ASCENDING)], unique=True)
     await db.lista_espera.create_index(
         [("reta_id", ASCENDING), ("posicion_fila", ASCENDING)], unique=True
@@ -123,6 +180,19 @@ async def setup_indexes() -> None:
         await db.refresh_tokens.create_index("token_hash", unique=True)
         await db.refresh_tokens.create_index(
             [("user_id", ASCENDING), ("revoked", ASCENDING)]
+        )
+    except Exception:
+        pass
+
+    # === Emergent Auth Sessions (Iter56 — Google/Email login sin OTP) ===
+    # `session_token` es el token opaco entregado por Emergent + refresh interno.
+    # Almacena {session_token (hash), user_id, expires_at, created_at, ip, ua}.
+    # TTL automático borra sesiones vencidas sin cron adicional.
+    try:
+        await db.user_sessions.create_index("session_token_hash", unique=True)
+        await db.user_sessions.create_index("user_id")
+        await db.user_sessions.create_index(
+            "expires_at", expireAfterSeconds=0
         )
     except Exception:
         pass

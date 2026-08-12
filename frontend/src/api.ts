@@ -1156,6 +1156,60 @@ export const api = {
       `/players/auth/otp/request`,
       { method: "POST", body },
     ),
+
+  // ===== Emergent Auth (Google Sign-In, Iter56) =====
+  emergentExchangeSession: (session_id: string) =>
+    request<{
+      access_token: string;
+      token_type: string;
+      refresh_token?: string | null;
+      expires_in: number;
+      user: {
+        user_id: string;
+        email: string | null;
+        nombre: string;
+        telefono: string | null;
+        picture: string | null;
+        preferred_side: "Drive" | "Revés" | "Ambos" | null;
+        skill_level: "Principiante" | "Intermedio" | "Avanzado" | "Pro" | null;
+        profile_completed: boolean;
+      };
+    }>(`/auth/emergent/session`, { method: "POST", body: { session_id } }),
+
+  emergentMe: (token: string) =>
+    request<{
+      user_id: string;
+      email: string | null;
+      nombre: string;
+      telefono: string | null;
+      picture: string | null;
+      preferred_side: "Drive" | "Revés" | "Ambos" | null;
+      skill_level: "Principiante" | "Intermedio" | "Avanzado" | "Pro" | null;
+      profile_completed: boolean;
+    }>(`/auth/emergent/me`, { headers: { Authorization: `Bearer ${token}` } }),
+
+  emergentProfileSetup: (
+    token: string,
+    body: {
+      nombre?: string;
+      preferred_side: "Drive" | "Revés" | "Ambos";
+      skill_level: "Principiante" | "Intermedio" | "Avanzado" | "Pro";
+    },
+  ) =>
+    request<{
+      user_id: string;
+      email: string | null;
+      nombre: string;
+      telefono: string | null;
+      picture: string | null;
+      preferred_side: "Drive" | "Revés" | "Ambos" | null;
+      skill_level: "Principiante" | "Intermedio" | "Avanzado" | "Pro" | null;
+      profile_completed: boolean;
+    }>(`/auth/emergent/profile-setup`, {
+      method: "POST",
+      body,
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   playerVerifyOtp: async (body: { telefono: string; codigo: string }) => {
     const r = await request<PlayerAuthResponse>(`/players/auth/otp/verify`, {
       method: "POST",

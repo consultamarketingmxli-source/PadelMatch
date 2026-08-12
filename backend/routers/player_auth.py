@@ -125,6 +125,17 @@ async def get_current_player(authorization: Optional[str] = Header(None)) -> dic
         raise HTTPException(401, f"Token inválido: {e}") from e
     if payload.get("role") != "player":
         raise HTTPException(403, "Se requiere sesión de jugador")
+    # Iter56 — Compat híbrido: JWTs nuevos (Google Auth) tienen `sub=user_id`
+    # (UUID) mientras que los legacy (OTP) tienen `sub=telefono`. Muchos
+    # endpoints downstream siguen usando `current["sub"]` como identidad-string
+    # para queries en Mongo (security_logs, refresh_tokens, ownership checks).
+    # Para MINIMIZAR RIESGO DE REGRESIÓN, garantizamos que `sub` sea SIEMPRE una
+    # identidad estable-válida y agregamos `identity_kind` para código que
+    # necesita saber si es "user_id" o "phone".
+    sub_raw = payload.get("sub", "")
+    payload["identity_kind"] = (
+        "user_id" if payload.get("auth_method", "").startswith("emergent") else "phone"
+    )
     return payload
 
 
@@ -652,6 +663,9 @@ def _super_admin_phones() -> List[str]:
 async def my_roles(current=Depends(get_current_player)):
     """Determina los ambientes a los que puede acceder el usuario.
 
+    Iter56 — Compat híbrido: soporta identidad por `user_id` (Google Auth)
+    O por `telefono` (OTP legacy). El match ownership hace $or entre ambos.
+
     Respuesta:
         {
           is_player: bool,
@@ -660,22 +674,44 @@ async def my_roles(current=Depends(get_current_player)):
           stats: { retas_organizadas: int, clubes_propios: int }
         }
     """
-    telefono = current["sub"]
-    norm = _normalize_phone(telefono)
+    sub = current["sub"]
+    identity_kind = current.get("identity_kind", "phone")
     super_phones = _super_admin_phones()
-    is_super = norm in super_phones
 
-    # Match por teléfono normalizado (tolerante a formato con/sin espacios).
-    # Buscamos en ambos: exacto y normalizado (los registros nuevos pueden no
-    # estar normalizados consistentemente con los antiguos).
-    retas_count = await db.retas.count_documents(
-        {"organizador_telefono": {"$in": [telefono, norm]}}
-    )
+    # Match por identidad primaria (user_id o phone). Query es defensivo:
+    # busca en organizador_user_id (nuevos) OR organizador_telefono (legacy).
+    if identity_kind == "user_id":
+        user_id = sub
+        # Traer teléfono del documento (si el usuario también hizo OTP alguna vez).
+        user_doc = await db.usuarios.find_one({"user_id": user_id}, {"_id": 0, "telefono": 1})
+        telefono = (user_doc or {}).get("telefono") or ""
+        norm = _normalize_phone(telefono) if telefono else ""
+    else:
+        telefono = sub
+        norm = _normalize_phone(telefono)
+        user_doc = await db.usuarios.find_one({"telefono": telefono}, {"_id": 0, "user_id": 1})
+        user_id = (user_doc or {}).get("user_id") or ""
+
+    is_super = bool(telefono and norm in super_phones)
+
+    # Ownership: matchea contra organizador_user_id (Iter56+) OR organizador_telefono (legacy).
+    or_conds = []
+    if user_id:
+        or_conds.append({"organizador_user_id": user_id})
+    if telefono:
+        or_conds.append({"organizador_telefono": {"$in": [telefono, norm]}})
+    retas_query = {"$or": or_conds} if or_conds else {"organizador_telefono": "__never_match__"}
+    retas_count = await db.retas.count_documents(retas_query)
+
     clubes_count = 0
     try:
-        clubes_count = await db.clubes.count_documents(
-            {"owner_telefono": {"$in": [telefono, norm]}}
-        )
+        or_conds_c = []
+        if user_id:
+            or_conds_c.append({"owner_user_id": user_id})
+        if telefono:
+            or_conds_c.append({"owner_telefono": {"$in": [telefono, norm]}})
+        if or_conds_c:
+            clubes_count = await db.clubes.count_documents({"$or": or_conds_c})
     except Exception:
         clubes_count = 0
 
