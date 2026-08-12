@@ -1,11 +1,17 @@
 /**
- * login.tsx — Player Login (Iter66 · White top + court fade bottom).
+ * login.tsx — Player Login (Iter67 · Hero refinado + gradiente fluido).
  *
  * Estructura por capas absolute-positioning:
  *   Layer 0: Root container white.
  *   Layer 1: Court image absolute bottom 35%.
- *   Layer 2: LinearGradient white→transparent sobre el top edge del court.
+ *   Layer 2: LinearGradient white→transparent multi-stop sobre top del court.
  *   Layer 3: Content (hero + card + orgLink) en flujo normal.
+ *
+ * Hero:
+ *   - Logo sin fondo blanco sólido (transparente sobre white bg de la app).
+ *   - borderRadius suave (26) para bordes redondeados naturales.
+ *   - Espaciado balanceado: título → logo (16px) → tagline (24px).
+ *   - Tagline "JUEGA · COMPITE · GANA" con letter-spacing 2.
  */
 import React, { useState } from "react";
 import {
@@ -104,10 +110,15 @@ export default function PlayerLogin() {
         style={styles.courtBg}
       />
 
-      {/* ═══ Layer 2: Fade white → transparent sobre el top del court ═══ */}
+      {/* ═══ Layer 2: Fade white → transparent (top edge del court) ═══ */}
       <LinearGradient
-        colors={["#FFFFFF", "rgba(255,255,255,0)"]}
-        locations={[0, 1]}
+        colors={[
+          "#FFFFFF",
+          "rgba(255,255,255,0.85)",
+          "rgba(255,255,255,0.45)",
+          "rgba(255,255,255,0)",
+        ]}
+        locations={[0, 0.35, 0.7, 1]}
         style={styles.courtFade}
         pointerEvents="none"
       />
@@ -137,7 +148,7 @@ export default function PlayerLogin() {
                 />
               </View>
 
-              <Text style={styles.tagline}>ORGANIZA · JUEGA · MEJORA</Text>
+              <Text style={styles.tagline}>JUEGA · COMPITE · GANA</Text>
             </View>
 
             {/* Floating card — overlays la zona de transición */}
@@ -236,10 +247,10 @@ const styles = StyleSheet.create({
   // ═══ Layer 2: Fade white → transparent (top edge del court) ═══
   courtFade: {
     position: "absolute",
-    bottom: "20%", // start del fade a 20% del bottom (encima del court 35%)
+    bottom: "18%",
     left: 0,
     right: 0,
-    height: "22%", // extiende el fade sobre el edge del court
+    height: "28%",
   },
 
   // ═══ Layer 3: Content ═══
@@ -255,50 +266,48 @@ const styles = StyleSheet.create({
   // Hero (top white area)
   hero: {
     alignItems: "center",
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   brandTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "700",
     color: "#0D253C",
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
     textAlign: "center",
+    marginBottom: spacing.md,
   },
   brandTitleAccent: {
     color: "#1E6091",
     fontWeight: "700",
   },
   logoWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
+    width: 92,
+    height: 92,
+    borderRadius: 26,
+    backgroundColor: "transparent",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
-    marginTop: spacing.xs,
     ...Platform.select({
       ios: {
         shadowColor: "#0D253C",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.10,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
       },
-      android: { elevation: 3 },
-      web: { boxShadow: "0 4px 14px rgba(13,37,60,0.12)" } as any,
+      android: { elevation: 2 },
+      web: { boxShadow: "0 6px 18px rgba(13,37,60,0.08)" } as any,
     }),
   },
   logo: { width: "100%", height: "100%" },
   tagline: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#1E6091",
     textAlign: "center",
-    letterSpacing: 1.5,
-    marginTop: spacing.sm,
+    letterSpacing: 2,
+    marginTop: spacing.lg,
   },
 
   // Floating card (overlays la transición)
