@@ -54,6 +54,7 @@ import { useRouter } from "expo-router";
 import { Mail } from "lucide-react-native";
 
 import { Toast } from "@/src/components/Toast";
+import { GoogleGIcon } from "@/src/components/GoogleGIcon";
 import { api } from "@/src/api";
 import { decideNextRoute, getLastRole } from "@/src/utils/roleSelection";
 import { spacing } from "@/src/theme";
@@ -192,8 +193,7 @@ export default function PlayerLogin() {
             testID="google-signin-btn"
           >
             <View style={styles.googleIconWrap}>
-              {/* Official Google G — recreated with brand colors */}
-              <Text style={styles.googleGBlue}>G</Text>
+              <GoogleGIcon size={20} />
             </View>
             <Text style={styles.googleLabel}>Continuar con Google</Text>
           </TouchableOpacity>
@@ -369,21 +369,11 @@ const styles = StyleSheet.create({
     }),
   },
   googleIconWrap: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
-  },
-  googleGBlue: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#4285F4",
-    fontFamily: Platform.select({
-      ios: "Georgia",
-      android: "serif",
-      default: "serif",
-    }),
-    lineHeight: 24,
+    // Padding interno mínimo 1/6 del tamaño según Google Brand Guidelines.
   },
   googleLabel: {
     fontSize: 16,
